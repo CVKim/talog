@@ -55,6 +55,7 @@ class ReportContext:
     model_loads: list[ModelLoad] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
     llm_summary: str = ""        # 로컬 LLM 종합 소견 (--llm 옵션)
+    similar_cases: list = field(default_factory=list)   # (유사도,제목,원인,조치,site,date)
 
 
 def _esc(v) -> str:
@@ -419,6 +420,12 @@ def _incomplete_section(ctx: ReportContext) -> str:
             reason.append(f"<b>이상 미투입</b> {it.n_nofeed}채널")
         if it.n_skipped:
             reason.append(f"정상 스킵(레시피 조건 비활성) {it.n_skipped}채널")
+        if it.timed_out:
+            reason.append("<b>타임아웃</b>: 판정 결과가 설비로 미송신 "
+                          "(플랫폼 [TIMEOUT] 조기 리턴)")
+        if it.n_zones > 1 and it.n_zones_done < it.n_zones:
+            reason.append(f"<b>존 부분 완료</b>: {it.n_zones_done}/{it.n_zones}존만 "
+                          f"END 수신")
         if it.remain_list:
             reason.append("플랫폼 REMAIN 덤프: "
                           + _esc(_translate_alglist(ctx.recipe, it.remain_list)))
@@ -570,6 +577,15 @@ def _findings_section(ctx: ReportContext) -> str:
             f"<div style='font-weight:700;color:{color}'>[{label}] {_esc(f.title)}"
             f"</div><ul style='margin:5px 0 0 18px;padding:0;font-size:13px'>{ev}</ul>"
             f"{adv}</div>")
+    if ctx.similar_cases:
+        rows = "".join(
+            f"<div style='border:1px solid #cbd5e1;border-radius:6px;"
+            f"padding:8px 12px;margin:6px 0;font-size:13px'>"
+            f"<b>{_esc(t)}</b> <span class='hint'>({_esc(site)} {_esc(dt)}, "
+            f"유사도 {s})</span><br>원인: {_esc(cz)}<br>조치: {_esc(ac)}</div>"
+            for s, t, cz, ac, site, dt in ctx.similar_cases)
+        out.append("<h2>유사 과거 사례 <span class='hint'>— 사례 지식베이스(kb) "
+                   "검색 결과</span></h2>" + rows)
     return "".join(out)
 
 

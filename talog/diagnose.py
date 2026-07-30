@@ -175,6 +175,47 @@ def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
             out.append(Finding("ok", "메모리 추세 안정",
                                [f"{span:.1f}시간 구간 추세 {slope:+,.0f}MB/h"], ""))
 
+    # 6.5) 타임아웃 / 그랩 실패 / 인퍼런스 오류 (코드 검증 룰) --------------------
+    n_ato = sum(1 for e in events if e.kind == "ALG_TIMEOUT")
+    n_ito = sum(1 for e in events if e.kind == "IMG_TIMEOUT")
+    if n_ato or n_ito:
+        ev = []
+        if n_ato:
+            imgs = sorted({e.roi_idx for e in events
+                           if e.kind == "ALG_TIMEOUT" and e.roi_idx})[:8]
+            ev.append(f"알고리즘 타임아웃 {n_ato}건 (TIME_OUT NG 강제) — "
+                      f"이미지 인덱스: {', '.join(map(str, imgs))}")
+        if n_ito:
+            ev.append(f"판정 미송신(조기 리턴) {n_ito}건 — 설비 측은 미검사로 처리")
+        out.append(Finding("crit" if n_ito else "warn",
+                           f"검사 타임아웃 {n_ato + n_ito}건", ev,
+                           "타임아웃이 발생한 이미지(FOV)의 알고리즘 처리시간을 "
+                           "확인하고, GPU 경합/모델 부하를 점검하십시오."))
+    n_grab = sum(1 for e in events if e.kind == "GRAB_FAIL")
+    if n_grab:
+        out.append(Finding("crit", f"그랩 실패 {n_grab}건",
+                           ["카메라/트리거 계통 실패 — 조명 소등 및 설비 정지로 "
+                            "이어지는 경로입니다"],
+                           "카메라 연결·트리거 신호·프레임 그래버 상태를 "
+                           "점검하십시오 (알고리즘 문제가 아님)."))
+    n_ie = sum(1 for e in events if e.kind == "INFER_ERROR")
+    if n_ie:
+        out.append(Finding("crit", f"GPU 인퍼런스 실행 오류 {n_ie}건",
+                           ["해당 모델 결과가 통째로 누락됩니다 — VRAM 부족/"
+                            "드라이버 장애 신호"],
+                           "동일 GPU·모델 조합에서 반복되는지 확인하고 VRAM/"
+                           "드라이버를 점검하십시오."))
+    for kind, title, advice in (
+            ("STORAGE_LOW", "이미지 저장 공간 부족",
+             "저장소 정리 또는 보존 주기 축소가 필요합니다 (StorageNotEnough "
+             "정지로 이어짐)."),
+            ("LIGHT_UNSTABLE", "조명 컨트롤러 불안정",
+             "조명 컨트롤러 연결/전원을 점검하십시오 (LightDisconnected 정지 "
+             "경로).")):
+        n = sum(1 for e in events if e.kind == kind)
+        if n:
+            out.append(Finding("crit", f"{title} {n}건", [], advice))
+
     # 7) 통신/기타 에러 클러스터 -------------------------------------------------
     err_n = sum(1 for e in events
                 if e.kind in ("ERROR", "COMM_FAIL", "RECIPE_FAIL", "EXC_REDIRECT"))

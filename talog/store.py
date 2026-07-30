@@ -27,7 +27,8 @@ CREATE TABLE inspections(
     wait_threads INTEGER, ack_status TEXT, end_ts REAL, end_text TEXT,
     end_result TEXT, status TEXT, duration_s REAL,
     n_fed INTEGER, n_done INTEGER, n_lost INTEGER, n_nofeed INTEGER,
-    n_skipped INTEGER, lost_channels TEXT, nofeed_channels TEXT,
+    n_skipped INTEGER, n_zones INTEGER, n_zones_done INTEGER,
+    lost_channels TEXT, nofeed_channels TEXT,
     remain_list TEXT, gen_id INTEGER);
 CREATE TABLE model_loads(
     id INTEGER PRIMARY KEY, kind TEXT, ts REAL, ts_text TEXT, name TEXT,

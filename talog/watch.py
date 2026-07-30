@@ -36,9 +36,10 @@ from .events import Event, Extractor
 from .fileclass import classify
 from .lineparser import _TAG_RE, _TS_RE, iter_batchrun
 
-# 감시 대상 파일 (소형·핵심만 — 저부하 원칙)
+# 감시 대상 파일 (소형·핵심만 — 저부하 원칙). seq_N.log 는 동적으로 추가된다.
 _WATCH_FILES = ("inspstarter.log", "comm.log", "workerthreadpoolmng.log",
-                "exception.log", "processusage.log", "batchrunlog.txt")
+                "exception.log", "processusage.log", "batchrunlog.txt",
+                "seq_1.log", "seq_2.log", "seq_3.log")
 
 _DEFAULT_CFG = {
     "watch_root": r"D:\AIV_LOG\Talos",
@@ -53,6 +54,7 @@ _DEFAULT_CFG = {
         "restart_burst": {"window_min": 60, "count": 3},
         "memory_trend": {"mb_per_hour": 100, "min_rise_mb": 500,
                          "min_hours": 2.0},
+        "gpu_temp": {"enabled": True, "celsius": 85, "record_min": 5},
     },
     "notify": {"toast": True, "webhook": "", "jsonl": True},
     "llm": {"enabled": False, "device": "cpu", "model": "qwen2.5:7b",
@@ -193,6 +195,37 @@ class RuleEngine:
                     "검사 시작 거부(NoInspThread) — 미검사 임박",
                     "가용 Seq 스레드 0. 직전 검사들이 스레드를 점유 중 — "
                     "병목/정체를 즉시 확인하십시오.", key="noinsp"))
+        elif e.kind in ("REJECT_BUSYCAM", "REJECT_NOTREADY", "REJECT_SIM"):
+            label = {"REJECT_BUSYCAM": "카메라 점유(BusyCam)",
+                     "REJECT_NOTREADY": "모델 미로드 상태",
+                     "REJECT_SIM": "시뮬레이션 모드 방치"}[e.kind]
+            self.notify.emit(Alert(e.ts, e.kind.lower(), "crit",
+                                   f"검사 시작 거부 — {label}",
+                                   "설비의 검사 요청이 거부되었습니다. 원인을 "
+                                   "즉시 확인하십시오.", key=e.kind))
+        elif e.kind == "GRAB_FAIL":
+            self.notify.emit(Alert(e.ts, "grab_fail", "crit",
+                                   "그랩 실패 — 카메라/트리거 계통",
+                                   "조명 소등·설비 정지로 이어지는 경로입니다. "
+                                   "카메라 연결과 트리거를 점검하십시오.",
+                                   key="grab"))
+        elif e.kind == "IMG_TIMEOUT":
+            self.notify.emit(Alert(e.ts, "img_timeout", "crit",
+                                   "검사 타임아웃 — 판정 미송신",
+                                   f"inner id {e.inner_id}: 설비 측은 미검사로 "
+                                   f"처리됩니다. GPU 부하/병목을 확인하십시오.",
+                                   key="ito"))
+        elif e.kind == "ALG_TIMEOUT":
+            self.notify.emit(Alert(e.ts, "alg_timeout", "warn",
+                                   f"알고리즘 타임아웃 (이미지 {e.roi_idx})",
+                                   f"임계 {e.value:.0f}ms 초과 — TIME_OUT NG 로 "
+                                   f"강제 판정됩니다.", key=f"ato{e.roi_idx}"))
+        elif e.kind in ("STORAGE_LOW", "LIGHT_UNSTABLE"):
+            lbl = ("이미지 저장 공간 부족" if e.kind == "STORAGE_LOW"
+                   else "조명 컨트롤러 불안정")
+            self.notify.emit(Alert(e.ts, e.kind.lower(), "crit", lbl,
+                                   "설비 정지(emergency stop)로 이어질 수 있는 "
+                                   "상태입니다.", key=e.kind))
         elif e.kind == "COMM_MSG" and e.inner_id:
             if "INSPECT_END" in e.name:
                 st = self.pending.pop(e.inner_id, None)
@@ -373,6 +406,80 @@ def iter_batchrun_line(line: str):
         yield ts, f"{hh}:{mi}:{ss}.000", script
 
 
+def _parse_smi(text: str) -> list[dict]:
+    """nvidia-smi CSV 출력 파싱: index, temp(°C), util(%), mem_used(MB), power(W)."""
+    out = []
+    for line in (text or "").strip().splitlines():
+        toks = [t.strip() for t in line.split(",")]
+        if len(toks) < 4:
+            continue
+        try:
+            out.append({"gpu": int(toks[0]), "temp": float(toks[1]),
+                        "util": float(toks[2]), "mem": float(toks[3]),
+                        "power": float(toks[4]) if len(toks) > 4 and
+                        toks[4].replace(".", "").isdigit() else 0.0})
+        except ValueError:
+            continue
+    return out
+
+
+def _query_gpu() -> list[dict]:
+    """드라이버 기본 동봉 nvidia-smi 로 GPU 상태를 읽는다 (별도 설치 불필요)."""
+    try:
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,temperature.gpu,utilization.gpu,"
+             "memory.used,power.draw", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=8,
+            creationflags=0x08000000)
+        if r.returncode != 0:
+            return []
+        return _parse_smi(r.stdout)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+
+class GpuMonitor:
+    """GPU 온도/부하 주기 수집 + 임계 경보 + 이력 JSONL 적재."""
+
+    def __init__(self, cfg: dict, notifier: Notifier):
+        self.cfg = cfg["rules"].get("gpu_temp", {})
+        self.notify = notifier
+        self.alert_dir = cfg["alert_dir"]
+        self.available = bool(_query_gpu()) if self.cfg.get("enabled", True) \
+            else False
+        self._last_rec = 0.0
+
+    def poll(self, now: float):
+        if not self.available:
+            return
+        gpus = _query_gpu()
+        if not gpus:
+            return
+        limit = self.cfg.get("celsius", 85)
+        for g in gpus:
+            if g["temp"] >= limit:
+                self.notify.emit(Alert(
+                    now, "gpu_temp", "crit",
+                    f"GPU{g['gpu']} 온도 {g['temp']:.0f}°C (임계 {limit}°C)",
+                    f"사용률 {g['util']:.0f}% · 메모리 {g['mem']:.0f}MB · "
+                    f"전력 {g['power']:.0f}W — 냉각/팬 상태를 점검하십시오",
+                    key=f"gpu{g['gpu']}"))
+        # 이력 적재 (기본 5분 간격 — 온도 추세 분석용)
+        rec_iv = self.cfg.get("record_min", 5) * 60
+        if now - self._last_rec >= rec_iv:
+            self._last_rec = now
+            day = dt.datetime.fromtimestamp(now).strftime("%Y%m%d")
+            try:
+                with open(os.path.join(self.alert_dir, f"gpu_{day}.jsonl"),
+                          "a", encoding="utf-8") as f:
+                    f.write(json.dumps({
+                        "ts": dt.datetime.fromtimestamp(now)
+                        .strftime("%H:%M:%S"),
+                        "gpus": gpus}, ensure_ascii=False) + "\n")
+            except OSError:
+                pass
+
+
 def _today_dir(root: str) -> str:
     now = dt.datetime.now()
     return os.path.join(root, f"{now.year:04d}_{now.month:02d}",
@@ -446,10 +553,12 @@ def run_live(cfg: dict, once: bool = False) -> int:
     notifier = Notifier(cfg)
     engine = RuleEngine(cfg, notifier)
     tail = TailReader(os.path.join(cfg["alert_dir"], "watch_state.json"))
+    gpu = GpuMonitor(cfg, notifier)
     llm_every = cfg["llm"].get("interval_min", 30) * 60
     last_llm = 0.0
     print(f"[talog watch] 감시 시작: {cfg['watch_root']} "
-          f"(주기 {cfg['poll_seconds']}s, 알림 → {cfg['alert_dir']})")
+          f"(주기 {cfg['poll_seconds']}s, 알림 → {cfg['alert_dir']}, "
+          f"GPU 온도 감시 {'ON' if gpu.available else 'OFF(nvidia-smi 없음)'})")
     while True:
         day_dir = _today_dir(cfg["watch_root"])
         if os.path.isdir(day_dir):
@@ -466,6 +575,7 @@ def run_live(cfg: dict, once: bool = False) -> int:
                         engine.feed(e)
             engine.evaluate(time.time())
             tail.save()
+        gpu.poll(time.time())
         if cfg["llm"].get("enabled") and time.time() - last_llm > llm_every:
             last_llm = time.time()
             _llm_review(cfg, engine, notifier)
@@ -509,6 +619,87 @@ def run_replay(cfg: dict, day_dir: str) -> int:
     return 0
 
 
+def run_check(cfg: dict) -> int:
+    """현장 설치 자가 점검: 경로/파일/알림 채널을 확인하고 테스트 토스트를 쏜다."""
+    print("=" * 56)
+    print(" talog watch 설치 자가 점검")
+    print("=" * 56)
+    ok = True
+
+    root = cfg["watch_root"]
+    print(f"[1] 감시 루트: {root}", "→ 존재" if os.path.isdir(root) else "→ 없음!")
+    ok &= os.path.isdir(root)
+
+    day = _today_dir(root)
+    if os.path.isdir(day):
+        print(f"[2] 오늘 날짜 폴더: {day} → 존재")
+        found = []
+        for name in _WATCH_FILES:
+            for cand in os.listdir(day):
+                if cand.lower() == name:
+                    sz = os.path.getsize(os.path.join(day, cand))
+                    found.append(f"{cand} ({sz / 1024:.0f}KB)")
+        print(f"[3] 감시 대상 파일 {len(found)}/{len(_WATCH_FILES)}종 발견:")
+        for f in found:
+            print(f"     - {f}")
+        if not found:
+            print("     ! 감시 대상 파일이 없습니다 — talos 가동 여부를 확인하십시오")
+    else:
+        print(f"[2] 오늘 날짜 폴더 없음: {day}")
+        print("     ! talos 가 오늘 아직 기동되지 않았거나 경로 설정이 다릅니다")
+
+    try:
+        os.makedirs(cfg["alert_dir"], exist_ok=True)
+        probe = os.path.join(cfg["alert_dir"], "_write_test")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.remove(probe)
+        print(f"[4] 알림 폴더 쓰기: {cfg['alert_dir']} → OK")
+    except OSError as e:
+        print(f"[4] 알림 폴더 쓰기 실패: {e}")
+        ok = False
+
+    r = cfg["rules"]
+    print(f"[5] 감지 룰: 에러반복 {r['error_repeat']['count']}회/"
+          f"{r['error_repeat']['window_min']}분 · NoInspThread 즉시 · "
+          f"정체 {r['insp_stall']['factor_x_median']}×중앙값 · "
+          f"재시작 {r['restart_burst']['count']}회/{r['restart_burst']['window_min']}분 · "
+          f"메모리 +{r['memory_trend']['mb_per_hour']}MB/h")
+    print(f"[6] 사이트: '{cfg.get('site') or '(미설정 — watch.yaml 에서 지정 권장)'}'"
+          f" / 웹훅: {'설정됨' if cfg['notify'].get('webhook') else '없음(토스트/JSONL만)'}")
+
+    if cfg["llm"].get("enabled"):
+        alive = False
+        try:
+            with urllib.request.urlopen(f"{_OLLAMA_TAGS}", timeout=3):
+                alive = True
+        except OSError:
+            pass
+        print(f"[7] LLM 점검 모드: 활성 / Ollama {'가동 중' if alive else '미가동!'}")
+    else:
+        print("[7] LLM 점검 모드: 비활성 (기본)")
+
+    gpus = _query_gpu()
+    if gpus:
+        stat = " · ".join(f"GPU{g['gpu']} {g['temp']:.0f}°C/{g['util']:.0f}%"
+                          for g in gpus)
+        print(f"[8] GPU 감시: nvidia-smi OK — {stat} "
+              f"(임계 {cfg['rules'].get('gpu_temp', {}).get('celsius', 85)}°C)")
+    else:
+        print("[8] GPU 감시: nvidia-smi 미검출 — GPU 온도 룰 비활성")
+
+    if cfg["notify"].get("toast", True):
+        Notifier._toast("[talog] 설치 점검", "테스트 알림입니다 - 이 팝업이 보이면 정상")
+        print("[9] 테스트 토스트 발사 — 화면 우하단 팝업을 확인하십시오")
+    print("=" * 56)
+    print(" 점검 " + ("통과 — run_watch.bat 로 상주 감시를 시작하십시오"
+                     if ok else "실패 항목 있음 — watch.yaml 경로를 확인하십시오"))
+    return 0 if ok else 1
+
+
+_OLLAMA_TAGS = "http://localhost:11434/api/tags"
+
+
 def main(argv=None) -> int:
     import argparse
     ap = argparse.ArgumentParser(prog="talog watch",
@@ -518,6 +709,8 @@ def main(argv=None) -> int:
         "watch.yaml"))
     ap.add_argument("--once", action="store_true", help="1회 스캔 후 종료")
     ap.add_argument("--replay", default="", help="과거 일자 폴더 재생 검증")
+    ap.add_argument("--check", action="store_true",
+                    help="설치 자가 점검 (경로·파일·알림 테스트)")
     args = ap.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -525,6 +718,8 @@ def main(argv=None) -> int:
         except Exception:
             pass
     cfg = load_config(args.config)
+    if args.check:
+        return run_check(cfg)
     if args.replay:
         return run_replay(cfg, args.replay)
     return run_live(cfg, once=args.once)

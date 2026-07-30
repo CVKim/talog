@@ -128,16 +128,26 @@ class Extractor:
 
     @staticmethod
     def _enrich_comm(ev: Event):
-        """comm 메시지 페이로드에서 inner_id / status 를 뽑는다.
+        """comm 메시지 페이로드에서 inner_id / status / 그룹(존) 을 뽑는다.
 
         예: V2M_INSPECT_START_ACK,V3.0,TALOS3,OK,2000026072709204650,1642226107,1
-            V2M_INSPECT_END,V3.0,TALOS3,OK,2000026072709314410,1641232083,1
+            V2M_INSPECT_END,V3.0,TALOS1,NG,...,<inner>,ProductID,3
+        마지막 토큰이 1~2자리 숫자면 그룹(존) 번호다 (Tenneco 는 검사당 4존).
         """
         toks = [t.strip() for t in ev.extra.split(",")]
         inner = next((t for t in toks if t.isdigit() and len(t) >= 15), "")
         ev.inner_id = inner
         if inner:
             i = toks.index(inner)
-            if i >= 1 and not toks[i - 1].isdigit():
-                ev.status = toks[i - 1]      # OK / NoInspThread / NG 등
+            prev = toks[:i]
+            # NG END 는 'NG,<개수>,<결함1..N>,inner,...' 라 inner 직전 토큰이
+            # 결함명이다 (CommSender.cpp 실측) → 알려진 상태 토큰을 우선 탐색
+            known = ("OK", "NG", "NoInspThread", "BusyCam", "NotModelLoaded",
+                     "SimulationModelLoaded", "GroupIndexError",
+                     "NotMatchedSequenceType", "StorageNotEnough",
+                     "LightDisconnected")
+            ev.status = next((t for t in prev if t in known),
+                             prev[-1] if prev and not prev[-1].isdigit() else "")
+        if toks and toks[-1].isdigit() and len(toks[-1]) <= 2:
+            ev.value = float(toks[-1])       # 그룹(존) 번호
         ev.extra = ev.extra[:200]

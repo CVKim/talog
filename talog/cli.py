@@ -231,12 +231,14 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
     con.executemany(
         "INSERT INTO inspections(inner_id,product_id,start_ts,start_text,wait_threads,"
         "ack_status,end_ts,end_text,end_result,status,duration_s,n_fed,n_done,n_lost,"
-        "n_nofeed,n_skipped,lost_channels,nofeed_channels,remain_list,gen_id) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "n_nofeed,n_skipped,n_zones,n_zones_done,lost_channels,nofeed_channels,"
+        "remain_list,gen_id) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(i.inner_id, i.product_id, i.start_ts, i.start_text, i.wait_threads,
           i.ack_status, i.end_ts, i.end_text, i.end_result, i.status,
           (i.end_ts - i.start_ts) if i.end_ts and i.start_ts else 0,
           i.n_fed, i.n_done, i.n_lost, i.n_nofeed, i.n_skipped,
+          i.n_zones, i.n_zones_done,
           ",".join(i.lost_channels), ",".join(i.nofeed_channels),
           i.remain_list, i.gen_id) for i in inspections])
     con.executemany(
@@ -282,6 +284,20 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
                         model_loads=model_loads)
     ctx.findings = diagnose(inspections, runs, gens, all_events, model_loads,
                             log_start, log_end, usage_result=_usage_analysis(ctx))
+    # 사례 KB: 심각/주의 소견이 있으면 유사 과거 사례를 첨부한다
+    if any(f.severity in ("crit", "warn") for f in ctx.findings):
+        try:
+            from .casekb import CaseKB
+            kb = CaseKB()
+            if kb.cases:
+                q = "\n".join(f.title + " " + " ".join(f.evidence[:2])
+                              for f in ctx.findings
+                              if f.severity in ("crit", "warn"))
+                ctx.similar_cases = [
+                    (round(s, 2), c.title, c.cause, c.action, c.site, c.date)
+                    for s, c in kb.search(q, 3)]
+        except Exception:
+            pass
     if llm:
         ctx.llm_summary = _llm_overview(ctx.findings, tag)
         if ctx.llm_summary:
@@ -325,6 +341,9 @@ def main(argv=None):
     if argv and argv[0] == "watch":
         from .watch import main as watch_main
         return watch_main(argv[1:])
+    if argv and argv[0] == "kb":
+        from .casekb import main as kb_main
+        return kb_main(argv[1:])
     ap = argparse.ArgumentParser(prog="talog", description="talos 로그 진단 분석기")
     ap.add_argument("logs", help="설비-일자 폴더 또는 설비 폴더")
     ap.add_argument("--recipe", help="레시피 폴더 (제품 폴더 또는 버전 폴더)")

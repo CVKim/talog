@@ -55,6 +55,9 @@ class Inspection:
     n_lost: int = 0
     n_nofeed: int = 0
     n_skipped: int = 0            # 종속성 그래프 DEACTIVATE 에 의한 정상 스킵
+    n_zones: int = 0              # 시작 승인(ACK)된 그룹(존) 수 — Tenneco 등
+    n_zones_done: int = 0         # END 를 받은 그룹(존) 수
+    timed_out: bool = False       # [TIMEOUT] 으로 판정 미송신 (코드 검증 근거)
     lost_channels: list[str] = field(default_factory=list)
     nofeed_channels: list[str] = field(default_factory=list)
     lost_idx: list[int] = field(default_factory=list)      # 그래프 색칠용 인덱스
@@ -259,6 +262,8 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
         return insp[inner]
 
     last_start: Optional[Inspection] = None
+    ack_groups: dict[str, set] = {}      # inner -> ACK 받은 그룹(존) 집합
+    end_groups: dict[str, set] = {}      # inner -> END 받은 그룹(존) 집합
     for e in events:
         if e.kind == "INSP_START":
             it = get(e.inner_id)
@@ -270,6 +275,22 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
             # comm.log 부재 시에도 거부를 식별한다 (직전 INSP_START 에 귀속)
             if last_start is not None and not last_start.ack_status:
                 last_start.ack_status = "NoInspThread"
+        elif e.kind in ("REJECT_BUSYCAM", "REJECT_NOTREADY", "REJECT_SIM"):
+            # 코드 검증된 추가 거부 경로 (InspStarter.cpp)
+            if last_start is not None and not last_start.ack_status:
+                last_start.ack_status = {
+                    "REJECT_BUSYCAM": "BusyCam",
+                    "REJECT_NOTREADY": "NotModelLoaded",
+                    "REJECT_SIM": "SimulationModelLoaded",
+                }[e.kind]
+        elif e.kind == "IMG_TIMEOUT" and e.inner_id:
+            it = insp.get(e.inner_id)
+            if it is not None:
+                it.timed_out = True
+        elif e.kind == "SEQ_GROUP" and e.inner_id and e.inner_id not in insp:
+            # InspStarter 신호가 없는 실행(시뮬레이션 등)을 seq 에서 시드한다
+            it = get(e.inner_id)
+            it.start_ts, it.start_text = e.ts, e.ts_text
         elif e.kind == "COMM_MSG" and e.inner_id:
             # comm 메시지는 새 검사 항목을 만들지 않는다
             # (스티칭된 익일 메시지가 유령 검사를 만드는 것을 방지)
@@ -281,8 +302,12 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
                 continue
             if "INSPECT_START_ACK" in e.name:
                 it.ack_status = e.status
+                if e.status == "OK" and e.value:
+                    ack_groups.setdefault(e.inner_id, set()).add(int(e.value))
             elif "INSPECT_END" in e.name:
                 it.end_ts, it.end_text, it.end_result = e.ts, e.ts_text, e.status
+                if e.value:
+                    end_groups.setdefault(e.inner_id, set()).add(int(e.value))
         elif e.kind == "REMAIN" and e.inner_id:
             get(e.inner_id).remain_list = e.alg_list
         elif e.kind == "RESET" and e.inner_id and e.inner_id not in insp:
@@ -340,8 +365,15 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
         # "커버리지 밖(판정 불가)"으로 구분해야 한다.
         from_machine = it.wait_threads >= 0
         eof_boundary = comm_end_ts or log_end_ts
+        it.n_zones = len(ack_groups.get(it.inner_id, ()))
+        it.n_zones_done = len(end_groups.get(it.inner_id, ()))
         if it.ack_status and it.ack_status != "OK":
             it.status = "rejected"                    # NoInspThread 등
+        elif it.end_ts and it.n_zones > 1 \
+                and it.n_zones_done < it.n_zones \
+                and it.start_ts <= eof_boundary - 300:
+            # 다존 설비에서 일부 존만 END 수신 (커버리지 내) = 부분 완료
+            it.status = "incomplete"
         elif it.end_ts:
             it.status = "complete"
         elif it.n_lost:

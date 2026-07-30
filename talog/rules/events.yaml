@@ -26,6 +26,8 @@ alg:
     msg: 'Feed input image\. roi index: (?P<roi_idx>\d+), MIL_ID: (?P<extra>.*)$'
   - kind: MODEL_FAIL
     msg: 'Failed to create ALG Blocks - DLMODEL: (?P<model>\S+)'
+  - kind: MODEL_FAIL
+    msg: 'Failed to create ALG Blocks - RuleBase: (?P<model>\S+)'
   - kind: BLOCK_START
     level: Info
     header: 'Dataflow::(?P<block>\w+)::Execute$'
@@ -38,12 +40,26 @@ alg:
     msg: 'Model(?: Load)?\s*:\s*(?P<model>.+?), PostProcessing Tact = (?P<value>[\d.]+)'
   - kind: TACT_ETC
     msg: '(?P<block>[\w:]+)- (?:Processing )?Tact = (?P<value>[\d.]+)'
+  # 폴백: 모델명 없는 InspectMC (OCR/바코드/룰 후처리 블록 커버)
+  - kind: TACT_INFER
+    msg: 'InspectMC Tact = (?P<value>[\d.]+)'
 
 inspstarter:
   - kind: INSP_START
     msg: 'eAIVProtocol_M2V_InspStart is arrived\. Waiting thread count = (?P<value>\d+), innerid: (?P<inner_id>\S+), productId: (?P<product_id>\S*)'
   - kind: INSP_REJECT
     msg: 'All Seq thread is running or not initialized'
+  # 코드 검증(InspStarter.cpp): NoInspThread 외의 검사 거부 경로들
+  - kind: REJECT_BUSYCAM
+    msg: 'Device acquire failed \(BusyCam\)'
+  - kind: REJECT_NOTREADY
+    msg: 'Attempting to start inspect'
+  - kind: REJECT_SIM
+    msg: 'but current mode is simulation'
+  - kind: STORAGE_LOW
+    msg: 'available storage space for saving the images is less than'
+  - kind: LIGHT_UNSTABLE
+    msg: 'Light device is unstable'
   - kind: RECIPE_FAIL
     msg: 'Setbin ReadInfo failed'
 
@@ -53,6 +69,17 @@ seq:
     msg: '\[STRAT\] start seq async\. inner id: (?P<inner_id>\S+), product id: (?P<product_id>\S*)'
   - kind: SEQ_GROUP
     msg: 'Group Start (?P<value>\d+), Inner ID : (?P<inner_id>\S+)'
+  # 코드 검증(CommonSeq.cpp): 타임아웃/그랩실패/검사 처리시간
+  - kind: ALG_TIMEOUT
+    msg: 'Algorithm timeout : (?P<value>[\d.]+)\s*msec, image index : (?P<roi_idx>\d+)'
+  - kind: IMG_TIMEOUT
+    msg: '\[TIMEOUT\] Image processing timeout\. so return\. innerId: (?P<inner_id>\S+)'
+  - kind: GRAB_FAIL
+    msg: '\[FAIL\] Grab fail!'
+  - kind: PROC_TIME
+    msg: '\| Processing Time : (?P<value>[\d.]+)\s*msec'
+  - kind: SEQ_FINISH
+    msg: 'CommonSeq CheckFinish done: (?P<value>[\d.]+)\s*msec'
   - kind: REMAIN_TOTAL
     msg: '\[TOTAL\] innerId: (?P<inner_id>\S+), started alg list: (?P<alg_list>.*)$'
   - kind: REMAIN
@@ -87,11 +114,16 @@ comm_fail:
 # DLInfer: GPU 실행 단위 계측. executeV2 = 순수 GPU 커널 시간(ms),
 # CTRTLoader::LoadDLModel = 모델이 어느 GPU 에 올라갔는지 + 로드 시간
 dlinfer:
+  # CPU 접두는 OpenVino 백엔드 사이트 대응 (status = 디바이스 인덱스)
   - kind: DLINFER_EXEC
-    msg: 'GPU: (?P<status>\d+) - Model: (?P<model>\S+?), DeviceIdx:\d+, executeV2 Tact = (?P<value>[\d.]+)'
+    msg: '(?:GPU|CPU): (?P<status>\d+) - Model: (?P<model>\S+?), DeviceIdx:\d+, executeV2 Tact = (?P<value>[\d.]+)'
   - kind: MODEL_GPU_LOAD
     header: 'CTRTLoader::LoadDLModel$'
     msg: 'GPU: (?P<status>\d+) - Model: (?P<model>\S+?), DeviceIdx:\d+, Tact = (?P<value>[\d.]+)'
+  - kind: MODEL_FAIL
+    msg: 'Could not find trt : (?P<model>\S+?),'
+  - kind: INFER_ERROR
+    msg: '(?P<name>INPUT_TENSOR_ERROR|EXECUTE_ERROR|VERIFY_OUTPUT_ERROR|OUTPUT_TENSOR_ERROR)'
 
 # 프로세스 리소스 사용량 (5초 주기): value=RAM(MB), status=CPU%, name=스레드 수
 processusage:

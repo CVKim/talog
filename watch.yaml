@@ -25,6 +25,10 @@ rules:
     min_rise_mb: 500
     min_hours: 2.0
     cooldown_min: 240            # 이 룰만 4시간 쿨다운 (반복 억제)
+  gpu_temp:                      # GPU 온도 (nvidia-smi 기본 동봉 — 설치 불필요)
+    enabled: true
+    celsius: 85                  # 경보 임계 온도
+    record_min: 5                # 온도 이력 적재 간격(분) → gpu_날짜.jsonl
 
 notify:
   toast: true                    # Windows 토스트 팝업
