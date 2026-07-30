@@ -1,0 +1,359 @@
+"""검사 조립기 + 진단.
+
+이벤트 스트림을 inner_id 단위 '검사'와 채널 단위 '실행(run)'으로 조립하고,
+미완료 사유(미투입 / 실행 중 소실 / 시작 거부)를 분류한다.
+
+PC3 0727 RCA 에서 검증된 귀속 규칙을 사용한다:
+  - RESET 직후(수 초 내)의 Infer 계열 BLOCK_START = 해당 검사의 1차 실행
+  - 같은 obj_id(인스턴스 주소)에서 TACT_INFER 가 닫는다
+  - 종료 직후 같은 obj_id 의 재시작(BLOCK_START) = 같은 검사의 2차 실행(다중 모델 채널)
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional
+
+from .events import Event
+
+_ATTACH_WINDOW = 10.0     # RESET -> 첫 인퍼런스 시작 귀속 허용 시간(초)
+_CHAIN_WINDOW = 5.0       # 1차 종료 -> 2차 시작 연쇄 귀속 허용 시간(초)
+
+
+@dataclass(slots=True)
+class ChannelRun:
+    inner_id: str
+    alg_idx: int
+    channel: str
+    exec_no: int = 1
+    feed_ts: float = 0.0
+    feed_text: str = ""
+    roi_idx: int = 0
+    pre_ms: float = 0.0
+    infer_start_ts: float = 0.0
+    infer_end_ts: float = 0.0
+    infer_ms: float = 0.0
+    post_ms: float = 0.0
+    model: str = ""
+    status: str = "done"   # done / lost / no_infer
+
+
+@dataclass
+class Inspection:
+    inner_id: str
+    product_id: str = ""
+    start_ts: float = 0.0
+    start_text: str = ""
+    wait_threads: int = -1
+    ack_status: str = ""
+    end_ts: float = 0.0
+    end_text: str = ""
+    end_result: str = ""
+    status: str = ""
+    n_fed: int = 0
+    n_done: int = 0
+    n_lost: int = 0
+    n_nofeed: int = 0
+    n_skipped: int = 0            # 종속성 그래프 DEACTIVATE 에 의한 정상 스킵
+    lost_channels: list[str] = field(default_factory=list)
+    nofeed_channels: list[str] = field(default_factory=list)
+    lost_idx: list[int] = field(default_factory=list)      # 그래프 색칠용 인덱스
+    nofeed_idx: list[int] = field(default_factory=list)
+    skipped_idx: list[int] = field(default_factory=list)
+    remain_list: str = ""
+    gen_id: int = 0
+
+
+@dataclass(slots=True)
+class ProcessGen:
+    gen_id: int
+    start_ts: float
+    start_text: str
+    end_ts: float = 0.0
+    end_text: str = ""
+    end_cause: str = ""    # destroy / crash / kill / eof
+
+
+@dataclass(slots=True)
+class ModelLoad:
+    kind: str              # recipe_load(설비 명령) / channel_init(채널 모델 로드)
+    ts: float
+    ts_text: str
+    name: str = ""         # 레시피명 또는 채널명
+    alg_idx: int = 0
+    dur_s: float = 0.0
+    status: str = ""       # OK / FAIL / (빈값=완료 로그 없음)
+
+
+def build_model_loads(events: list[Event],
+                      alg_names: dict[int, str]) -> list[ModelLoad]:
+    """모델 로드 이력: comm 의 MODEL_LOAD 명령/응답 쌍 + 채널별 Initialize 쌍."""
+    out: list[ModelLoad] = []
+    # 1) 설비 레시피 로드 명령 (M2V_MODEL_LOAD* -> V2M_MODEL_LOAD_ACK)
+    pending_req: Optional[Event] = None
+    for e in events:
+        if e.kind != "COMM_MSG" or "MODEL_LOAD" not in e.name:
+            continue
+        if e.name.startswith("M2V_MODEL_LOAD"):
+            pending_req = e
+        elif e.name == "V2M_MODEL_LOAD_ACK":
+            toks = [t.strip() for t in e.extra.split(",")]
+            status = next((t for t in toks if t in ("OK", "NG", "FAIL")), "")
+            rname = toks[-1] if toks else ""
+            if pending_req is not None:
+                out.append(ModelLoad(kind="recipe_load", ts=pending_req.ts,
+                                     ts_text=pending_req.ts_text, name=rname,
+                                     dur_s=round(e.ts - pending_req.ts, 1),
+                                     status=status))
+                pending_req = None
+            else:
+                out.append(ModelLoad(kind="recipe_load", ts=e.ts, ts_text=e.ts_text,
+                                     name=rname, status=status))
+    if pending_req is not None:
+        out.append(ModelLoad(kind="recipe_load", ts=pending_req.ts,
+                             ts_text=pending_req.ts_text,
+                             name=pending_req.extra.split(",")[-1].strip(),
+                             status="응답 없음"))
+    # 2) 채널별 DeepLearningInspector Initialize 쌍 (obj_id 로 페어링)
+    open_init: dict[tuple[int, str], Event] = {}
+    for e in events:
+        if e.kind == "INIT_START":
+            open_init[(e.alg_idx, e.obj_id)] = e
+        elif e.kind == "INIT_END":
+            st = open_init.pop((e.alg_idx, e.obj_id), None)
+            if st is not None:
+                out.append(ModelLoad(kind="channel_init", ts=st.ts, ts_text=st.ts_text,
+                                     name=alg_names.get(e.alg_idx, str(e.alg_idx)),
+                                     alg_idx=e.alg_idx,
+                                     dur_s=round(e.ts - st.ts, 1), status="OK"))
+    for (idx, _obj), st in open_init.items():
+        out.append(ModelLoad(kind="channel_init", ts=st.ts, ts_text=st.ts_text,
+                             name=alg_names.get(idx, str(idx)), alg_idx=idx,
+                             status="미완료"))
+    out.sort(key=lambda m: m.ts)
+    return out
+
+
+# ---------------------------------------------------------------------------
+def build_process_gens(events: list[Event], log_end_ts: float) -> list[ProcessGen]:
+    """POOL_CREATE/POOL_DESTROY/CRASH/BATCH(kill/start) 로 프로세스 세대를 복원한다."""
+    marks: list[tuple[float, str, str]] = []
+    for e in events:
+        if e.kind == "POOL_CREATE":
+            marks.append((e.ts, "create", e.ts_text))
+        elif e.kind == "POOL_DESTROY":
+            marks.append((e.ts, "destroy", e.ts_text))
+        elif e.kind == "CRASH":
+            marks.append((e.ts, "crash", e.ts_text))
+        elif e.kind == "BATCH" and "kill" in e.name.lower():
+            marks.append((e.ts, "kill", e.ts_text))
+    marks.sort()
+    gens: list[ProcessGen] = []
+    cur: Optional[ProcessGen] = None
+    # 첫 create 이전 구간: 전일부터 가동 중이던 세대로 시드한다
+    first_create = next((m[0] for m in marks if m[1] == "create"), None)
+    log_first = min((e.ts for e in events), default=0.0)
+    if log_first and (first_create is None or first_create - log_first > 60):
+        cur = ProcessGen(gen_id=1, start_ts=log_first, start_text="(전일부터 가동)")
+        gens.append(cur)
+    for ts, what, text in marks:
+        if what == "create":
+            if cur is not None and not cur.end_ts:
+                cur.end_ts, cur.end_text, cur.end_cause = ts, text, cur.end_cause or "unknown"
+            cur = ProcessGen(gen_id=len(gens) + 1, start_ts=ts, start_text=text)
+            gens.append(cur)
+        else:
+            if cur is not None and not cur.end_ts:
+                cur.end_ts, cur.end_text, cur.end_cause = ts, text, what
+    if cur is not None and not cur.end_ts:
+        cur.end_ts, cur.end_text, cur.end_cause = log_end_ts, "", "eof"
+    return gens
+
+
+# ---------------------------------------------------------------------------
+def build_channel_runs(alg_events_by_file: dict[int, tuple[int, str, list[Event]]]
+                       ) -> list[ChannelRun]:
+    """(하위 호환용) 여러 alg 파일 이벤트를 한꺼번에 조립한다."""
+    runs: list[ChannelRun] = []
+    for _fid, (alg_idx, channel, evs) in alg_events_by_file.items():
+        runs.extend(build_runs_for_file(alg_idx, channel, evs))
+    return runs
+
+
+def build_runs_for_file(alg_idx: int, channel: str,
+                        evs: list[Event]) -> list[ChannelRun]:
+    """alg 파일 하나의 이벤트를 실행(run) 단위로 조립한다.
+
+    고케이던스 사이트(일 10만+ 검사)에서 메모리를 아끼기 위해 파일 단위로
+    즉시 조립하고 원본 이벤트는 호출부에서 해제한다.
+    """
+    runs: list[ChannelRun] = []
+    if True:  # 기존 들여쓰기 유지용 블록
+        last_reset: Optional[Event] = None
+        cur_feed: dict[str, float | str | int] = {}
+        open_by_obj: dict[str, ChannelRun] = {}      # obj_id -> 진행 중 run
+        chain_by_obj: dict[str, tuple[str, float]] = {}  # obj_id -> (inner, 직전 종료 ts)
+        for e in evs:
+            if e.kind == "RESET":
+                last_reset = e
+                cur_feed = {}
+            elif e.kind == "FEED" and last_reset is not None:
+                cur_feed = {"roi": e.roi_idx}
+            elif e.kind == "TACT_PRE" and last_reset is not None \
+                    and e.ts - last_reset.ts <= _ATTACH_WINDOW:
+                cur_feed["pre"] = e.value
+            elif e.kind == "BLOCK_START" and e.block.startswith("Infer"):
+                inner, exec_no = "", 1
+                if last_reset is not None and e.ts - last_reset.ts <= _ATTACH_WINDOW:
+                    inner = last_reset.inner_id
+                    last_reset = None                # 1회 귀속 후 소비
+                else:
+                    ch = chain_by_obj.get(e.obj_id)
+                    if ch and e.ts - ch[1] <= _CHAIN_WINDOW:
+                        inner = ch[0]
+                        exec_no = 2
+                if not inner:
+                    continue                          # 귀속 불가 실행은 통계에서 제외
+                run = ChannelRun(inner_id=inner, alg_idx=alg_idx, channel=channel,
+                                 exec_no=exec_no, infer_start_ts=e.ts,
+                                 feed_ts=e.ts, feed_text=e.ts_text,
+                                 roi_idx=int(cur_feed.get("roi", 0) or 0),
+                                 pre_ms=float(cur_feed.get("pre", 0) or 0),
+                                 status="lost")
+                open_by_obj[e.obj_id] = run
+                runs.append(run)
+            elif e.kind == "TACT_INFER":
+                run = open_by_obj.pop(e.obj_id, None)
+                if run is not None:
+                    run.infer_end_ts = e.ts
+                    run.infer_ms = e.value
+                    run.model = e.model
+                    run.status = "done"
+                    chain_by_obj[e.obj_id] = (run.inner_id, e.ts)
+            elif e.kind == "TACT_POST":
+                # 후처리 블록(DetectAlg 등)은 별도 인스턴스이므로 obj_id 로 짝을 맞출 수
+                # 없다 → 같은 파일에서 직전에 완료된 run 에 시간 근접으로 귀속한다.
+                for r in reversed(runs):
+                    if r.alg_idx == alg_idx and r.status == "done" \
+                            and 0 <= e.ts - r.infer_end_ts <= 10.0:
+                        r.post_ms = e.value
+                        break
+    return runs
+
+
+# ---------------------------------------------------------------------------
+def build_inspections(events: list[Event], runs: list[ChannelRun],
+                      dl_channels: dict[int, str], gens: list[ProcessGen],
+                      log_end_ts: float, comm_end_ts: float = 0.0) -> list[Inspection]:
+    insp: dict[str, Inspection] = {}
+
+    # 종속성 그래프의 검사별 비활성 alg 집합 (정상 스킵 판정)
+    deact: dict[str, set[int]] = {}
+    for e in events:
+        if e.kind == "ALG_DEACT" and e.inner_id:
+            deact.setdefault(e.inner_id, set()).add(int(e.value))
+
+    def get(inner: str) -> Inspection:
+        if inner not in insp:
+            insp[inner] = Inspection(inner_id=inner)
+        return insp[inner]
+
+    last_start: Optional[Inspection] = None
+    for e in events:
+        if e.kind == "INSP_START":
+            it = get(e.inner_id)
+            it.start_ts, it.start_text = e.ts, e.ts_text
+            it.product_id = e.product_id
+            it.wait_threads = int(e.value)
+            last_start = it
+        elif e.kind == "INSP_REJECT":
+            # comm.log 부재 시에도 거부를 식별한다 (직전 INSP_START 에 귀속)
+            if last_start is not None and not last_start.ack_status:
+                last_start.ack_status = "NoInspThread"
+        elif e.kind == "COMM_MSG" and e.inner_id:
+            # comm 메시지는 새 검사 항목을 만들지 않는다
+            # (스티칭된 익일 메시지가 유령 검사를 만드는 것을 방지)
+            it = insp.get(e.inner_id)
+            if it is None and "INSPECT_START_ACK" in e.name:
+                it = get(e.inner_id)
+                it.start_ts, it.start_text = e.ts, e.ts_text
+            if it is None:
+                continue
+            if "INSPECT_START_ACK" in e.name:
+                it.ack_status = e.status
+            elif "INSPECT_END" in e.name:
+                it.end_ts, it.end_text, it.end_result = e.ts, e.ts_text, e.status
+        elif e.kind == "REMAIN" and e.inner_id:
+            get(e.inner_id).remain_list = e.alg_list
+        elif e.kind == "RESET" and e.inner_id and e.inner_id not in insp:
+            # InspStarter 로그가 없는 경우의 방어적 시드
+            it = get(e.inner_id)
+            it.start_ts, it.start_text = e.ts, e.ts_text
+            it.product_id = e.product_id
+
+    # 채널 런 집계
+    by_inner: dict[str, list[ChannelRun]] = {}
+    for r in runs:
+        by_inner.setdefault(r.inner_id, []).append(r)
+
+    # 설비 신호 없이 실행된 검사(시뮬레이션 등)는 런에서 시드한다
+    for inner, rs in by_inner.items():
+        if inner not in insp:
+            it = get(inner)
+            first = min(rs, key=lambda r: r.feed_ts or r.infer_start_ts)
+            it.start_ts = first.feed_ts or first.infer_start_ts
+            it.start_text = first.feed_text
+
+    for it in insp.values():
+        rs = by_inner.get(it.inner_id, [])
+        fed_alg = {r.alg_idx for r in rs}
+        done_alg = {r.alg_idx for r in rs if r.status == "done"}
+        lost = sorted({r.alg_idx for r in rs if r.status == "lost"})
+        it.n_fed = len(fed_alg)
+        it.n_done = len(done_alg)
+        it.n_lost = len(lost)
+        it.lost_idx = list(lost)
+        it.lost_channels = [f"{a}({dl_channels.get(a, '?')})" for a in lost]
+        if it.ack_status == "OK" or (it.ack_status == "" and fed_alg):
+            nofeed = set(dl_channels) - fed_alg
+            # 종속성 그래프에서 비활성된 alg 는 '정상 스킵'으로 분리한다
+            skipped = nofeed & deact.get(it.inner_id, set())
+            missing = sorted(nofeed - skipped)
+            it.n_skipped = len(skipped)
+            it.n_nofeed = len(missing)
+            it.skipped_idx = sorted(skipped)
+            it.nofeed_idx = missing
+            it.nofeed_channels = [f"{a}({dl_channels.get(a, '?')})" for a in missing]
+
+        # 세대 매핑
+        for g in gens:
+            if g.start_ts <= it.start_ts <= (g.end_ts or log_end_ts):
+                it.gen_id = g.gen_id
+                break
+
+        # 상태 분류. wait_threads < 0 이면 설비 시작 신호(INSP_START) 없이
+        # RESET 으로만 발견된 검사 = 시뮬레이션/수동 실행으로 간주한다.
+        #
+        # 완료(END) 판정의 커버리지는 comm 로그가 존재하는 구간까지만 유효하다.
+        # 가동 중 복사된 로그는 파일별 절단 시각이 달라(comm 이 먼저 잘리는 사례
+        # 실측: Tenneco 30일 13분 차) comm 절단 이후 시작 검사는 "미완료"가 아니라
+        # "커버리지 밖(판정 불가)"으로 구분해야 한다.
+        from_machine = it.wait_threads >= 0
+        eof_boundary = comm_end_ts or log_end_ts
+        if it.ack_status and it.ack_status != "OK":
+            it.status = "rejected"                    # NoInspThread 등
+        elif it.end_ts:
+            it.status = "complete"
+        elif it.n_lost:
+            it.status = "incomplete_lost"             # 실행 중 소실
+        elif not from_machine:
+            it.status = "sim_complete" if (it.n_fed and it.n_done >= it.n_fed) \
+                else "sim_partial"
+        elif it.start_ts and it.start_ts > eof_boundary - 300:
+            it.status = "in_progress_eof"             # 로그 절단(판정 불가)
+        elif it.start_ts:
+            it.status = "incomplete"
+        else:
+            it.status = "unknown"
+
+    return sorted(insp.values(), key=lambda x: x.start_ts or 0)

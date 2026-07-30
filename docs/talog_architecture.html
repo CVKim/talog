@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<style>
+ html,body{margin:0;padding:0;background:#fff}
+ svg{font-family:'Malgun Gothic','Segoe UI',sans-serif}
+ .zone{stroke-dasharray:7 5;stroke-width:2}
+ .zlabel{font-size:15px;font-weight:700}
+ .box{fill:#fff;stroke:#334155;stroke-width:1.6}
+ .core{fill:#fff;stroke:#0f172a;stroke-width:2.4}
+ .accent{fill:#fff7ed;stroke:#f97316;stroke-width:2.4}
+ .bname{font-size:13.5px;font-weight:700;fill:#0f172a}
+ .bsub{font-size:11px;fill:#64748b}
+ .db{fill:#f1f5f9;stroke:#64748b;stroke-width:1.3}
+ .badge{fill:#f97316}
+ .btext{font-size:14px;font-weight:800;fill:#fff;letter-spacing:.5px}
+ .flow{stroke:#475569;stroke-width:1.8;fill:none;marker-end:url(#ar)}
+ .flow2{stroke:#475569;stroke-width:1.8;fill:none;marker-end:url(#ar);marker-start:url(#arb)}
+ .oflow{stroke:#f97316;stroke-width:2.4;fill:none;marker-end:url(#aro)}
+ .lab{font-size:11.5px;fill:#334155}
+ .labB{font-size:12px;font-weight:700;fill:#334155}
+ .num{fill:#0f172a}
+ .numo{fill:#f97316}
+ .numt{font-size:12px;font-weight:800;fill:#fff}
+ .legT{font-size:13.5px;font-weight:800}
+ .legD{font-size:12px;fill:#475569}
+ .chip{fill:#eef2f7;stroke:#cbd5e1;stroke-width:1}
+ .chipt{font-size:11.5px;fill:#334155;font-weight:600}
+</style></head><body>
+<svg width="1680" height="1020" viewBox="0 0 1680 1020" xmlns="http://www.w3.org/2000/svg">
+<defs>
+ <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1 L8,4.5 L1,8 Z" fill="#475569"/></marker>
+ <marker id="arb" markerWidth="9" markerHeight="9" refX="2" refY="4.5" orient="auto"><path d="M8,1 L1,4.5 L8,8 Z" fill="#475569"/></marker>
+ <marker id="aro" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1 L8,4.5 L1,8 Z" fill="#f97316"/></marker>
+</defs>
+
+<text x="48" y="38" font-size="24" font-weight="800" fill="#0f172a">talog — talos 로그 분석기 아키텍처</text>
+<text x="48" y="61" font-size="13" fill="#64748b">설비 로그 → ① 사후 분석(RCA 리포트) · ② 자연어 질의(로컬 LLM) · ③ 예지보전(상주 감시) — 하나의 파서·룰 엔진으로 3개 모드 동작</text>
+
+<!-- ══════════ 설비 PC 존 ══════════ -->
+<rect class="zone" x="48" y="84" width="562" height="600" rx="14" fill="#faf5ff" stroke="#a855f7"/>
+<text class="zlabel" x="66" y="110" fill="#7e22ce">설비 PC (현장 · 상시 가동)</text>
+
+<rect class="box" x="80" y="132" width="230" height="72" rx="10"/>
+<text class="bname" x="195" y="162" text-anchor="middle">talos 검사 프로그램</text>
+<text class="bsub" x="195" y="180" text-anchor="middle">촬상·AI 검사 (기존 운영 SW)</text>
+
+<rect class="db" x="80" y="252" width="230" height="128" rx="10"/>
+<text class="bname" x="195" y="276" text-anchor="middle" font-size="12.5px">D:\AIV_LOG\Talos\월\일\</text>
+<text class="bsub" x="195" y="298" text-anchor="middle">alg_dl_*(채널별) · comm · InspStarter</text>
+<text class="bsub" x="195" y="315" text-anchor="middle">seq · exception · DLInfer · ProcessUsage</text>
+<text class="bsub" x="195" y="332" text-anchor="middle">WorkerThreadPool · BatchRunLog …</text>
+<text class="bsub" x="195" y="360" text-anchor="middle" font-weight="700">하루 수십만~수백만 라인</text>
+<line class="flow" x1="195" y1="204" x2="195" y2="252"/>
+<circle class="num" cx="220" cy="228" r="11"/><text class="numt" x="220" y="232.5" text-anchor="middle">1</text>
+<text class="lab" x="238" y="232">상시 기록</text>
+
+<rect class="db" x="80" y="470" width="230" height="96" rx="10"/>
+<text class="bname" x="195" y="494" text-anchor="middle" font-size="12.5px">레시피 D:\AIV\MODEL\제품\</text>
+<text class="bsub" x="195" y="514" text-anchor="middle">ALG.ini · ROI.ini · DLMODEL.ini</text>
+<text class="bsub" x="195" y="531" text-anchor="middle">알고리즘·모델·GPU 배치의 설계도</text>
+
+<!-- watch -->
+<rect class="accent" x="352" y="252" width="230" height="128" rx="10"/>
+<text class="bname" x="467" y="276" text-anchor="middle">talog watch</text>
+<text class="bsub" x="467" y="294" text-anchor="middle">예지보전 상주 감시</text>
+<text class="bsub" x="467" y="315" text-anchor="middle">증분 tail(20초) · 감지 룰 5종</text>
+<text class="bsub" x="467" y="332" text-anchor="middle">에러반복·정체·스레드고갈·재시작·릭</text>
+<text class="bsub" x="467" y="356" text-anchor="middle" font-weight="700">저부하: 우선순위 강등 · LLM은 CPU</text>
+<line class="flow" x1="310" y1="316" x2="352" y2="316"/>
+
+<rect class="db" x="352" y="470" width="230" height="70" rx="10"/>
+<text class="bname" x="467" y="496" text-anchor="middle" font-size="12.5px">D:\AIV_LOG\TalogWatch\</text>
+<text class="bsub" x="467" y="516" text-anchor="middle">alerts_날짜.jsonl (예지보전 기록)</text>
+<line class="flow" x1="467" y1="380" x2="467" y2="470"/>
+<circle class="numo" cx="443" cy="410" r="11"/><text class="numt" x="443" y="414.5" text-anchor="middle">5</text>
+
+<rect class="badge" x="240" y="646" width="130" height="30" rx="15"/>
+<text class="btext" x="305" y="667" text-anchor="middle">TALOG WATCH</text>
+
+<!-- 알림 대상 (존 밖 상단) -->
+<rect class="box" x="352" y="150" width="230" height="56" rx="10"/>
+<text class="bname" x="467" y="174" text-anchor="middle" font-size="12.5px">토스트 팝업 · 웹훅</text>
+<text class="bsub" x="467" y="192" text-anchor="middle">Teams / 사내 관제 서버 (JSON)</text>
+<line class="oflow" x1="467" y1="252" x2="467" y2="206"/>
+<text class="labB" x="480" y="236" fill="#c2410c">실시간 경보</text>
+
+<!-- ══════════ talog 분석 코어 존 ══════════ -->
+<rect class="zone" x="660" y="84" width="470" height="600" rx="14" fill="#fff9f2" stroke="#f97316"/>
+<text class="zlabel" x="678" y="110" fill="#c2410c">talog 분석 코어 (사무실/설비 어디서든 · exe 단독 실행)</text>
+<rect class="badge" x="830" y="646" width="130" height="30" rx="15"/>
+<text class="btext" x="895" y="667" text-anchor="middle">TALOG</text>
+
+<rect class="box" x="700" y="140" width="390" height="58" rx="10"/>
+<text class="bname" x="895" y="164" text-anchor="middle">1. 스트리밍 파서</text>
+<text class="bsub" x="895" y="182" text-anchor="middle">라인 문법·인코딩 방어 · 64종 파일 자동 분류</text>
+<line class="flow" x1="895" y1="198" x2="895" y2="216"/>
+<rect class="box" x="700" y="216" width="390" height="58" rx="10"/>
+<text class="bname" x="895" y="240" text-anchor="middle">2. 이벤트 추출 — YAML 룰 사전</text>
+<text class="bsub" x="895" y="258" text-anchor="middle">검사 신호·Tact·프로토콜·크래시·GPU·리소스 (수정 = YAML만)</text>
+<line class="flow" x1="895" y1="274" x2="895" y2="292"/>
+<rect class="box" x="700" y="292" width="390" height="58" rx="10"/>
+<text class="bname" x="895" y="316" text-anchor="middle">3. 검사 조립 + 레시피 조인</text>
+<text class="bsub" x="895" y="334" text-anchor="middle">inner id 별 채널 실행 재구성 · alg번호→결함명·GPU 번역</text>
+<line class="flow" x1="895" y1="350" x2="895" y2="368"/>
+<rect class="accent" x="700" y="368" width="390" height="58" rx="10"/>
+<text class="bname" x="895" y="392" text-anchor="middle">4. RCA 자동 진단 엔진</text>
+<text class="bsub" x="895" y="410" text-anchor="middle">미완료↔재시작 상관 · 병목 · GPU 경합 · 메모리 추세 → 소견 서술</text>
+
+<!-- 산출물 -->
+<line class="flow" x1="895" y1="426" x2="895" y2="452"/>
+<rect class="core" x="700" y="452" width="150" height="76" rx="10"/>
+<text class="bname" x="775" y="482" text-anchor="middle" font-size="12.5px">HTML 리포트</text>
+<text class="bsub" x="775" y="500" text-anchor="middle">인터랙티브 · 1파일</text>
+<rect class="box" x="866" y="452" width="110" height="76" rx="10"/>
+<text class="bname" x="921" y="482" text-anchor="middle" font-size="12.5px">SQLite DB</text>
+<text class="bsub" x="921" y="500" text-anchor="middle">조회·질의용</text>
+<rect class="box" x="992" y="452" width="98" height="76" rx="10"/>
+<text class="bname" x="1041" y="482" text-anchor="middle" font-size="12px">진단.md</text>
+<text class="bsub" x="1041" y="500" text-anchor="middle">보고용 소견</text>
+<circle class="num" cx="686" cy="440" r="11"/><text class="numt" x="686" y="444.5" text-anchor="middle">3</text>
+
+<!-- 입력 화살표 (토스트 박스 위로 우회) -->
+<path class="flow" d="M 310 268 C 420 120, 560 108, 700 152"/>
+<text class="labB" x="512" y="120" text-anchor="middle">로그 폴더 입력 (bat 드래그 / talog.exe)</text>
+<circle class="num" cx="620" cy="132" r="11"/><text class="numt" x="620" y="136.5" text-anchor="middle">2</text>
+<path class="flow" d="M 310 512 C 480 460, 580 380, 700 328"/>
+<text class="lab" x="520" y="446" text-anchor="middle">레시피 조인 (선택)</text>
+
+<!-- ══════════ 로컬 LLM 존 ══════════ -->
+<rect class="zone" x="1180" y="84" width="452" height="290" rx="14" fill="#f0fdf4" stroke="#22c55e"/>
+<text class="zlabel" x="1198" y="110" fill="#15803d">로컬 LLM (선택 · 오프라인)</text>
+<rect class="badge" x="1345" y="336" width="120" height="30" rx="15"/>
+<text class="btext" x="1405" y="357" text-anchor="middle">TALOG ASK</text>
+
+<rect class="core" x="1210" y="132" width="250" height="80" rx="10"/>
+<text class="bname" x="1335" y="160" text-anchor="middle">Ollama — qwen2.5</text>
+<text class="bsub" x="1335" y="178" text-anchor="middle">로컬 GPU(RTX3080) 또는 CPU 선택</text>
+<text class="bsub" x="1335" y="196" text-anchor="middle">SQL 도구로 DB 조회 → 근거 답변</text>
+<rect class="box" x="1480" y="132" width="132" height="80" rx="10" stroke-dasharray="5 4"/>
+<text class="bname" x="1546" y="166" text-anchor="middle" font-size="12px">Claude API</text>
+<text class="bsub" x="1546" y="184" text-anchor="middle">(선택·품질 최상)</text>
+
+<text class="bsub" x="1335" y="240" text-anchor="middle">"미완료 원인이 뭐야?" → SQL 자동 생성·자기 교정</text>
+<text class="bsub" x="1335" y="258" text-anchor="middle">--llm : 진단 소견을 AI 종합 소견 문단으로</text>
+
+<path class="flow2" d="M 976 470 C 1110 420, 1170 310, 1216 216"/>
+<text class="labB" x="1078" y="444" text-anchor="middle">SQL 질의 ↔ 결과</text>
+<circle class="num" cx="1152" cy="352" r="11"/><text class="numt" x="1152" y="356.5" text-anchor="middle">4</text>
+
+<!-- ══════════ 사용자 존 ══════════ -->
+<rect class="zone" x="1180" y="404" width="452" height="280" rx="14" fill="#f8fafc" stroke="#94a3b8"/>
+<text class="zlabel" x="1198" y="430" fill="#475569">엔지니어 (알고리즘·설비·품질)</text>
+<rect class="box" x="1240" y="452" width="330" height="96" rx="11"/>
+<text x="1300" y="510" text-anchor="middle" font-size="30">💻</text>
+<text class="bname" x="1430" y="490" text-anchor="middle" font-size="12.5px">리포트 열람 · 자연어 질문</text>
+<text class="bsub" x="1430" y="510" text-anchor="middle">실시간 경보 수신 (토스트/웹훅)</text>
+<text class="bsub" x="1405" y="580" text-anchor="middle">"어떤 검사가 왜 빠졌는지" 를 클릭 몇 번으로 —</text>
+<text class="bsub" x="1405" y="598" text-anchor="middle">타임라인 → 미완료 표 → 간트 → 종속성 그래프</text>
+
+<path class="flow" d="M 800 528 C 900 606, 1110 586, 1240 522"/>
+<text class="lab" x="1010" y="600" text-anchor="middle">리포트 열람 (브라우저)</text>
+<line class="flow" x1="1405" y1="452" x2="1370" y2="216"/>
+<text class="lab" x="1418" y="330">질문/답변</text>
+
+<!-- ══════════ 리포트 구성 미리보기 ══════════ -->
+<rect x="48" y="712" width="1084" height="150" rx="12" fill="#fff" stroke="#e2e8f0"/>
+<text class="legT" x="70" y="740" fill="#0f172a">인터랙티브 HTML 리포트 — 탭 2개 (종합 / 상세 분석)</text>
+<g>
+ <rect class="chip" x="70"  y="756" width="118" height="26" rx="13"/><text class="chipt" x="129" y="773" text-anchor="middle">KPI 카드</text>
+ <rect class="chip" x="196" y="756" width="150" height="26" rx="13"/><text class="chipt" x="271" y="773" text-anchor="middle">자동 진단 소견(RCA)</text>
+ <rect class="chip" x="354" y="756" width="150" height="26" rx="13"/><text class="chipt" x="429" y="773" text-anchor="middle">타임라인(재시작·크래시)</text>
+ <rect class="chip" x="512" y="756" width="130" height="26" rx="13"/><text class="chipt" x="577" y="773" text-anchor="middle">미완료 사유 표</text>
+ <rect class="chip" x="650" y="756" width="140" height="26" rx="13"/><text class="chipt" x="720" y="773" text-anchor="middle">검사별 간트 차트</text>
+ <rect class="chip" x="798" y="756" width="140" height="26" rx="13"/><text class="chipt" x="868" y="773" text-anchor="middle">종속성 그래프</text>
+ <rect class="chip" x="946" y="756" width="166" height="26" rx="13"/><text class="chipt" x="1029" y="773" text-anchor="middle">채널·모델 Tact 통계</text>
+ <rect class="chip" x="70"  y="790" width="166" height="26" rx="13"/><text class="chipt" x="153" y="807" text-anchor="middle">GPU 실행시간 추이</text>
+ <rect class="chip" x="244" y="790" width="150" height="26" rx="13"/><text class="chipt" x="319" y="807" text-anchor="middle">모델 로드 이력</text>
+ <rect class="chip" x="402" y="790" width="130" height="26" rx="13"/><text class="chipt" x="467" y="807" text-anchor="middle">에러/예외 집계</text>
+ <rect class="chip" x="540" y="790" width="170" height="26" rx="13"/><text class="chipt" x="625" y="807" text-anchor="middle">CPU/RAM·메모리 릭 판정</text>
+ <rect class="chip" x="718" y="790" width="150" height="26" rx="13"/><text class="chipt" x="793" y="807" text-anchor="middle">inner id 검색</text>
+ <rect class="chip" x="876" y="790" width="140" height="26" rx="13"/><text class="chipt" x="946" y="807" text-anchor="middle">정렬·클릭 드릴다운</text>
+</g>
+<text class="legD" x="70" y="844">모든 시각화가 외부 의존 없는 <tspan font-weight="700">단일 HTML 파일</tspan> — 메신저로 공유해도 받은 쪽에서 그대로 인터랙티브 동작</text>
+
+<!-- 검증 실적 -->
+<rect x="1180" y="712" width="452" height="150" rx="12" fill="#f0f9ff" stroke="#bae6fd"/>
+<text class="legT" x="1202" y="740" fill="#0369a1">검증 실적</text>
+<text class="legD" x="1202" y="766">· 5개 사이트 검증 — 타이어·볼조인트·부싱 (일 4.3만 검사)</text>
+<text class="legD" x="1202" y="788">· 원문 전수 감사: 판정 오류 0건 (START/END 원장 일치)</text>
+<text class="legD" x="1202" y="810">· PC3 사고 리플레이: 미검사 33분 전 사전 경보 재현</text>
+<text class="legD" x="1202" y="832">· 300만 라인/일 → 리포트 생성 수 분</text>
+
+<!-- ══════════ 하단 3모드 요약 ══════════ -->
+<rect x="48" y="890" width="1584" height="106" rx="12" fill="#f8fafc" stroke="#e2e8f0"/>
+<circle class="num" cx="86" cy="922" r="11"/><text class="numt" x="86" y="926.5" text-anchor="middle">2</text>
+<text class="legT" x="106" y="927" fill="#c2410c">사후 분석 — talog</text>
+<text class="legD" x="106" y="950">로그(+레시피) 입력 → RCA 자동 진단 + 리포트</text>
+<text class="legD" x="106" y="970">run_talog.bat 드래그 또는 talog.exe (Python 불필요)</text>
+
+<circle class="num" cx="600" cy="922" r="11"/><text class="numt" x="600" y="926.5" text-anchor="middle">4</text>
+<text class="legT" x="620" y="927" fill="#15803d">대화형 질의 — talog ask</text>
+<text class="legD" x="620" y="950">한국어 질문 → 로컬 LLM이 DB를 조회해 근거와 답변</text>
+<text class="legD" x="620" y="970">오프라인 동작 · CPU/GPU 선택 · Claude API 선택 지원</text>
+
+<circle class="numo" cx="1114" cy="922" r="11"/><text class="numt" x="1114" y="926.5" text-anchor="middle">5</text>
+<text class="legT" x="1134" y="927" fill="#7e22ce">예지보전 — talog watch</text>
+<text class="legD" x="1134" y="950">설비 PC 백그라운드 상주(저부하) · 이상 징후 실시간 경보</text>
+<text class="legD" x="1134" y="970">토스트/웹훅/JSONL · 과거 사고 리플레이로 룰 검증 가능</text>
+</svg>
+</body></html>

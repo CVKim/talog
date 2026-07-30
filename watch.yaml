@@ -1,0 +1,39 @@
+# talog watch 설정 — 예지보전 상주 감시
+# (설비 PC 에 배포 시 site 이름과 webhook 만 채우면 됩니다)
+
+watch_root: D:\AIV_LOG\Talos     # talos 로그 루트 (YYYY_MM\DD 자동 추적)
+poll_seconds: 20                 # 폴링 주기(초) — 새로 쓰인 바이트만 읽음
+alert_dir: D:\AIV_LOG\TalogWatch # 예지보전 알림/상태 적재 위치 (별도 폴더)
+low_priority: true               # 프로세스 우선순위 강등 (검사 프로그램 보호)
+site: ""                         # 설비 식별자 (예: PC3, cmfb#1)
+cooldown_min: 30                 # 동일 알림 재발송 억제(분)
+
+rules:
+  error_repeat:                  # 동일 에러 반복
+    window_min: 10
+    count: 5
+  no_insp_thread:                # 검사 시작 거부 = 미검사 임박 (즉시 경보)
+    enabled: true
+  insp_stall:                    # 검사 정체 (정상 소요 중앙값의 N배)
+    factor_x_median: 2.0
+    min_seconds: 180
+  restart_burst:                 # 재시작 빈발
+    window_min: 60
+    count: 3
+  memory_trend:                  # 메모리 증가 추세 (릭 의심)
+    mb_per_hour: 100
+    min_rise_mb: 500
+    min_hours: 2.0
+    cooldown_min: 240            # 이 룰만 4시간 쿨다운 (반복 억제)
+
+notify:
+  toast: true                    # Windows 토스트 팝업
+  webhook: ""                    # http(s)://... (Teams/Slack/사내 서버) — 비우면 끔
+  jsonl: true                    # alert_dir\alerts_YYYYMMDD.jsonl 적재
+
+llm:                             # 선택: 사용자 지시문 기반 LLM 점검
+  enabled: false
+  device: cpu                    # cpu = 검사 GPU 를 건드리지 않음 / gpu
+  model: qwen2.5:7b
+  script: ""                     # 감시 지시문 파일 경로 (자연어)
+  interval_min: 30

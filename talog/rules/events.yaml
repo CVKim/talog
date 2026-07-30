@@ -1,0 +1,107 @@
+# talog 이벤트 추출 룰 사전
+#
+# 카테고리별 룰 목록. 각 룰:
+#   kind      : 이벤트 종류 (영문 대문자)
+#   msg       : 메시지 정규식 (필수). 이름 있는 그룹으로 필드 캡처.
+#   header    : 헤더 정규식 (선택)
+#   level     : 레벨 일치 (선택: Debug/Info/Error/Verbose)
+#
+# 캡처 그룹 이름 규약: inner_id, product_id, roi_idx, alg_list, model,
+#                     value(숫자 ms), status, block, wait, name
+# 주의: seq/InspStarter/Comm 등 talos-platform 소속 로그의 메시지는 코드 근거가
+#       없으므로(레포 외부) 실측 기반이다. 플랫폼 업데이트 시 이 파일만 수정한다.
+
+alg:
+  - kind: RESET
+    header: 'BaseInspector::Reset$'
+    msg: 'Reset\. inner id: (?P<inner_id>\S+), product id: (?P<product_id>.*)$'
+  - kind: INIT_START
+    header: 'DeepLearningInspector::Initialize$'
+    msg: '^\+Initialize$'
+  - kind: INIT_END
+    header: 'DeepLearningInspector::Initialize$'
+    msg: '^-Initialize$'
+  - kind: FEED
+    header: 'BaseInspector::SetInputImage$'
+    msg: 'Feed input image\. roi index: (?P<roi_idx>\d+), MIL_ID: (?P<extra>.*)$'
+  - kind: MODEL_FAIL
+    msg: 'Failed to create ALG Blocks - DLMODEL: (?P<model>\S+)'
+  - kind: BLOCK_START
+    level: Info
+    header: 'Dataflow::(?P<block>\w+)::Execute$'
+    msg: '.*'
+  - kind: TACT_PRE
+    msg: 'Model : (?P<model>.+?), PreProcessing Tact = (?P<value>[\d.]+)'
+  - kind: TACT_INFER
+    msg: 'Model : (?P<model>.+?), InspectMC Tact = (?P<value>[\d.]+)'
+  - kind: TACT_POST
+    msg: 'Model(?: Load)?\s*:\s*(?P<model>.+?), PostProcessing Tact = (?P<value>[\d.]+)'
+  - kind: TACT_ETC
+    msg: '(?P<block>[\w:]+)- (?:Processing )?Tact = (?P<value>[\d.]+)'
+
+inspstarter:
+  - kind: INSP_START
+    msg: 'eAIVProtocol_M2V_InspStart is arrived\. Waiting thread count = (?P<value>\d+), innerid: (?P<inner_id>\S+), productId: (?P<product_id>\S*)'
+  - kind: INSP_REJECT
+    msg: 'All Seq thread is running or not initialized'
+  - kind: RECIPE_FAIL
+    msg: 'Setbin ReadInfo failed'
+
+seq:
+  # 플랫폼 로그의 오타(STRAT) 그대로 매칭한다
+  - kind: SEQ_START
+    msg: '\[STRAT\] start seq async\. inner id: (?P<inner_id>\S+), product id: (?P<product_id>\S*)'
+  - kind: SEQ_GROUP
+    msg: 'Group Start (?P<value>\d+), Inner ID : (?P<inner_id>\S+)'
+  - kind: REMAIN_TOTAL
+    msg: '\[TOTAL\] innerId: (?P<inner_id>\S+), started alg list: (?P<alg_list>.*)$'
+  - kind: REMAIN
+    msg: '\[REMAIN\] innerId: (?P<inner_id>\S+), remain alg list: (?P<alg_list>.*)$'
+
+# 고케이던스 사이트의 MOTION/KEEP_ALIVE 홍수를 제외하고 검사 라이프사이클과
+# 모델 로드 메시지만 수집한다 (M2V_INSPECT_START 는 InspStarter 로 대체)
+comm:
+  - kind: COMM_MSG
+    msg: '(?P<name>V2M_(?!REQUEST_MOTION|KEEP_ALIVE)[A-Z_]+|M2V_MODEL_LOAD[A-Z_]*),(?P<extra>.*)$'
+
+pool:
+  - kind: POOL_CREATE
+    msg: 'WorkerThreadPool is created: eFunction$'
+  - kind: POOL_DESTROY
+    msg: 'StopAllThreadJob for eFunction$'
+
+exception:
+  - kind: CRASH
+    msg: '\[exception_callback\] exception occurred'
+  - kind: EXC_REDIRECT
+    msg: '^(?P<extra>.*), @(?P<name>.+\.log)$'
+
+inspskipper:
+  - kind: RECIPE_LOAD
+    msg: 'Load InspSkipper recipe : \[(?P<value>\d+)\](?P<name>.+)$'
+
+comm_fail:
+  - kind: COMM_FAIL
+    msg: 'RecvLength error.*error code :(?P<value>\d+)'
+
+# DLInfer: GPU 실행 단위 계측. executeV2 = 순수 GPU 커널 시간(ms),
+# CTRTLoader::LoadDLModel = 모델이 어느 GPU 에 올라갔는지 + 로드 시간
+dlinfer:
+  - kind: DLINFER_EXEC
+    msg: 'GPU: (?P<status>\d+) - Model: (?P<model>\S+?), DeviceIdx:\d+, executeV2 Tact = (?P<value>[\d.]+)'
+  - kind: MODEL_GPU_LOAD
+    header: 'CTRTLoader::LoadDLModel$'
+    msg: 'GPU: (?P<status>\d+) - Model: (?P<model>\S+?), DeviceIdx:\d+, Tact = (?P<value>[\d.]+)'
+
+# 프로세스 리소스 사용량 (5초 주기): value=RAM(MB), status=CPU%, name=스레드 수
+processusage:
+  - kind: USAGE
+    msg: 'CPU Usage : (?P<status>[\d.]+)%\s+Memory Usage : (?P<value>[\d.]+)Mb\s+thread count : (?P<name>\d+)'
+
+# 종속성 그래프: 검사별 alg 노드 비활성(=레시피 조건에 의한 정상 스킵) 판정
+relgraph:
+  - kind: ALG_DEACT
+    msg: 'IID\[(?P<inner_id>[^\]]+)\]\s+GroupID\[\d+\] \([^)]+\) - \(alg, (?P<value>\d+)\) connection val: DEACTIVATE_VAL'
+
+inspectmng: []
+stopthread: []

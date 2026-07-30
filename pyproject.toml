@@ -1,0 +1,32 @@
+[project]
+name = "talog"
+version = "1.0.0"
+description = "talos 설비 로그 진단 분석기 — RCA 자동 진단 리포트 · 로컬 LLM 질의 · 예지보전 상주 감시"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Gwangyeol Kim" }]
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+talog = "talog.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["talog", "talog.rules"]
+
+[tool.setuptools.package-data]
+"talog.rules" = ["*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
