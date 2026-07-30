@@ -1,15 +1,9 @@
 @echo off
-rem ============================================================
-rem  talog watch - 예지보전 상주 감시 실행
-rem  설정: watch.yaml (감시 경로/룰/알림/LLM)
-rem  중지: 이 창을 닫거나 Ctrl+C
-rem ============================================================
-chcp 65001 >nul
-cd /d "%~dp0"
-
-if exist "%~dp0dist\talog.exe" (
-    "%~dp0dist\talog.exe" watch --config "%~dp0watch.yaml"
-) else (
-    python -m talog watch --config "%~dp0watch.yaml"
-)
+rem talog watch resident monitor launcher
+pushd "%~dp0"
+set "EXE="
+if exist "%~dp0talog.exe" set "EXE=%~dp0talog.exe"
+if not defined EXE if exist "%~dp0dist\talog.exe" set "EXE=%~dp0dist\talog.exe"
+if defined EXE ( "%EXE%" watch --config "%~dp0watch.yaml" ) else ( python -m talog watch --config "%~dp0watch.yaml" )
 pause
+popd

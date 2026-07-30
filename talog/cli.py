@@ -360,14 +360,24 @@ def main(argv=None):
 
     recipe = None
     if args.recipe:
-        recipe = load_recipe(args.recipe, args.recipe_hint)
-        print(f"[talog] 레시피 로드: {recipe.root} [{recipe.version}] "
-              f"alg={recipe.alg_count} thread={recipe.thread_count} "
-              f"models={len(recipe.models)}")
+        try:
+            recipe = load_recipe(args.recipe, args.recipe_hint)
+            print(f"[talog] 레시피 로드: {recipe.root} [{recipe.version}] "
+                  f"alg={recipe.alg_count} thread={recipe.thread_count} "
+                  f"models={len(recipe.models)}")
+        except (FileNotFoundError, OSError) as err:
+            print(f"[talog] 경고: 레시피를 열 수 없어 레시피 없이 진행합니다 "
+                  f"— {err}")
 
+    if not os.path.isdir(args.logs):
+        print(f"[talog] 오류: 로그 폴더가 존재하지 않습니다 — {args.logs}",
+              file=sys.stderr)
+        return 2
     days = _collect_day_folders(args.logs)
     if not days:
-        print("분석 가능한 로그 폴더를 찾지 못했습니다.", file=sys.stderr)
+        print("[talog] 분석 가능한 로그 폴더를 찾지 못했습니다. 폴더 안에 "
+              "alg\\ 하위 폴더 또는 InspStarter.log 가 있어야 합니다.",
+              file=sys.stderr)
         return 2
     out_dir = args.out or os.path.join(args.logs, "talog_out")
     outputs = []

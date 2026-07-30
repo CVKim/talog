@@ -75,10 +75,11 @@ def main() -> int:
     shutil.copy2(exe, os.path.join(dst, "talog.exe"))
     shutil.copy2(os.path.join(ROOT, "watch_script_example.txt"), dst)
 
-    # run_watch.bat — 배포 폴더 기준 상대 경로 버전
-    with open(os.path.join(dst, "run_watch.bat"), "w", encoding="utf-8") as f:
-        f.write('@echo off\nchcp 65001 >nul\ncd /d "%~dp0"\n'
-                'talog.exe watch --config "%~dp0watch.yaml"\npause\n')
+    # run_watch.bat — ASCII 전용(인코딩 무결) + UNC 대응 pushd
+    with open(os.path.join(dst, "run_watch.bat"), "w", encoding="ascii") as f:
+        f.write('@echo off\npushd "%~dp0"\n'
+                '"%~dp0talog.exe" watch --config "%~dp0watch.yaml"\n'
+                'pause\npopd\n')
 
     # watch.yaml — 사이트 프리셋
     with open(os.path.join(ROOT, "watch.yaml"), "r", encoding="utf-8") as f:
