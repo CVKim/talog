@@ -50,6 +50,48 @@ def collect(out_dir: str) -> list[dict]:
     return rows
 
 
+def _trend_section(rows: list[dict]) -> str:
+    """설비별 일자 추이 비교 (2일 이상 데이터가 있는 설비만)."""
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        tag = r["tag"]
+        parts = tag.rsplit("_", 1)
+        equip = parts[0] if len(parts) == 2 and parts[1][:1].isdigit() else "(단일)"
+        groups.setdefault(equip, []).append(r)
+    multi = {k: v for k, v in groups.items() if len(v) >= 2 and k != "(단일)"}
+    if not multi:
+        return ""
+    out = ["<h2 style='font-size:16px;border-bottom:2px solid #5c9ded;"
+           "padding-bottom:6px'>설비별 추이</h2>"]
+    for equip, days in sorted(multi.items()):
+        days.sort(key=lambda r: r["tag"])
+        mx = max(d["total"] for d in days) or 1
+        cells = []
+        for d in days:
+            day = d["tag"].rsplit("_", 1)[-1]
+            h = max(6, int(d["total"] / mx * 46))
+            bar_color = "#c62828" if d["bad"] else "#5c9ded"
+            bad_txt = (f"<div style='color:#c62828;font-weight:700'>"
+                       f"이상 {d['bad']}</div>") if d["bad"] else \
+                "<div style='color:#2e7d32'>정상</div>"
+            cells.append(
+                f"<td style='border:none;text-align:center;padding:6px 14px'>"
+                f"<div style='height:50px;display:flex;align-items:flex-end;"
+                f"justify-content:center'><div style='width:26px;height:{h}px;"
+                f"background:{bar_color};border-radius:3px 3px 0 0'></div></div>"
+                f"<div style='font-weight:700'>{html.escape(day)}일</div>"
+                f"<div>{d['total']:,}건</div>{bad_txt}"
+                f"<div style='color:#888'>{d['avg_dur']:.1f}s · 재시작 "
+                f"{max(0, d['gens'] - 1)}</div></td>")
+        out.append(
+            f"<div style='display:inline-block;border:1px solid #e2e8f0;"
+            f"border-radius:10px;margin:8px 12px 8px 0;padding:8px 6px;"
+            f"vertical-align:top'><div style='font-weight:800;padding:2px 12px'>"
+            f"{html.escape(equip)}</div><table style='border:none'><tr>"
+            + "".join(cells) + "</tr></table></div>")
+    return "".join(out)
+
+
 def render(rows: list[dict]) -> str:
     body = []
     for r in rows:
@@ -83,6 +125,7 @@ def render(rows: list[dict]) -> str:
 <h1>talog 진단 리포트 인덱스</h1>
 <div class="sum">총 {len(rows)}개 설비-일자 · 검사 {total:,}건 · 이상 {bad}건 —
 행을 클릭하면 해당 리포트가 열립니다.</div>
+{_trend_section(rows)}
 <table><thead><tr><th>리포트</th><th>대상 로그</th><th>검사</th><th>완료</th>
 <th>이상</th><th>소실</th><th>거부</th><th>시뮬</th><th>평균시간</th>
 <th>재시작</th><th>크래시</th><th>에러</th></tr></thead>
