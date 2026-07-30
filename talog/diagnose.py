@@ -42,8 +42,10 @@ def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
         ev: list[str] = []
         kills = [g for g in gens if g.end_cause in ("kill", "crash")]
         for it in bad[:8]:
+            # 검사 시작 직후~15분 내의 종료만 소실 원인 후보로 본다
+            # (시작 이전의 재시작은 이 검사와 무관)
             near = next((g for g in kills if g.end_ts and
-                         abs(g.end_ts - (it.start_ts or 0)) < 900), None)
+                         -60 < g.end_ts - (it.start_ts or 0) < 900), None)
             if it.status == "rejected":
                 ev.append(f"{_fmt_t(it.start_text)} {it.inner_id}: 설비 회신 "
                           f"{it.ack_status} (가용 Seq 스레드 {it.wait_threads}) — "
@@ -96,7 +98,9 @@ def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
             by_ch.setdefault((r.alg_idx, r.channel), []).append(r.infer_ms)
     if by_ch and prod:
         starts = sorted(i.start_ts for i in prod if i.start_ts)
-        gaps = [b - a for a, b in zip(starts, starts[1:]) if 5 < b - a < 1800]
+        # 하한 0.5초: 고케이던스(초 단위 takt) 사이트에서 정상 간격이
+        # 걸러져 유휴 간격만 남는 오산출을 방지한다
+        gaps = [b - a for a, b in zip(starts, starts[1:]) if 0.5 < b - a < 1800]
         takt = statistics.median(gaps) if gaps else 0
         slow = [(idx, ch, statistics.mean(v), max(v))
                 for (idx, ch), v in by_ch.items()
@@ -233,7 +237,7 @@ def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
                             "불가이며, 해당 일자 로그를 다시 수집하면 완료로 "
                             "확정됩니다 (익일 로그가 있으면 자동 스티칭)."], ""))
 
-    if not bad and not crashes and restarts < 3:
+    if prod and not bad and not crashes and restarts < 3 and not eof_n:
         out.insert(0, Finding("ok", "이 날은 특기할 이상이 없습니다",
                               [f"양산 검사 {len(prod)}건 전수 완료 신호 확인"], ""))
     return out

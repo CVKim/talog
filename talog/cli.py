@@ -29,16 +29,25 @@ _STITCH_HOURS = 1.0                    # 익일 몇 시까지 이어붙일지
 
 
 def _is_day_folder(path: str) -> bool:
-    return os.path.isdir(os.path.join(path, "alg")) or any(
-        f.lower() == "inspstarter.log" for f in os.listdir(path)
-        if os.path.isfile(os.path.join(path, f)))
+    try:
+        return os.path.isdir(os.path.join(path, "alg")) or any(
+            f.lower() == "inspstarter.log" for f in os.listdir(path)
+            if os.path.isfile(os.path.join(path, f)))
+    except OSError:
+        # 접근 불가 폴더(권한/단절)는 일자 폴더가 아닌 것으로 취급
+        return False
 
 
 def _collect_day_folders(root: str) -> list[str]:
     if _is_day_folder(root):
         return [root]
     days = []
-    for d in sorted(os.listdir(root)):
+    try:
+        entries = sorted(os.listdir(root))
+    except OSError as err:
+        print(f"[talog] 폴더 접근 실패: {root} — {err}", file=sys.stderr)
+        return []
+    for d in entries:
         p = os.path.join(root, d)
         if os.path.isdir(p) and _is_day_folder(p):
             days.append(p)
@@ -47,14 +56,16 @@ def _collect_day_folders(root: str) -> list[str]:
 
 def _next_day_dir(day_dir: str) -> str:
     """같은 설비 폴더 안에서 바로 다음 날짜 폴더를 찾는다 (없으면 빈 문자열)."""
+    day_dir = os.path.abspath(day_dir)      # 상대 경로 시 dirname="" 방지
     parent = os.path.dirname(os.path.normpath(day_dir))
     me = os.path.basename(os.path.normpath(day_dir))
-    sibs = sorted(d for d in os.listdir(parent)
-                  if os.path.isdir(os.path.join(parent, d)) and d[:1].isdigit())
     try:
+        sibs = sorted(d for d in os.listdir(parent)
+                      if os.path.isdir(os.path.join(parent, d))
+                      and d[:1].isdigit())
         i = sibs.index(me)
-    except ValueError:
-        return ""
+    except (OSError, ValueError):
+        return ""                            # 스티칭은 부가 기능 — 조용히 강등
     return os.path.join(parent, sibs[i + 1]) if i + 1 < len(sibs) else ""
 
 
@@ -89,11 +100,12 @@ def _llm_overview(findings, tag: str, model: str = "qwen2.5:7b") -> str:
     try:
         msgs = [{"role": "system", "content": system},
                 {"role": "user", "content": prompt}]
+        text = ""
         for _ in range(2):   # 소형 모델이 중국어로 이탈하면 1회 재요청
             r = _http_json(f"{_OLLAMA}/api/chat",
                            {"model": model, "stream": False, "messages": msgs,
                             "options": {"temperature": 0.2}}, {}, timeout=180)
-            text = (r.get("message", {}).get("content") or "").strip()
+            text = ((r.get("message") or {}).get("content") or "").strip()
             if _hangul_ratio(text) >= 0.5:
                 return text
             msgs.append({"role": "assistant", "content": text})
@@ -101,7 +113,8 @@ def _llm_overview(findings, tag: str, model: str = "qwen2.5:7b") -> str:
                          "content": "한국어가 아닙니다. 같은 내용을 전부 "
                                     "한국어로만 다시 작성하십시오."})
         return text if _hangul_ratio(text) >= 0.3 else ""
-    except OSError:
+    except Exception:
+        # LLM 은 부가 기능 — 어떤 실패도 리포트 생성을 막지 않는다
         return ""
 
 
@@ -125,8 +138,15 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
     file_rows = []
     os.makedirs(out_dir, exist_ok=True)
     db_path = os.path.join(out_dir, f"{tag}.sqlite")
-    if os.path.exists(db_path):
-        os.remove(db_path)
+    try:
+        for suffix in ("", "-wal", "-shm"):
+            p = db_path + suffix
+            if os.path.exists(p):
+                os.remove(p)
+    except OSError:
+        # 다른 프로세스(talog ask 등)가 DB 를 열고 있으면 새 파일로 강등
+        db_path = os.path.join(out_dir, f"{tag}_{int(time.time())}.sqlite")
+        print(f"  ! 기존 DB 가 사용 중 — {os.path.basename(db_path)} 로 진행")
     con = store.open_db(db_path)
 
     # 익일 스티칭 준비: 다음 날짜 폴더의 alg/comm 파일 맵
@@ -154,7 +174,7 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
         if parsed:
             try:
                 evs, n = ex.extract_file(fi, fid + 1)
-            except OSError as err:
+            except (OSError, ValueError, UnicodeError) as err:
                 print(f"  ! {fi.name}: {err}")
                 parsed = False
         fid = store.insert_file(con, fi, parsed, n, len(evs))
@@ -169,7 +189,9 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
                     nf = next_alg.get(fi.alg_idx)
                     if nf is not None:
                         try:
-                            nevs, _ = ex.extract_file(nf, 0)
+                            # 익일 자정 + N시간까지만 읽고 조기 종료 (성능)
+                            cut = evs[-1].ts + (24 + _STITCH_HOURS) * 3600
+                            nevs, _ = ex.extract_file(nf, 0, until_ts=cut)
                             if nevs:
                                 cut = nevs[0].ts + _STITCH_HOURS * 3600
                                 nevs = [e for e in nevs
@@ -177,7 +199,7 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
                                 if nevs:
                                     evs = evs + nevs
                                     stitched = True
-                        except OSError:
+                        except (OSError, ValueError, UnicodeError):
                             pass
                     runs.extend(build_runs_for_file(fi.alg_idx, fi.channel, evs))
                 keep = [e for e in evs if e.kind in _ALG_KEEP]
@@ -208,8 +230,8 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
         cutoff = log_end + _STITCH_HOURS * 3600
         for nf in next_comm:
             try:
-                nevs, _ = ex.extract_file(nf, 0)
-            except OSError:
+                nevs, _ = ex.extract_file(nf, 0, until_ts=cutoff)
+            except (OSError, ValueError, UnicodeError):
                 continue
             nevs = [e for e in nevs if log_end < e.ts <= cutoff]
             if nevs:
@@ -369,6 +391,7 @@ def main(argv=None):
             print(f"[talog] 경고: 레시피를 열 수 없어 레시피 없이 진행합니다 "
                   f"— {err}")
 
+    args.logs = os.path.abspath(args.logs)
     if not os.path.isdir(args.logs):
         print(f"[talog] 오류: 로그 폴더가 존재하지 않습니다 — {args.logs}",
               file=sys.stderr)
@@ -385,13 +408,22 @@ def main(argv=None):
         base = os.path.basename(os.path.normpath(args.logs))
         tag = f"{base}_{os.path.basename(os.path.normpath(d))}" if d != args.logs else base
         tag = tag.replace("#", "")
-        outputs.append(scan_day(d, recipe, out_dir, tag,
-                                fast=args.fast, detail_cap=args.detail,
-                                llm=args.llm))
+        try:
+            outputs.append(scan_day(d, recipe, out_dir, tag,
+                                    fast=args.fast, detail_cap=args.detail,
+                                    llm=args.llm))
+        except Exception as err:      # 일자 하나의 실패가 전체를 막지 않는다
+            print(f"[talog] 오류: {d} 분석 실패 — {err}", file=sys.stderr)
+    if not outputs:
+        print("[talog] 생성된 리포트가 없습니다.", file=sys.stderr)
+        return 1
     print(f"[talog] 완료 — 리포트 {len(outputs)}건")
     if args.open:
         for o in outputs:
-            os.startfile(o)   # noqa: S606 — 사용자 요청에 의한 로컬 리포트 열기
+            try:
+                os.startfile(o)   # noqa: S606 — 로컬 리포트 열기
+            except OSError:
+                print(f"  ! 자동 열기 실패 — 직접 여십시오: {o}")
     return 0
 
 

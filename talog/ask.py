@@ -57,7 +57,12 @@ _TOOLS_SPEC = [
 class ToolBox:
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self.con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        if not os.path.exists(db_path):
+            raise FileNotFoundError(f"DB 파일이 없습니다: {db_path}")
+        # URI 예약문자('#' 등) 포함 경로 방어
+        from urllib.request import pathname2url
+        self.con = sqlite3.connect(
+            f"file:{pathname2url(os.path.abspath(db_path))}?mode=ro", uri=True)
 
     def sql(self, query: str) -> str:
         q = (query or "").strip().rstrip(";")
@@ -245,10 +250,13 @@ def _pick_db(target: str) -> str:
 def _build_system(db_path: str) -> str:
     parts = [AI_GUIDE]
     diag = os.path.splitext(db_path)[0] + "_diagnosis.md"
-    if os.path.exists(diag):
-        with open(diag, "r", encoding="utf-8") as f:
-            parts.append("\n## 사전 자동 진단 소견 (룰 엔진 결과 — 출발점으로 활용)\n"
-                         + f.read()[:4000])
+    try:
+        if os.path.exists(diag):
+            with open(diag, "r", encoding="utf-8") as f:
+                parts.append("\n## 사전 자동 진단 소견 (룰 엔진 결과 — "
+                             "출발점으로 활용)\n" + f.read()[:4000])
+    except OSError:
+        pass
     return "\n".join(parts)
 
 
@@ -286,8 +294,13 @@ def main(argv=None) -> int:
         except Exception:
             pass
 
-    db = _pick_db(args.target)
-    tools = ToolBox(db)
+    try:
+        db = _pick_db(args.target)
+        tools = ToolBox(db)
+    except (FileNotFoundError, OSError, sqlite3.Error, ValueError,
+            EOFError, KeyboardInterrupt) as e:
+        print(f"DB 를 열 수 없습니다: {e}")
+        return 2
     system = _build_system(db)
     backend, label = pick_backend(args.backend, args.model)
     print(f"[talog ask] DB: {os.path.basename(db)} / 백엔드: {label}")
@@ -295,8 +308,8 @@ def main(argv=None) -> int:
     def one(q: str):
         try:
             ans = backend.chat(system, q, tools)
-        except OSError as e:
-            ans = f"백엔드 통신 오류: {e}"
+        except Exception as e:      # 백엔드 응답 이상이 REPL 을 죽이지 않도록
+            ans = f"백엔드 오류: {e}"
         print("\n" + ans + "\n")
 
     if args.q:

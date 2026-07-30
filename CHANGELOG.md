@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.0 (2026-07-30)
+
+- **존(그룹) 단위 완료 판정**: 다존 설비(Tenneco 4존)에서 ACK 받은 모든 존이
+  END 를 수신해야 complete — 실데이터에서 "반쪽 검사" 17건 신규 검출
+- **소스 코드 감사**: talos-platform/vision 대조로 37룰 검증, NG END status
+  오추출 수정, 코드 검증 신규 룰 12종(BusyCam/NotReady/Sim 거부, ALG/IMG
+  타임아웃, GRAB_FAIL, STORAGE_LOW, LIGHT_UNSTABLE, TRT 누락, INFER_ERROR,
+  RuleBase 블록 실패, CPU 백엔드, OCR Tact 폴백)
+- **사례 지식베이스**: `talog kb add/list/search`, 리포트에 유사 과거 사례
+  자동 첨부 (Ollama 임베딩 + 키워드 폴백)
+- **watch**: GPU 온도 감시(nvidia-smi, 임계 경보 + 이력 JSONL), `--check`
+  설치 자가 점검, seq 로그 감시 + 신규 장애 즉시 경보, 시뮬 세션 집계
+- **현장 안정화**: 배치 파일 ASCII 재작성(인코딩·UNC·exe 탐색 결함 수정),
+  CLI 우아한 오류 처리, `tools/make_deploy.py` 배포 키트 생성기
+
 ## 1.0.0 (2026-07-30)
 
 첫 제품 릴리스. 5개 사이트(타이어 PC3 · CTR 볼조인트 4설비 · Tenneco 부싱)

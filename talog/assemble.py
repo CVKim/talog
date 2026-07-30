@@ -174,15 +174,6 @@ def build_process_gens(events: list[Event], log_end_ts: float) -> list[ProcessGe
 
 
 # ---------------------------------------------------------------------------
-def build_channel_runs(alg_events_by_file: dict[int, tuple[int, str, list[Event]]]
-                       ) -> list[ChannelRun]:
-    """(하위 호환용) 여러 alg 파일 이벤트를 한꺼번에 조립한다."""
-    runs: list[ChannelRun] = []
-    for _fid, (alg_idx, channel, evs) in alg_events_by_file.items():
-        runs.extend(build_runs_for_file(alg_idx, channel, evs))
-    return runs
-
-
 def build_runs_for_file(alg_idx: int, channel: str,
                         evs: list[Event]) -> list[ChannelRun]:
     """alg 파일 하나의 이벤트를 실행(run) 단위로 조립한다.
@@ -191,14 +182,16 @@ def build_runs_for_file(alg_idx: int, channel: str,
     즉시 조립하고 원본 이벤트는 호출부에서 해제한다.
     """
     runs: list[ChannelRun] = []
-    if True:  # 기존 들여쓰기 유지용 블록
+    if True:  # (구조 유지 블록 — 별도 함수 분리 예정)
         last_reset: Optional[Event] = None
+        last_reset_ts_any = 0.0      # 연쇄(2차 실행) 귀속 오염 방지용
         cur_feed: dict[str, float | str | int] = {}
         open_by_obj: dict[str, ChannelRun] = {}      # obj_id -> 진행 중 run
         chain_by_obj: dict[str, tuple[str, float]] = {}  # obj_id -> (inner, 직전 종료 ts)
         for e in evs:
             if e.kind == "RESET":
                 last_reset = e
+                last_reset_ts_any = e.ts
                 cur_feed = {}
             elif e.kind == "FEED" and last_reset is not None:
                 cur_feed = {"roi": e.roi_idx}
@@ -212,7 +205,10 @@ def build_runs_for_file(alg_idx: int, channel: str,
                     last_reset = None                # 1회 귀속 후 소비
                 else:
                     ch = chain_by_obj.get(e.obj_id)
-                    if ch and e.ts - ch[1] <= _CHAIN_WINDOW:
+                    # 직전 종료 이후 새 RESET 이 끼면 이 시작은 새 검사의 것일
+                    # 수 있으므로 연쇄 귀속을 포기한다 (오귀속 방지)
+                    if ch and e.ts - ch[1] <= _CHAIN_WINDOW \
+                            and last_reset_ts_any <= ch[1]:
                         inner = ch[0]
                         exec_no = 2
                 if not inner:
@@ -236,7 +232,8 @@ def build_runs_for_file(alg_idx: int, channel: str,
             elif e.kind == "TACT_POST":
                 # 후처리 블록(DetectAlg 등)은 별도 인스턴스이므로 obj_id 로 짝을 맞출 수
                 # 없다 → 같은 파일에서 직전에 완료된 run 에 시간 근접으로 귀속한다.
-                for r in reversed(runs):
+                # 대량 이벤트에서 O(n^2) 방지를 위해 역방향 탐색을 상한한다.
+                for r in list(reversed(runs))[:50]:
                     if r.alg_idx == alg_idx and r.status == "done" \
                             and 0 <= e.ts - r.infer_end_ts <= 10.0:
                         r.post_ms = e.value
@@ -305,7 +302,10 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
                 if e.status == "OK" and e.value:
                     ack_groups.setdefault(e.inner_id, set()).add(int(e.value))
             elif "INSPECT_END" in e.name:
-                it.end_ts, it.end_text, it.end_result = e.ts, e.ts_text, e.status
+                it.end_ts, it.end_text = e.ts, e.ts_text
+                # 다존 설비: 어느 한 존이라도 NG 면 최종 판정은 NG 로 유지한다
+                if it.end_result != "NG":
+                    it.end_result = e.status
                 if e.value:
                     end_groups.setdefault(e.inner_id, set()).add(int(e.value))
         elif e.kind == "REMAIN" and e.inner_id:
@@ -363,26 +363,29 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
         # 가동 중 복사된 로그는 파일별 절단 시각이 달라(comm 이 먼저 잘리는 사례
         # 실측: Tenneco 30일 13분 차) comm 절단 이후 시작 검사는 "미완료"가 아니라
         # "커버리지 밖(판정 불가)"으로 구분해야 한다.
-        from_machine = it.wait_threads >= 0
+        # InspStarter 유실 시 comm ACK 만으로도 설비 검사임을 인지한다
+        from_machine = it.wait_threads >= 0 or bool(it.ack_status)
         eof_boundary = comm_end_ts or log_end_ts
+        near_eof = bool(it.start_ts) and it.start_ts > eof_boundary - 300
         it.n_zones = len(ack_groups.get(it.inner_id, ()))
         it.n_zones_done = len(end_groups.get(it.inner_id, ()))
         if it.ack_status and it.ack_status != "OK":
             it.status = "rejected"                    # NoInspThread 등
         elif it.end_ts and it.n_zones > 1 \
-                and it.n_zones_done < it.n_zones \
-                and it.start_ts <= eof_boundary - 300:
+                and it.n_zones_done < it.n_zones and not near_eof:
             # 다존 설비에서 일부 존만 END 수신 (커버리지 내) = 부분 완료
             it.status = "incomplete"
         elif it.end_ts:
             it.status = "complete"
+        elif from_machine and near_eof:
+            # 로그 절단 구간은 소실 판정보다 우선한다 (절단 시점 실행 중이던
+            # 검사를 '실행 중 소실'로 오판하지 않도록)
+            it.status = "in_progress_eof"             # 로그 절단(판정 불가)
         elif it.n_lost:
             it.status = "incomplete_lost"             # 실행 중 소실
         elif not from_machine:
             it.status = "sim_complete" if (it.n_fed and it.n_done >= it.n_fed) \
                 else "sim_partial"
-        elif it.start_ts and it.start_ts > eof_boundary - 300:
-            it.status = "in_progress_eof"             # 로그 절단(판정 불가)
         elif it.start_ts:
             it.status = "incomplete"
         else:

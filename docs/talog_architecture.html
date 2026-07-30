@@ -63,14 +63,14 @@
 <rect class="accent" x="352" y="252" width="230" height="128" rx="10"/>
 <text class="bname" x="467" y="276" text-anchor="middle">talog watch</text>
 <text class="bsub" x="467" y="294" text-anchor="middle">예지보전 상주 감시</text>
-<text class="bsub" x="467" y="315" text-anchor="middle">증분 tail(20초) · 감지 룰 5종</text>
-<text class="bsub" x="467" y="332" text-anchor="middle">에러반복·정체·스레드고갈·재시작·릭</text>
-<text class="bsub" x="467" y="356" text-anchor="middle" font-weight="700">저부하: 우선순위 강등 · LLM은 CPU</text>
+<text class="bsub" x="467" y="315" text-anchor="middle">증분 tail(20초) · 룰 6종 + GPU 온도(85°C)</text>
+<text class="bsub" x="467" y="332" text-anchor="middle">에러반복·정체·스레드고갈·재시작·릭·과열</text>
+<text class="bsub" x="467" y="356" text-anchor="middle" font-weight="700">저부하: 우선순위 강등 · GPU 미사용</text>
 <line class="flow" x1="310" y1="316" x2="352" y2="316"/>
 
 <rect class="db" x="352" y="470" width="230" height="70" rx="10"/>
 <text class="bname" x="467" y="496" text-anchor="middle" font-size="12.5px">D:\AIV_LOG\TalogWatch\</text>
-<text class="bsub" x="467" y="516" text-anchor="middle">alerts_날짜.jsonl (예지보전 기록)</text>
+<text class="bsub" x="467" y="516" text-anchor="middle">alerts·gpu_날짜.jsonl (예지보전 기록)</text>
 <line class="flow" x1="467" y1="380" x2="467" y2="470"/>
 <circle class="numo" cx="443" cy="410" r="11"/><text class="numt" x="443" y="414.5" text-anchor="middle">5</text>
 
@@ -99,12 +99,12 @@
 <text class="bsub" x="895" y="258" text-anchor="middle">검사 신호·Tact·프로토콜·크래시·GPU·리소스 (수정 = YAML만)</text>
 <line class="flow" x1="895" y1="274" x2="895" y2="292"/>
 <rect class="box" x="700" y="292" width="390" height="58" rx="10"/>
-<text class="bname" x="895" y="316" text-anchor="middle">3. 검사 조립 + 레시피 조인</text>
-<text class="bsub" x="895" y="334" text-anchor="middle">inner id 별 채널 실행 재구성 · alg번호→결함명·GPU 번역</text>
+<text class="bname" x="895" y="316" text-anchor="middle">3. 검사 조립 + 레시피 조인 + 존 판정</text>
+<text class="bsub" x="895" y="334" text-anchor="middle">inner id·존(그룹) 단위 재구성 · alg번호→결함명·GPU 번역</text>
 <line class="flow" x1="895" y1="350" x2="895" y2="368"/>
 <rect class="accent" x="700" y="368" width="390" height="58" rx="10"/>
-<text class="bname" x="895" y="392" text-anchor="middle">4. RCA 자동 진단 엔진</text>
-<text class="bsub" x="895" y="410" text-anchor="middle">미완료↔재시작 상관 · 병목 · GPU 경합 · 메모리 추세 → 소견 서술</text>
+<text class="bname" x="895" y="392" text-anchor="middle">4. RCA 자동 진단 엔진 (소스코드 검증 룰)</text>
+<text class="bsub" x="895" y="410" text-anchor="middle">미완료↔재시작·타임아웃·그랩실패·GPU 경합·메모리 추세 → 소견</text>
 
 <!-- 산출물 -->
 <line class="flow" x1="895" y1="426" x2="895" y2="452"/>
@@ -142,6 +142,7 @@
 
 <text class="bsub" x="1335" y="240" text-anchor="middle">"미완료 원인이 뭐야?" → SQL 자동 생성·자기 교정</text>
 <text class="bsub" x="1335" y="258" text-anchor="middle">--llm : 진단 소견을 AI 종합 소견 문단으로</text>
+<text class="bsub" x="1335" y="284" text-anchor="middle" font-weight="700">사례 KB: 과거 RCA 유사사례 자동 첨부 (임베딩 검색)</text>
 
 <path class="flow2" d="M 976 470 C 1110 420, 1170 310, 1216 216"/>
 <text class="labB" x="1078" y="444" text-anchor="middle">SQL 질의 ↔ 결과</text>
@@ -185,10 +186,11 @@
 <!-- 검증 실적 -->
 <rect x="1180" y="712" width="452" height="150" rx="12" fill="#f0f9ff" stroke="#bae6fd"/>
 <text class="legT" x="1202" y="740" fill="#0369a1">검증 실적</text>
-<text class="legD" x="1202" y="766">· 5개 사이트 검증 — 타이어·볼조인트·부싱 (일 4.3만 검사)</text>
-<text class="legD" x="1202" y="788">· 원문 전수 감사: 판정 오류 0건 (START/END 원장 일치)</text>
-<text class="legD" x="1202" y="810">· PC3 사고 리플레이: 미검사 33분 전 사전 경보 재현</text>
-<text class="legD" x="1202" y="832">· 300만 라인/일 → 리포트 생성 수 분</text>
+<text class="legD" x="1202" y="762">· 5개 사이트 — 타이어·볼조인트·부싱 (일 4.3만 검사, 300만 라인)</text>
+<text class="legD" x="1202" y="782">· 원문 전수 감사 판정 오류 0건 · 플랫폼 소스 대조 37룰 검증</text>
+<text class="legD" x="1202" y="802">· 존 부분 완료(반쪽 검사) 17건 신규 검출 (Tenneco 4존)</text>
+<text class="legD" x="1202" y="822">· 사고 리플레이: 미검사 33분 전 사전 경보 · pytest 54개</text>
+<text class="legD" x="1202" y="842">· exe 단독 실행 · 오프라인 완결 (외부 의존 없음)</text>
 
 <!-- ══════════ 하단 3모드 요약 ══════════ -->
 <rect x="48" y="890" width="1584" height="106" rx="12" fill="#f8fafc" stroke="#e2e8f0"/>

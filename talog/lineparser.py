@@ -72,8 +72,12 @@ def iter_records(path: str) -> Iterator[LogRecord]:
             else:
                 # 태그 블록이 없는 비정형 줄 (BatchRunLog 형식 등은 별도 파서 사용)
                 level, header, obj_id, msg = "", "", "0", rest
-            ts = datetime(int(yy), int(mo), int(dd), int(hh), int(mi), int(ss),
-                          int(ms) * 1000).timestamp()
+            try:
+                # 손상 라인(자릿수는 맞지만 범위 밖 값)은 해당 줄만 건너뛴다
+                ts = datetime(int(yy), int(mo), int(dd), int(hh), int(mi),
+                              int(ss), int(ms) * 1000).timestamp()
+            except (ValueError, OverflowError, OSError):
+                continue
             pending = LogRecord(ts=ts, ts_text=f"{hh}:{mi}:{ss}.{ms}", level=level,
                                 header=header, obj_id=obj_id, msg=msg, line_no=line_no)
     if pending is not None:

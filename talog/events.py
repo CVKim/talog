@@ -66,8 +66,13 @@ class Extractor:
             self.rules[cat] = lst
 
     # ---- 개별 파일 추출 ---------------------------------------------------
-    def extract_file(self, fi: FileInfo, file_id: int) -> tuple[list[Event], int]:
-        """파일 하나를 파싱해 (이벤트 목록, 총 레코드 수)를 반환한다."""
+    def extract_file(self, fi: FileInfo, file_id: int,
+                     until_ts: float = 0.0) -> tuple[list[Event], int]:
+        """파일 하나를 파싱해 (이벤트 목록, 총 레코드 수)를 반환한다.
+
+        until_ts 가 주어지면 그 시각을 넘는 레코드에서 조기 종료한다
+        (익일 스티칭처럼 파일 앞부분만 필요한 경우의 성능 최적화).
+        """
         if fi.category == "batchrun":
             evs = [Event(ts=ts, ts_text=tt, kind="BATCH", name=script, file_id=file_id)
                    for ts, tt, script in iter_batchrun(fi.path)]
@@ -78,6 +83,8 @@ class Extractor:
         n = 0
         for rec in iter_records(fi.path):
             n += 1
+            if until_ts and rec.ts > until_ts:
+                break
             ev = self._match(rec, rules)
             if ev is None and rec.level == "Error":
                 # 룰 미적중 에러도 전수 보존 (에러 테이블용)
@@ -121,7 +128,7 @@ class Extractor:
                 status=g.get("status", "") or "",
                 name=(g.get("name", "") or "").strip(),
                 alg_list=(g.get("alg_list", "") or "").strip().rstrip(","),
-                extra=(g.get("extra", "") or "")[:500],
+                extra=(g.get("extra", "") or "")[:1500],
                 line_no=rec.line_no,
             )
         return None

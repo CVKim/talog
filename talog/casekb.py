@@ -56,39 +56,49 @@ class CaseKB:
 
     # ── 저장/로드 ─────────────────────────────────────────────
     def _load(self):
-        if os.path.exists(self.path):
-            with open(self.path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        j = json.loads(line)
-                        self.cases.append(Case(
-                            id=str(j.get("id", "")), title=j.get("title", ""),
-                            symptom=j.get("symptom", ""), cause=j.get("cause", ""),
-                            action=j.get("action", ""), site=j.get("site", ""),
-                            date=j.get("date", ""), tags=j.get("tags", []) or []))
-                    except json.JSONDecodeError:
-                        continue
-        if os.path.exists(self.cache_path):
-            try:
+        try:
+            if os.path.exists(self.path):
+                with open(self.path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            j = json.loads(line)
+                            if not isinstance(j, dict):
+                                continue
+                            self.cases.append(Case(
+                                id=str(j.get("id", "")),
+                                title=str(j.get("title", "")),
+                                symptom=str(j.get("symptom", "")),
+                                cause=str(j.get("cause", "")),
+                                action=str(j.get("action", "")),
+                                site=str(j.get("site", "")),
+                                date=str(j.get("date", "")),
+                                tags=list(j.get("tags") or [])))
+                        except (json.JSONDecodeError, TypeError):
+                            continue
+        except OSError:
+            pass
+        try:
+            if os.path.exists(self.cache_path):
                 with open(self.cache_path, "r", encoding="utf-8") as f:
-                    self._cache = json.load(f)
-            except (OSError, json.JSONDecodeError):
-                self._cache = {}
+                    c = json.load(f)
+                self._cache = c if isinstance(c, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            self._cache = {}
 
     def add(self, case: Case):
         os.makedirs(self.dir, exist_ok=True)
         if not case.id:
             case.id = f"case-{len(self.cases) + 1:04d}"
-        self.cases.append(case)
         with open(self.path, "a", encoding="utf-8") as f:
             f.write(json.dumps({
                 "id": case.id, "date": case.date, "site": case.site,
                 "title": case.title, "symptom": case.symptom,
                 "cause": case.cause, "action": case.action, "tags": case.tags,
             }, ensure_ascii=False) + "\n")
+        self.cases.append(case)      # 파일 기록 성공 후에만 메모리 반영
 
     # ── 임베딩 ────────────────────────────────────────────────
     @staticmethod
@@ -112,7 +122,8 @@ class CaseKB:
     def _vec(self, case: Case) -> list[float]:
         h = hashlib.md5(case.text().encode("utf-8")).hexdigest()
         ent = self._cache.get(case.id)
-        if ent and ent.get("hash") == h:
+        if isinstance(ent, dict) and ent.get("hash") == h \
+                and isinstance(ent.get("vec"), list):
             return ent["vec"]
         vec = self._embed(case.text())
         self._cache[case.id] = {"hash": h, "vec": vec}
@@ -143,8 +154,8 @@ class CaseKB:
                 scored = [(self._cos(qv, self._vec(c)), c) for c in self.cases]
                 scored.sort(key=lambda x: -x[0])
                 return [(s, c) for s, c in scored[:k] if s > 0.4]
-            except OSError:
-                pass
+            except Exception:
+                pass     # 임베딩 실패 시 키워드 폴백으로 강등
         # 폴백: 키워드 중첩 점수 (2글자 이상 토큰)
         toks = {t for t in re.split(r"[^0-9A-Za-z가-힣_]+", query.lower())
                 if len(t) >= 2}
@@ -184,10 +195,15 @@ def main(argv=None) -> int:
         if not args.title or not args.symptom:
             print("--title 과 --symptom 은 필수입니다.")
             return 2
-        kb.add(Case(id="", title=args.title, symptom=args.symptom,
-                    cause=args.cause, action=args.action, site=args.site,
-                    date=args.date,
-                    tags=[t.strip() for t in args.tags.split(",") if t.strip()]))
+        try:
+            kb.add(Case(id="", title=args.title, symptom=args.symptom,
+                        cause=args.cause, action=args.action, site=args.site,
+                        date=args.date,
+                        tags=[t.strip() for t in args.tags.split(",")
+                              if t.strip()]))
+        except OSError as e:
+            print(f"저장 실패: {e}")
+            return 1
         print(f"저장: {kb.path} (총 {len(kb.cases)}건)")
     elif args.cmd == "list":
         for c in kb.cases:

@@ -34,7 +34,7 @@ import yaml
 
 from .events import Event, Extractor
 from .fileclass import classify
-from .lineparser import _TAG_RE, _TS_RE, iter_batchrun
+from .lineparser import _BATCH_RE, _TAG_RE, _TS_RE, LogRecord
 
 # 감시 대상 파일 (소형·핵심만 — 저부하 원칙). seq_N.log 는 동적으로 추가된다.
 _WATCH_FILES = ("inspstarter.log", "comm.log", "workerthreadpoolmng.log",
@@ -63,16 +63,28 @@ _DEFAULT_CFG = {
 }
 
 
+def _deep_merge(base: dict, over: dict):
+    """재귀 병합 — 사용자가 룰의 값 하나만 바꿔도 나머지 기본값이 유지된다."""
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _deep_merge(base[k], v)
+        else:
+            base[k] = v
+
+
 def load_config(path: str) -> dict:
     cfg = json.loads(json.dumps(_DEFAULT_CFG))  # deep copy
     if path and os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            user = yaml.safe_load(f) or {}
-        for k, v in user.items():
-            if isinstance(v, dict) and isinstance(cfg.get(k), dict):
-                cfg[k].update(v)
-            else:
-                cfg[k] = v
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                user = yaml.safe_load(f) or {}
+        except (OSError, yaml.YAMLError) as e:
+            print(f"! watch.yaml 읽기 실패 — 기본값으로 진행: {e}")
+            user = {}
+        if not isinstance(user, dict):
+            print("! watch.yaml 최상위가 딕셔너리가 아닙니다 — 기본값으로 진행")
+            user = {}
+        _deep_merge(cfg, user)
     return cfg
 
 
@@ -93,7 +105,14 @@ class Notifier:
         self.cfg = cfg
         self.replay = replay
         self.alert_dir = cfg["alert_dir"]
-        os.makedirs(self.alert_dir, exist_ok=True)
+        try:
+            os.makedirs(self.alert_dir, exist_ok=True)
+        except OSError:
+            # 기본 드라이브가 없는 PC 등 — 로컬 사용자 폴더로 폴백
+            self.alert_dir = os.path.join(
+                os.environ.get("LOCALAPPDATA", "."), "talog")
+            os.makedirs(self.alert_dir, exist_ok=True)
+            print(f"! 알림 폴더 생성 실패 — 폴백: {self.alert_dir}")
         self._last: dict[tuple, float] = {}      # (rule,key) -> 마지막 발송 ts
         self.sent: list[Alert] = []
 
@@ -111,12 +130,16 @@ class Notifier:
             day = dt.datetime.fromtimestamp(a.ts).strftime("%Y%m%d")
             suffix = "_replay" if self.replay else ""
             path = os.path.join(self.alert_dir, f"alerts_{day}{suffix}.jsonl")
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "ts": tstr, "site": self.cfg.get("site", ""),
-                    "rule": a.rule, "severity": a.severity,
-                    "title": a.title, "evidence": a.evidence,
-                }, ensure_ascii=False) + "\n")
+            try:
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({
+                        "ts": tstr, "site": self.cfg.get("site", ""),
+                        "rule": a.rule, "severity": a.severity,
+                        "title": a.title, "evidence": a.evidence,
+                    }, ensure_ascii=False) + "\n")
+            except OSError as e:
+                # 디스크 풀/권한 상실이 알림 발송 자체를 막아선 안 된다
+                print(f"  ! 알림 기록 실패(계속): {e}")
         if self.replay:
             return                                # 리플레이는 기록만
         if self.cfg["notify"].get("toast", True):
@@ -128,6 +151,9 @@ class Notifier:
     @staticmethod
     def _toast(title: str, msg: str):
         """Windows 토스트 알림 (외부 패키지 없이 PowerShell WinRT 사용)."""
+        # PS 단일따옴표 문자열 주입 방지: '→'' 이스케이프 + 개행 제거
+        title = title.replace("'", "''").replace("\n", " ")[:80]
+        msg = msg.replace("'", "''").replace("\n", " ")[:180]
         ps = (
             "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI."
             "Notifications, ContentType=WindowsRuntime] | Out-Null;"
@@ -143,7 +169,7 @@ class Notifier:
         try:
             subprocess.Popen(
                 ["powershell", "-NoProfile", "-WindowStyle", "Hidden",
-                 "-Command", ps.replace("'", "'")],
+                 "-Command", ps],
                 creationflags=0x08000000)          # CREATE_NO_WINDOW
         except OSError:
             pass
@@ -379,12 +405,14 @@ class TailReader:
                 level, header, obj, msg = "", "", "0", ln[m.end():]
             else:
                 level, header, obj, msg = tm.groups()
-            from .lineparser import LogRecord
-            rec = LogRecord(
-                ts=dt.datetime(int(yy), int(mo), int(dd), int(hh), int(mi),
-                               int(ss), int(ms) * 1000).timestamp(),
-                ts_text=f"{hh}:{mi}:{ss}.{ms}", level=level, header=header,
-                obj_id=obj, msg=msg, line_no=0)
+            try:
+                # tail 특성상 찢어진(torn)/손상 라인이 배치 분석보다 흔하다
+                ts = dt.datetime(int(yy), int(mo), int(dd), int(hh), int(mi),
+                                 int(ss), int(ms) * 1000).timestamp()
+            except (ValueError, OverflowError, OSError):
+                continue
+            rec = LogRecord(ts=ts, ts_text=f"{hh}:{mi}:{ss}.{ms}", level=level,
+                            header=header, obj_id=obj, msg=msg, line_no=0)
             ev = self.ex._match(rec, rules)
             if ev is None and rec.level == "Error":
                 ev = Event(ts=rec.ts, ts_text=rec.ts_text, kind="ERROR",
@@ -397,7 +425,6 @@ class TailReader:
 
 
 def iter_batchrun_line(line: str):
-    from .lineparser import _BATCH_RE
     m = _BATCH_RE.match(line.strip())
     if m:
         yy, mo, dd, hh, mi, ss, script = m.groups()
@@ -509,10 +536,10 @@ def _llm_review(cfg: dict, engine: RuleEngine, notifier: Notifier):
         f"- [{a.severity}] {a.title}: {a.evidence}" for a in notifier.sent[-10:]) \
         or "- (최근 알림 없음)"
     mem_tail = ", ".join(f"{mb:.0f}MB" for _t, mb in list(engine.mem)[-6:])
-    ctx = (f"[최근 알림]\n{recent_alerts}\n\n"
-           f"[진행 중 검사] {len(engine.pending)}건, "
-           f"완료 소요 중앙값 {statistics.median(engine.durations):.1f}초\n"
-           if engine.durations else "") + f"[최근 RAM] {mem_tail}\n"
+    med_line = (f"[진행 중 검사] {len(engine.pending)}건, 완료 소요 중앙값 "
+                f"{statistics.median(engine.durations):.1f}초\n"
+                if engine.durations else "")
+    ctx = f"[최근 알림]\n{recent_alerts}\n\n{med_line}[최근 RAM] {mem_tail}\n"
     prompt = (f"당신은 검사 설비 감시자다. 아래 감시 지시문과 현재 상태를 보고 "
               f"JSON 한 개로만 답하라: "
               f'{{"alert": true|false, "severity": "info|warn|crit", '
@@ -541,7 +568,8 @@ def _llm_review(cfg: dict, engine: RuleEngine, notifier: Notifier):
                                     key="llm"))
             else:
                 print(f"  [LLM 점검] 이상 없음: {j.get('summary', '')[:120]}")
-    except OSError as e:
+    except Exception as e:
+        # LLM 점검은 부가 기능 — 어떤 실패(JSON 이탈 포함)도 감시를 죽이지 않는다
         print(f"  ! LLM 점검 실패(무시): {e}")
 
 
@@ -549,36 +577,47 @@ def _llm_review(cfg: dict, engine: RuleEngine, notifier: Notifier):
 def run_live(cfg: dict, once: bool = False) -> int:
     if cfg.get("low_priority", True):
         _lower_priority()
-    os.makedirs(cfg["alert_dir"], exist_ok=True)
-    notifier = Notifier(cfg)
+    notifier = Notifier(cfg)                  # alert_dir 생성/폴백은 Notifier 가 담당
     engine = RuleEngine(cfg, notifier)
-    tail = TailReader(os.path.join(cfg["alert_dir"], "watch_state.json"))
+    tail = TailReader(os.path.join(notifier.alert_dir, "watch_state.json"))
     gpu = GpuMonitor(cfg, notifier)
+    gpu.alert_dir = notifier.alert_dir        # 폴백 경로 일원화
     llm_every = cfg["llm"].get("interval_min", 30) * 60
     last_llm = 0.0
     print(f"[talog watch] 감시 시작: {cfg['watch_root']} "
-          f"(주기 {cfg['poll_seconds']}s, 알림 → {cfg['alert_dir']}, "
+          f"(주기 {cfg['poll_seconds']}s, 알림 → {notifier.alert_dir}, "
           f"GPU 온도 감시 {'ON' if gpu.available else 'OFF(nvidia-smi 없음)'})")
+    fail_streak = 0
     while True:
-        day_dir = _today_dir(cfg["watch_root"])
-        if os.path.isdir(day_dir):
-            for name in _WATCH_FILES:
-                p = os.path.join(day_dir, name)
-                # 대소문자 변형(Comm.log 등) 대응
-                if not os.path.exists(p):
-                    for cand in os.listdir(day_dir):
-                        if cand.lower() == name:
-                            p = os.path.join(day_dir, cand)
-                            break
-                if os.path.exists(p):
-                    for e in tail.poll_file(p):
-                        engine.feed(e)
-            engine.evaluate(time.time())
-            tail.save()
-        gpu.poll(time.time())
-        if cfg["llm"].get("enabled") and time.time() - last_llm > llm_every:
-            last_llm = time.time()
-            _llm_review(cfg, engine, notifier)
+        try:
+            day_dir = _today_dir(cfg["watch_root"])
+            if os.path.isdir(day_dir):
+                for name in _WATCH_FILES:
+                    p = os.path.join(day_dir, name)
+                    # 대소문자 변형(Comm.log 등) 대응
+                    if not os.path.exists(p):
+                        for cand in os.listdir(day_dir):
+                            if cand.lower() == name:
+                                p = os.path.join(day_dir, cand)
+                                break
+                    if os.path.exists(p):
+                        for e in tail.poll_file(p):
+                            engine.feed(e)
+                engine.evaluate(time.time())
+                tail.save()
+            gpu.poll(time.time())
+            if cfg["llm"].get("enabled") and time.time() - last_llm > llm_every:
+                last_llm = time.time()
+                _llm_review(cfg, engine, notifier)
+            fail_streak = 0
+        except Exception as e:
+            # 상주 감시는 단발 예외로 죽어선 안 된다 — 다음 주기에 재시도
+            fail_streak += 1
+            print(f"! 감시 주기 오류(계속, {fail_streak}회): {e}")
+            if fail_streak >= 30:
+                print("! 오류가 30주기 연속 — 환경 문제로 판단하고 종료합니다. "
+                      "talog watch --check 로 점검하십시오.")
+                return 1
         if once:
             break
         time.sleep(cfg["poll_seconds"])
@@ -587,6 +626,9 @@ def run_live(cfg: dict, once: bool = False) -> int:
 
 def run_replay(cfg: dict, day_dir: str) -> int:
     """과거 일자 폴더를 시간순으로 재생하여 룰 경보를 검증한다."""
+    if not os.path.isdir(day_dir):
+        print(f"리플레이 폴더가 없습니다: {day_dir}")
+        return 1
     print(f"[talog watch] 리플레이: {day_dir}")
     notifier = Notifier(cfg, replay=True)
     engine = RuleEngine(cfg, notifier)
