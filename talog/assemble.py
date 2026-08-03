@@ -58,6 +58,7 @@ class Inspection:
     n_zones: int = 0              # 시작 승인(ACK)된 그룹(존) 수 — Tenneco 등
     n_zones_done: int = 0         # END 를 받은 그룹(존) 수
     timed_out: bool = False       # [TIMEOUT] 으로 판정 미송신 (코드 검증 근거)
+    defects: list[str] = field(default_factory=list)   # NG 판정 결함명 목록
     lost_channels: list[str] = field(default_factory=list)
     nofeed_channels: list[str] = field(default_factory=list)
     lost_idx: list[int] = field(default_factory=list)      # 그래프 색칠용 인덱스
@@ -135,6 +136,23 @@ def build_model_loads(events: list[Event],
                              status="미완료"))
     out.sort(key=lambda m: m.ts)
     return out
+
+
+def _parse_ng_defects(extra: str, inner_id: str) -> list[str]:
+    """INSPECT_END NG 페이로드에서 결함명 목록을 뽑는다.
+
+    형식(CommSender.cpp 검증): V3.0,<국>,NG,<개수>,<결함1>,..,<결함N>,<inner>,...
+    """
+    toks = [t.strip() for t in (extra or "").split(",")]
+    try:
+        ng_i = toks.index("NG")
+        inner_i = toks.index(inner_id)
+    except ValueError:
+        return []
+    start = ng_i + 1
+    if start < len(toks) and toks[start].isdigit():
+        start += 1                      # <개수> 토큰 건너뛰기
+    return [t for t in toks[start:inner_i] if t and not t.isdigit()]
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +324,11 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
                 # 다존 설비: 어느 한 존이라도 NG 면 최종 판정은 NG 로 유지한다
                 if it.end_result != "NG":
                     it.end_result = e.status
+                if e.status == "NG":
+                    # NG 페이로드: ...,NG,<개수>,<결함1..N>,<inner>,... (코드 검증)
+                    for d in _parse_ng_defects(e.extra, e.inner_id):
+                        if d not in it.defects:
+                            it.defects.append(d)
                 if e.value:
                     end_groups.setdefault(e.inner_id, set()).add(int(e.value))
         elif e.kind == "REMAIN" and e.inner_id:

@@ -253,14 +253,14 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
     con.executemany(
         "INSERT INTO inspections(inner_id,product_id,start_ts,start_text,wait_threads,"
         "ack_status,end_ts,end_text,end_result,status,duration_s,n_fed,n_done,n_lost,"
-        "n_nofeed,n_skipped,n_zones,n_zones_done,lost_channels,nofeed_channels,"
-        "remain_list,gen_id) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "n_nofeed,n_skipped,n_zones,n_zones_done,defects,lost_channels,"
+        "nofeed_channels,remain_list,gen_id) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(i.inner_id, i.product_id, i.start_ts, i.start_text, i.wait_threads,
           i.ack_status, i.end_ts, i.end_text, i.end_result, i.status,
           (i.end_ts - i.start_ts) if i.end_ts and i.start_ts else 0,
           i.n_fed, i.n_done, i.n_lost, i.n_nofeed, i.n_skipped,
-          i.n_zones, i.n_zones_done,
+          i.n_zones, i.n_zones_done, ",".join(i.defects),
           ",".join(i.lost_channels), ",".join(i.nofeed_channels),
           i.remain_list, i.gen_id) for i in inspections])
     con.executemany(
@@ -349,6 +349,60 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
     return out_html
 
 
+def fleet_main(argv=None) -> int:
+    """여러 설비 폴더를 가진 루트를 통째로 분석하고 통합 인덱스를 만든다.
+
+    예: talog fleet "H:\\...\\log"   (log 아래 c1xx/cmfb#1/... 설비 폴더들)
+    """
+    import argparse
+    ap = argparse.ArgumentParser(prog="talog fleet",
+                                 description="다설비 일괄 분석 + 통합 인덱스")
+    ap.add_argument("root", help="설비 폴더들을 가진 루트 폴더")
+    ap.add_argument("--out", default="", help="출력 폴더 (기본: <root>\\talog_out)")
+    ap.add_argument("--fast", action="store_true")
+    args = ap.parse_args(argv)
+
+    root = os.path.abspath(args.root)
+    if not os.path.isdir(root):
+        print(f"[talog] 오류: 루트 폴더가 없습니다 — {root}", file=sys.stderr)
+        return 2
+    out_dir = args.out or os.path.join(root, "talog_out")
+    n_reports = 0
+    try:
+        equips = sorted(os.listdir(root))
+    except OSError as err:
+        print(f"[talog] 루트 접근 실패: {err}", file=sys.stderr)
+        return 2
+    for name in equips:
+        sub = os.path.join(root, name)
+        if not os.path.isdir(sub) or os.path.abspath(sub) == os.path.abspath(out_dir):
+            continue
+        days = _collect_day_folders(sub)
+        if not days:
+            continue
+        print(f"[talog fleet] 설비: {name} ({len(days)}일자)")
+        for d in days:
+            tag = (f"{name}_{os.path.basename(os.path.normpath(d))}"
+                   if d != sub else name).replace("#", "")
+            try:
+                scan_day(d, None, out_dir, tag, fast=args.fast)
+                n_reports += 1
+            except Exception as err:
+                print(f"[talog] 오류: {d} 분석 실패 — {err}", file=sys.stderr)
+    if not n_reports:
+        print("[talog fleet] 분석 가능한 설비/일자를 찾지 못했습니다.",
+              file=sys.stderr)
+        return 1
+    from .fleetindex import build
+    idx = build(out_dir)
+    print(f"[talog fleet] 완료 — 리포트 {n_reports}건, 인덱스: {idx}")
+    try:
+        os.startfile(idx)
+    except OSError:
+        pass
+    return 0
+
+
 def main(argv=None):
     # 콘솔 코드페이지(cp949)에서도 안전하게 출력한다 (frozen exe 대응)
     for stream in (sys.stdout, sys.stderr):
@@ -366,7 +420,11 @@ def main(argv=None):
     if argv and argv[0] == "kb":
         from .casekb import main as kb_main
         return kb_main(argv[1:])
+    if argv and argv[0] == "fleet":
+        return fleet_main(argv[1:])
     ap = argparse.ArgumentParser(prog="talog", description="talos 로그 진단 분석기")
+    ap.add_argument("--version", action="version",
+                    version=f"talog {__version__}")
     ap.add_argument("logs", help="설비-일자 폴더 또는 설비 폴더")
     ap.add_argument("--recipe", help="레시피 폴더 (제품 폴더 또는 버전 폴더)")
     ap.add_argument("--recipe-hint", default="", help="레시피 버전 매칭 힌트 문자열")

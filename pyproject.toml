@@ -1,6 +1,6 @@
 [project]
 name = "talog"
-version = "1.1.0"
+version = "1.2.0"
 description = "talos 설비 로그 진단 분석기 — RCA 자동 진단 리포트 · 로컬 LLM 질의 · 예지보전 상주 감시"
 readme = "README.md"
 requires-python = ">=3.10"

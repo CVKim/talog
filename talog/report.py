@@ -94,7 +94,7 @@ def _build_payload(ctx: ReportContext) -> tuple[str, str]:
         summary.append([
             it.inner_id, it.product_id, round(it.start_ts, 3), it.start_text[:12],
             it.status, round((it.end_ts - it.start_ts), 2) if it.end_ts and it.start_ts else 0,
-            it.n_done, it.n_fed, it.ack_status,
+            it.n_done, it.n_fed, it.ack_status, it.end_result,
         ])
 
     # 상세 대상 선정: 이상 전건 + 검사시간 상위 + 최근
@@ -589,6 +589,39 @@ def _findings_section(ctx: ReportContext) -> str:
     return "".join(out)
 
 
+def _ng_section(ctx: ReportContext) -> str:
+    """NG 판정 분포 — 결함명별 발생 건수 (품질 관점)."""
+    ng = [i for i in ctx.inspections if i.end_result == "NG"]
+    if not ng:
+        return ""
+    counter = Counter()
+    for it in ng:
+        for d in it.defects:
+            counter[d] += 1
+    total = len([i for i in ctx.inspections
+                 if i.status == "complete" or i.end_result])
+    rate = len(ng) / total * 100 if total else 0
+    out = [f"<h2>NG 판정 분포 <span class='hint'>— NG {len(ng)}건 / "
+           f"판정 {total}건 ({rate:.2f}%)</span></h2>"]
+    if counter:
+        mx = counter.most_common(1)[0][1]
+        rows = []
+        for name, cnt in counter.most_common(12):
+            w = max(3, int(cnt / mx * 420))
+            rows.append(
+                f"<div class='mbar'><div class='mname'>{_esc(name)}</div>"
+                f"<div class='mtrack'><div style='width:{w}px;background:#e65100' "
+                f"class='mfill'></div><span>{cnt}건</span></div></div>")
+        out.append("<div class='mbars'>" + "".join(rows) + "</div>")
+        if len(counter) > 12:
+            out.append(f"<div class='legend'>외 {len(counter) - 12}개 결함 유형 — "
+                       f"SQLite inspections.defects 에서 전체 조회 가능</div>")
+    else:
+        out.append("<p class='legend'>NG 건은 있으나 결함명 페이로드가 없습니다 "
+                   "(설비 프로토콜 버전에 따라 미포함될 수 있음).</p>")
+    return "".join(out)
+
+
 def _model_bar_summary(ctx: ReportContext) -> str:
     """종합 페이지용: 모델별 평균 검사시간(InspectMC) 가로 막대 요약."""
     by_model: dict[str, list[float]] = {}
@@ -834,25 +867,69 @@ function showTab(name) {
 
 function fmtDur(s) { return s ? s.toFixed(2) + 's' : '-'; }
 
-function renderList(filter) {
-  const tb = document.getElementById('insp-body');
-  const f = (filter || '').trim();
+let STATUS_FILTER = 'all';
+const BAD_SET = new Set(['rejected', 'incomplete_lost', 'incomplete', 'unknown']);
+
+function applyFilter(rows) {
+  if (STATUS_FILTER === 'bad') return rows.filter(r => BAD_SET.has(r[4]));
+  if (STATUS_FILTER === 'ng') return rows.filter(r => r[9] === 'NG');
+  if (STATUS_FILTER === 'eof') return rows.filter(r => r[4] === 'in_progress_eof');
+  if (STATUS_FILTER === 'ok') return rows.filter(r => r[4] === 'complete');
+  return rows;
+}
+
+function filteredRows() {
+  const f = (document.getElementById('insp-search').value || '').trim();
   let rows = SUMMARY;
   if (f) rows = rows.filter(r => r[0].includes(f) || (r[1] && r[1].includes(f)));
+  return applyFilter(rows);
+}
+
+function setFilter(name) {
+  STATUS_FILTER = name;
+  document.querySelectorAll('.fbtn').forEach(b =>
+    b.classList.toggle('on', b.dataset.f === name));
+  renderList();
+}
+
+function renderList() {
+  const tb = document.getElementById('insp-body');
+  const rows = filteredRows();
   const frag = [];
   const show = rows.slice(-400).reverse();   // 최근 400건 표시
   for (const r of show) {
-    const [iid, pid, ts, st, status, dur, ndone, nfed] = r;
+    const [iid, pid, ts, st, status, dur, ndone, nfed, ack, res] = r;
     const c = STATUS_COLOR[status] || '#757575';
     const has = DETAIL[iid] ? ' class="ilink" style="cursor:pointer;color:#1565c0"' : '';
+    const resTxt = res === 'NG' ? '<span style="color:#e65100;font-weight:700">NG</span>'
+      : (res || '-');
     frag.push(`<tr><td>${st}</td><td${has} data-id="${iid}">${iid}</td><td>${pid || '-'}</td>` +
       `<td><span style="color:${c};font-weight:600">${STATUS_KO[status] || status}</span></td>` +
+      `<td>${resTxt}</td>` +
       `<td class="r">${fmtDur(dur)}</td><td class="r">${ndone}/${nfed}</td></tr>`);
   }
   tb.innerHTML = frag.join('');
   document.getElementById('insp-count').textContent =
     `${rows.length}건 매칭 (표시 ${show.length}건, 상세 보유 ${Object.keys(DETAIL).length}건)`;
   bindLinks();
+}
+
+function exportCsv() {
+  const head = ['inner_id', 'product_id', 'start', 'status', 'result',
+                'duration_s', 'done', 'fed', 'ack'];
+  const lines = [head.join(',')];
+  for (const r of filteredRows()) {
+    lines.push([r[0], r[1], r[3], STATUS_KO[r[4]] || r[4], r[9] || '',
+                r[5], r[6], r[7], r[8] || ''].map(v =>
+      `"${String(v).replace(/"/g, '""')}"`).join(','));
+  }
+  const blob = new Blob(['﻿' + lines.join('\r\n')],
+                        {type: 'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'talog_inspections.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 function renderGantt(iid) {
@@ -1038,6 +1115,7 @@ def render(ctx: ReportContext) -> str:
 
     n_sim = n.get("sim_complete", 0) + n.get("sim_partial", 0)
     n_bad = sum(n.get(k, 0) for k in _BAD_STATUSES)
+    n_ng = sum(1 for i in ctx.inspections if i.end_result == "NG")
     n_err = sum(1 for e in ctx.events
                 if e.kind in ("ERROR", "MODEL_FAIL", "CRASH", "COMM_FAIL",
                               "RECIPE_FAIL", "EXC_REDIRECT"))
@@ -1046,6 +1124,7 @@ def render(ctx: ReportContext) -> str:
         ("검사 수", str(total), "#333", "sec-insp"),
         ("완료", str(n.get("complete", 0)), "#2e7d32", "sec-insp"),
         ("이상", str(n_bad), "#c62828" if n_bad else "#2e7d32", "main-bad"),
+        ("NG 판정", str(n_ng), "#e65100" if n_ng else "#2e7d32", "main-bad"),
         ("에러", str(n_err), "#c62828" if n_err else "#2e7d32", "sec-err"),
         ("평균 검사시간", f"{avg_dur:.2f}s" if avg_dur else "-", "#333", "sec-tact"),
         ("최대 검사시간", f"{max_dur:.2f}s" if max_dur else "-", "#333", "sec-tact"),
@@ -1117,6 +1196,10 @@ def render(ctx: ReportContext) -> str:
  .mtrack {{ flex: 1; display: flex; align-items: center; gap: 6px; }}
  .mfill {{ height: 13px; border-radius: 2px; min-width: 2px; }}
  .mtrack span {{ font-size: 11px; color: #555; white-space: nowrap; }}
+ .fbtn {{ border: 1px solid #cbd5e1; background: #fff; border-radius: 14px;
+          padding: 5px 14px; margin-left: 6px; cursor: pointer; font-size: 12.5px;
+          font-family: inherit; }}
+ .fbtn.on {{ background: #1e2a3a; color: #fff; border-color: #1e2a3a; }}
  .subnav {{ position: sticky; top: 0; background: #fff; border-bottom: 1px solid #ddd;
             padding: 8px 0; z-index: 5; }}
  .subnav a {{ color: #1565c0; margin-right: 18px; cursor: pointer; font-size: 13px; }}
@@ -1144,6 +1227,7 @@ def render(ctx: ReportContext) -> str:
  <div id="main-bad"></div>
  <h2>미완료/이상 검사 <span class="hint">— inner id 클릭 시 채널별 간트로
  이동</span></h2>{_incomplete_section(ctx)}
+ {_ng_section(ctx)}
  <div class="cols">
   <div class="col">
    <h2>모델별 평균 검사시간 <span class="hint">— 클릭 시 상세</span></h2>
@@ -1170,10 +1254,16 @@ def render(ctx: ReportContext) -> str:
  <section id="sec-insp">
   <h2>검사 조회</h2>
   <p><input type="text" id="insp-search" placeholder="inner id 또는 product id 검색">
+     <button class="fbtn on" data-f="all" onclick="setFilter('all')">전체</button>
+     <button class="fbtn" data-f="bad" onclick="setFilter('bad')">이상만</button>
+     <button class="fbtn" data-f="ng" onclick="setFilter('ng')">NG</button>
+     <button class="fbtn" data-f="ok" onclick="setFilter('ok')">완료</button>
+     <button class="fbtn" data-f="eof" onclick="setFilter('eof')">절단</button>
+     <button class="fbtn" onclick="exportCsv()" style="margin-left:14px">⬇ CSV 내보내기</button>
      <span id="insp-count" style="color:#666;font-size:13px;margin-left:10px"></span></p>
   <div id="gantt-box" style="margin:14px 0"></div>
   <table><thead><tr><th>시작</th><th>inner id</th><th>product id</th><th>상태</th>
-  <th class='r'>검사시간</th><th class='r'>완료/투입</th></tr></thead>
+  <th>판정</th><th class='r'>검사시간</th><th class='r'>완료/투입</th></tr></thead>
   <tbody id="insp-body"></tbody></table>
  </section>
  <section id="sec-graph">

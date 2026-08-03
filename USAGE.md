@@ -40,6 +40,20 @@ dist\talog.exe "H:\...\log\cmfb#1" --recipe "D:\AIV\MODEL\CMFB - V2" --open
 python make_index.py <출력폴더>     → index.html + AI_GUIDE.md 생성
 ```
 
+**설비 여러 대를 한 번에 (fleet 모드)**:
+```
+talog.exe fleet "H:\...\log"        → 루트 아래 설비 폴더 전체 분석
+                                      + 통합 인덱스 자동 생성·열기
+```
+
+**리포트 안에서**: 검사 조회 탭에 상태 필터(전체/이상만/NG/완료/절단)와
+**⬇ CSV 내보내기** 버튼이 있어 필터된 목록을 Excel 로 바로 가져갈 수 있습니다.
+종합 탭의 **NG 판정 분포**에서 결함명별 발생 건수를 확인할 수 있습니다.
+
+**watch 상태 페이지**: 감시 가동 중 `D:\AIV_LOG\TalogWatch\status.html` 이
+30초마다 자동 갱신됩니다 — 현장 모니터/브라우저에 띄워두면 가동 상태·최근
+경보·GPU 온도가 실시간으로 보입니다.
+
 ---
 
 ## 2. 리포트 읽는 법 (탭 2개)

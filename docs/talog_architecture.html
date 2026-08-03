@@ -106,8 +106,10 @@
 <text class="bname" x="895" y="392" text-anchor="middle">4. RCA 자동 진단 엔진 (소스코드 검증 룰)</text>
 <text class="bsub" x="895" y="410" text-anchor="middle">미완료↔재시작·타임아웃·그랩실패·GPU 경합·메모리 추세 → 소견</text>
 
-<!-- 산출물 -->
-<line class="flow" x1="895" y1="426" x2="895" y2="452"/>
+<!-- 산출물 (3종 각각으로) -->
+<line class="flow" x1="775" y1="426" x2="775" y2="452"/>
+<line class="flow" x1="921" y1="426" x2="921" y2="452"/>
+<line class="flow" x1="1041" y1="426" x2="1041" y2="452"/>
 <rect class="core" x="700" y="452" width="150" height="76" rx="10"/>
 <text class="bname" x="775" y="482" text-anchor="middle" font-size="12.5px">HTML 리포트</text>
 <text class="bsub" x="775" y="500" text-anchor="middle">인터랙티브 · 1파일</text>
@@ -123,8 +125,8 @@
 <path class="flow" d="M 310 268 C 420 120, 560 108, 700 152"/>
 <text class="labB" x="512" y="120" text-anchor="middle">로그 폴더 입력 (bat 드래그 / talog.exe)</text>
 <circle class="num" cx="620" cy="132" r="11"/><text class="numt" x="620" y="136.5" text-anchor="middle">2</text>
-<path class="flow" d="M 310 512 C 480 460, 580 380, 700 328"/>
-<text class="lab" x="520" y="446" text-anchor="middle">레시피 조인 (선택)</text>
+<path class="flow" d="M 310 558 L 636 558 L 636 321 L 700 321"/>
+<text class="lab" x="470" y="574" text-anchor="middle">레시피 조인 (선택)</text>
 
 <!-- ══════════ 로컬 LLM 존 ══════════ -->
 <rect class="zone" x="1180" y="84" width="452" height="290" rx="14" fill="#f0fdf4" stroke="#22c55e"/>
@@ -144,9 +146,10 @@
 <text class="bsub" x="1335" y="258" text-anchor="middle">--llm : 진단 소견을 AI 종합 소견 문단으로</text>
 <text class="bsub" x="1335" y="284" text-anchor="middle" font-weight="700">사례 KB: 과거 RCA 유사사례 자동 첨부 (임베딩 검색)</text>
 
-<path class="flow2" d="M 976 470 C 1110 420, 1170 310, 1216 216"/>
-<text class="labB" x="1078" y="444" text-anchor="middle">SQL 질의 ↔ 결과</text>
-<circle class="num" cx="1152" cy="352" r="11"/><text class="numt" x="1152" y="356.5" text-anchor="middle">4</text>
+<path class="flow2" d="M 921 528 L 921 540 L 1155 540 L 1155 172 L 1210 172"/>
+<text class="labB" transform="rotate(-90 1146 330)" x="1146" y="330"
+ text-anchor="middle">SQL 질의 ↔ 결과</text>
+<circle class="num" cx="1155" cy="210" r="11"/><text class="numt" x="1155" y="214.5" text-anchor="middle">4</text>
 
 <!-- ══════════ 사용자 존 ══════════ -->
 <rect class="zone" x="1180" y="404" width="452" height="280" rx="14" fill="#f8fafc" stroke="#94a3b8"/>
@@ -160,8 +163,8 @@
 
 <path class="flow" d="M 800 528 C 900 606, 1110 586, 1240 522"/>
 <text class="lab" x="1010" y="600" text-anchor="middle">리포트 열람 (브라우저)</text>
-<line class="flow" x1="1405" y1="452" x2="1370" y2="216"/>
-<text class="lab" x="1418" y="330">질문/답변</text>
+<path class="flow2" d="M 1560 452 L 1560 378"/>
+<text class="lab" x="1572" y="420">질문/답변</text>
 
 <!-- ══════════ 리포트 구성 미리보기 ══════════ -->
 <rect x="48" y="712" width="1084" height="150" rx="12" fill="#fff" stroke="#e2e8f0"/>
