@@ -120,10 +120,32 @@ dlinfer:
   - kind: MODEL_GPU_LOAD
     header: 'CTRTLoader::LoadDLModel$'
     msg: 'GPU: (?P<status>\d+) - Model: (?P<model>\S+?), DeviceIdx:\d+, Tact = (?P<value>[\d.]+)'
+  # v1.4 GPU 리소스 계측 (DLInfer.cpp/DLInferOnGPU.cpp 실코드 대조)
+  # GPU_STATUS: NVML 스냅샷(신규 빌드, 인퍼런스당 2회) — status=GPU idx,
+  #   value=VRAM 사용량(MB), name=온도(C)
+  - kind: GPU_STATUS
+    msg: '\[GPU STATUS\] GPU (?P<status>\d+) \| Mem Used: (?P<value>[\d.]+) MB \| Temp: (?P<name>\d+) C'
+  # GPU_MEMLOAD: 모델 로드 시 cudaMemGetInfo 델타 — value=로드 후 사용량(MB),
+  #   name=증분(MB), status=프로세스 로컬 GPU idx (물리 idx 는 console 로그로 보정)
+  - kind: GPU_MEMLOAD
+    msg: 'GPU: (?P<status>\d+) - Model: (?P<model>\S+?), DeviceIdx:\d+, Memory = [\d.]+->(?P<value>[\d.]+) \((?P<name>-?[\d.]+)\)MB'
+  # CUDA_MEMPOOL: WDDM 메모리풀 계측(Tenneco 계열) — value=usedCur(MB),
+  #   extra=usedHigh(MB), status=dev idx, name=시점 라벨
+  - kind: CUDA_MEMPOOL
+    msg: '\[CUDA MEMPOOL\] (?P<name>.+?) dev=(?P<status>\d+) \| usedCur=(?P<value>[\d.]+)MB usedHigh=(?P<extra>[\d.]+)MB'
+  # GPU_WAIT: 비상주(on memory infer=0) 경로의 GPU 전역 락 대기 (ms)
+  - kind: GPU_WAIT
+    msg: 'WaitForCriticalSection Tact = (?P<value>[\d.]+)'
   - kind: MODEL_FAIL
     msg: 'Could not find trt : (?P<model>\S+?),'
   - kind: INFER_ERROR
     msg: '(?P<name>INPUT_TENSOR_ERROR|EXECUTE_ERROR|VERIFY_OUTPUT_ERROR|OUTPUT_TENSOR_ERROR)'
+
+# 콘솔 로그: 모델의 물리 GPU 배치 이벤트 (2-GPU 설비에서 GPU #0/#1 구분의
+# 유일한 소스 — DLInfer.log 의 GPU:/DeviceIdx: 는 프로세스 로컬 0 고정)
+console:
+  - kind: GPU_MODEL_LOAD
+    msg: '\[Success\] Load (?P<model>\S+) Model On GPU #(?P<value>\d+)'
 
 # 프로세스 리소스 사용량 (5초 주기): value=RAM(MB), status=CPU%, name=스레드 수
 processusage:

@@ -28,6 +28,49 @@ _STITCH_CATEGORIES = ("alg", "comm")   # 익일 첫 구간을 이어붙일 파�
 _STITCH_HOURS = 1.0                    # 익일 몇 시까지 이어붙일지
 
 
+def _load_gpu_watch(day_dir: str) -> list:
+    """일자 폴더(또는 그 부모)의 TalogWatch gpu_*.jsonl 을 시계열로 읽는다.
+
+    반환: [(ts_epoch, gpu_idx, temp_c, util_pct, mem_mb), ...]
+    """
+    import datetime as _dt
+    import glob as _glob
+    import json as _json
+    import re as _re
+    out = []
+    seen = set()
+    for pat in (os.path.join(day_dir, "gpu_*.jsonl"),
+                os.path.join(os.path.dirname(os.path.abspath(day_dir)),
+                             "gpu_*.jsonl")):
+        for p in _glob.glob(pat):
+            if os.path.abspath(p) in seen:
+                continue
+            seen.add(os.path.abspath(p))
+            m = _re.search(r"gpu_(\d{8})\.jsonl$", os.path.basename(p))
+            if not m:
+                continue
+            day = m.group(1)
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    for ln in f:
+                        try:
+                            d = _json.loads(ln)
+                            ts = _dt.datetime.strptime(
+                                day + d.get("ts", "00:00:00"),
+                                "%Y%m%d%H:%M:%S").timestamp()
+                            for g in d.get("gpus", []):
+                                out.append((ts, int(g.get("gpu", 0)),
+                                            float(g.get("temp", 0)),
+                                            float(g.get("util", 0)),
+                                            float(g.get("mem", 0))))
+                        except (ValueError, KeyError, TypeError):
+                            continue
+            except OSError:
+                continue
+    out.sort()
+    return out
+
+
 def _is_day_folder(path: str) -> bool:
     try:
         return os.path.isdir(os.path.join(path, "alg")) or any(
@@ -209,12 +252,13 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
             else:
                 if fi.category == "dlinfer":
                     # 고케이던스 사이트의 GPU 계측 홍수는 균등 샘플링으로 상한
-                    execs = [e for e in evs if e.kind == "DLINFER_EXEC"]
-                    if len(execs) > 300_000:
-                        step = len(execs) // 300_000 + 1
-                        evs = [e for e in evs if e.kind != "DLINFER_EXEC"] \
-                            + execs[::step]
-                        evs.sort(key=lambda e: e.ts)
+                    # (GPU_STATUS 는 신규 빌드에서 인퍼런스당 2회 기록됨)
+                    for hk in ("DLINFER_EXEC", "GPU_STATUS", "GPU_WAIT"):
+                        hi = [e for e in evs if e.kind == hk]
+                        if len(hi) > 300_000:
+                            step = len(hi) // 300_000 + 1
+                            evs = [e for e in evs if e.kind != hk] + hi[::step]
+                    evs.sort(key=lambda e: e.ts)
                 store.insert_events(con, evs)
                 all_events.extend(evs)
         if parsed:
@@ -288,10 +332,12 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
               ",".join(map(str, a.roi_idx)), ",".join(map(str, a.dl_model)))
              for a in recipe.algs.values()])
         con.executemany(
-            "INSERT INTO recipe_models(idx,name,model_file,dev_index,instance_count,infer_dll) "
-            "VALUES(?,?,?,?,?,?)",
-            [(m.idx, m.name, m.model_file, m.dev_index, m.instance_count, m.infer_dll)
-             for m in recipe.models.values()])
+            "INSERT INTO recipe_models(idx,name,model_file,dev_index,"
+            "instance_count,infer_dll,on_memory,patch_infer,athena_type,"
+            "alg_blocks) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            [(m.idx, m.name, m.model_file, m.dev_index, m.instance_count,
+              m.infer_dll, m.on_memory, m.patch_infer, m.athena_type,
+              m.alg_blocks) for m in recipe.models.values()])
     con.execute("INSERT INTO meta VALUES('day_dir',?)", (day_dir,))
     con.execute("INSERT INTO meta VALUES('version',?)", (__version__,))
     con.commit()
@@ -303,9 +349,11 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
                         events=all_events, dl_channels=dl_channels,
                         file_rows=file_rows, log_start=log_start, log_end=log_end,
                         stitched=stitched, detail_cap=detail_cap,
-                        model_loads=model_loads)
+                        model_loads=model_loads,
+                        gpu_watch=_load_gpu_watch(day_dir))
     ctx.findings = diagnose(inspections, runs, gens, all_events, model_loads,
-                            log_start, log_end, usage_result=_usage_analysis(ctx))
+                            log_start, log_end,
+                            usage_result=_usage_analysis(ctx), recipe=recipe)
     # 사례 KB: 심각/주의 소견이 있으면 유사 과거 사례를 첨부한다
     if any(f.severity in ("crit", "warn") for f in ctx.findings):
         try:

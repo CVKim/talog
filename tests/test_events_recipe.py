@@ -323,3 +323,118 @@ def test_recipe_alg_models_link(recipe):
     models = recipe.alg_models(1)
     assert [m.idx for m in models] == [2]
     assert models[0].name == "TestModel"
+
+
+# ---------------------------------------------------------------------------
+# 5. 에러 컨텍스트 발췌 (v1.4)
+# ---------------------------------------------------------------------------
+
+def test_error_event_captures_context(extractor, tmp_path):
+    # 에러성 이벤트에는 원본 로그 전후 ±3 레코드 발췌(context)가 붙어야 한다.
+    path = tmp_path / "seq_1.log"
+    _write_log(path, [
+        _line("2026/07/29-09:00:01.000", "Info", "Seq", "before-3"),
+        _line("2026/07/29-09:00:02.000", "Info", "Seq", "before-2"),
+        _line("2026/07/29-09:00:03.000", "Info", "Seq", "before-1"),
+        _line("2026/07/29-09:00:04.000", "Error", "Seq", "boom happened"),
+        _line("2026/07/29-09:00:05.000", "Info", "Seq", "after-1"),
+        _line("2026/07/29-09:00:06.000", "Info", "Seq", "after-2"),
+        _line("2026/07/29-09:00:07.000", "Info", "Seq", "after-3"),
+        _line("2026/07/29-09:00:08.000", "Info", "Seq", "after-4-not-included"),
+    ])
+    fi = classify(str(path))
+    evs, _n = extractor.extract_file(fi, file_id=1)
+    errs = [e for e in evs if e.kind == "ERROR"]
+    assert errs, "Error 레벨 라인은 ERROR 이벤트로 보존되어야 한다"
+    ctx = errs[0].context
+    assert "before-1" in ctx and "before-3" in ctx
+    assert "▶" in ctx and "boom happened" in ctx
+    assert "after-3" in ctx
+    assert "after-4-not-included" not in ctx
+
+
+def test_non_error_event_has_no_context(extractor, tmp_path):
+    # 정상 이벤트(예: USAGE)에는 context 를 붙이지 않는다 (DB 용량 보호).
+    path = tmp_path / "ProcessUsage.log"
+    _write_log(path, [
+        _line("2026/07/29-09:00:01.000", "Info", "USAGE",
+              "CPU Usage : 12.5%   Memory Usage : 2048.3Mb   thread count : 61",
+              obj_id="0"),
+    ])
+    fi = classify(str(path))
+    evs, _n = extractor.extract_file(fi, file_id=1)
+    usage = [e for e in evs if e.kind == "USAGE"]
+    assert usage and usage[0].context == ""
+
+
+# ---------------------------------------------------------------------------
+# 6. GPU 리소스 룰 (v1.4 — DLInfer.cpp/DLInferOnGPU.cpp 실코드 포맷 대조)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def gpu_result(extractor, tmp_path_factory):
+    root = tmp_path_factory.mktemp("gpu")
+    path = root / "DLInfer.log"
+    _write_log(path, [
+        _line("2026/07/27-00:12:39.294", "Debug", "CDLInfer::LoadDLModelOnGPU",
+              "GPU: 0 - Model: 3D_SHOULDER_3D6L.onnx, DeviceIdx:0, "
+              "Memory = 2161.5->4361.5 (2200.0)MB"),
+        _line("2026/07/27-00:12:40.100", "Debug", "CDLInferOnGPU::LogGpuStatus",
+              "[GPU STATUS] GPU 1 | Mem Used: 4361 MB | Temp: 63 C"),
+        _line("2026/07/27-00:12:41.000", "Debug", "CDLInferOnGPU::LogCudaMempool",
+              "[CUDA MEMPOOL] after SetupCudaMempoolForWddm dev=0 | "
+              "usedCur=32MB usedHigh=48MB | resCur=32MB resHigh=32MB | "
+              "releaseTh=17592186044415MB"),
+        _line("2026/07/27-00:12:42.000", "Debug", "CDLInfer::InferStart",
+              " - GPU: 0 - Model: 3D_SHOULDER_3D6L.onnx, DeviceIdx:0, "
+              "WaitForCriticalSection Tact = 1250.0"),
+    ])
+    fi = classify(str(path))
+    evs, _n = extractor.extract_file(fi, file_id=9)
+    return _by_kind(evs)
+
+
+def test_gpu_memload_rule(gpu_result):
+    # 모델 로드 VRAM 델타: value=로드 후 사용량, name=증분, status=로컬 GPU idx
+    ev = gpu_result["GPU_MEMLOAD"][0]
+    assert ev.model == "3D_SHOULDER_3D6L.onnx"
+    assert ev.value == pytest.approx(4361.5)
+    assert float(ev.name) == pytest.approx(2200.0)
+    assert ev.status == "0"
+
+
+def test_gpu_status_rule(gpu_result):
+    # NVML 스냅샷: status=GPU idx, value=VRAM(MB), name=온도(C)
+    ev = gpu_result["GPU_STATUS"][0]
+    assert ev.status == "1"
+    assert ev.value == pytest.approx(4361.0)
+    assert ev.name == "63"
+
+
+def test_cuda_mempool_rule(gpu_result):
+    ev = gpu_result["CUDA_MEMPOOL"][0]
+    assert ev.status == "0"
+    assert ev.value == pytest.approx(32.0)
+    assert ev.extra == "48"
+    assert "SetupCudaMempoolForWddm" in ev.name
+
+
+def test_gpu_wait_rule(gpu_result):
+    ev = gpu_result["GPU_WAIT"][0]
+    assert ev.value == pytest.approx(1250.0)
+
+
+def test_console_gpu_model_load(extractor, tmp_path):
+    # console.log 는 물리 GPU #N 배치의 유일한 소스다 (core 파싱 대상)
+    path = tmp_path / "console.log"
+    _write_log(path, [
+        _line("2026/07/27-00:12:43.602", "Debug", "console",
+              "[Success] Load 3D_SHOULDER_3D6L.onnx Model On GPU #1",
+              obj_id="0"),
+    ])
+    fi = classify(str(path))
+    assert fi.core, "console.log 는 core 파싱 대상이어야 한다"
+    evs, _n = extractor.extract_file(fi, file_id=9)
+    ev = _by_kind(evs)["GPU_MODEL_LOAD"][0]
+    assert ev.model == "3D_SHOULDER_3D6L.onnx"
+    assert ev.value == 1.0

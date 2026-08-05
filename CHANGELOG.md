@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.4.0 (2026-08-05)
+
+- **GPU 리소스 섹션** (상세 › 시스템): GPU0/GPU1 개별 — ① NVML 스냅샷
+  (`[GPU STATUS]` — VRAM 사용량·온도, PC3 실측 29만건에서 **최고 89°C 임계
+  초과** 검출), ② 모델 로드 시점 VRAM(cudaMemGetInfo 델타, console.log 의
+  `GPU #N` 로드 이벤트로 물리 GPU 보정), ③ CUDA 메모리풀(usedCur),
+  ④ GPU 전역 락 대기(WaitForCriticalSection), ⑤ TalogWatch gpu_*.jsonl
+  조인(사용률 % 포함 — 로그에 없는 유일 지표). 진단 룰 3종 추가(온도 임계,
+  락 대기 p95, 비상주 모델 안내)
+- **에러 컨텍스트 아코디언**: 에러성 이벤트(ERROR/CRASH/MODEL_FAIL 등
+  10종)에 원본 로그 전후 ±3줄 발췌를 저장(events.context)하고 에러/예외
+  전체 탭에서 행마다 펼쳐보기 제공
+- **레시피 인퍼런스 플래그**: DLMODEL.ini 의 on memory infer(상주)/use
+  patch infer/AthenaModelType/alg blocks name 파싱 → 모델·GPU 탭에
+  "레시피 모델 구성" 표(비상주 모델 경고 포함), DB recipe_models 확장
+- console.log 를 core 파싱 대상으로 승격(물리 GPU 배치의 유일 소스),
+  GPU 계측 홍수 균등 샘플링 확장, AI_GUIDE 스키마 갱신. 테스트 65개
+
 ## 1.3.0 (2026-08-05)
 
 - **리포트 비주얼 전면 리디자인**: 검증된 데이터 시각화 팔레트로 교체

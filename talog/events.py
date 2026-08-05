@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -17,6 +18,15 @@ from .fileclass import FileInfo
 from .lineparser import LogRecord, iter_batchrun, iter_records
 
 _RULES_PATH = os.path.join(os.path.dirname(__file__), "rules", "events.yaml")
+
+# 에러성 이벤트에 원본 로그 전후 발췌(context)를 붙이는 대상 kind
+_CTX_KINDS = frozenset((
+    "ERROR", "CRASH", "EXC_REDIRECT", "MODEL_FAIL", "INFER_ERROR",
+    "COMM_FAIL", "RECIPE_FAIL", "GRAB_FAIL", "ALG_TIMEOUT", "IMG_TIMEOUT"))
+_CTX_BEFORE = 3        # 발췌할 이전/이후 레코드 수
+_CTX_AFTER = 3
+_CTX_LINE_CAP = 200    # 발췌 레코드당 문자 수 상한
+_CTX_TOTAL_CAP = 1600  # 이벤트당 context 총량 상한
 
 
 @dataclass(slots=True)
@@ -39,6 +49,7 @@ class Event:
     alg_list: str = ""
     extra: str = ""
     line_no: int = 0
+    context: str = ""         # 에러성 이벤트 한정: 원본 로그 전후 발췌
 
 
 @dataclass(slots=True)
@@ -81,10 +92,19 @@ class Extractor:
         rules = self.rules.get(fi.category, [])
         out: list[Event] = []
         n = 0
+        prev: deque[str] = deque(maxlen=_CTX_BEFORE)
+        pending: list[list] = []   # [이벤트, 남은 after 발췌 수]
         for rec in iter_records(fi.path):
             n += 1
             if until_ts and rec.ts > until_ts:
                 break
+            line = (f"{rec.ts_text} [{rec.level}][{rec.header}] "
+                    f"{rec.msg}")[:_CTX_LINE_CAP]
+            if pending:
+                for p in pending:
+                    p[0].context = (p[0].context + "\n  " + line)[:_CTX_TOTAL_CAP]
+                    p[1] -= 1
+                pending = [p for p in pending if p[1] > 0]
             ev = self._match(rec, rules)
             if ev is None and rec.level == "Error":
                 # 룰 미적중 에러도 전수 보존 (에러 테이블용)
@@ -99,7 +119,12 @@ class Extractor:
                     ev.line_no = rec.line_no
                 if fi.category == "comm" and ev.kind == "COMM_MSG":
                     self._enrich_comm(ev)
+                if ev.kind in _CTX_KINDS:
+                    ev.context = "\n".join(
+                        [f"  {p}" for p in prev] + [f"▶ {line}"])[:_CTX_TOTAL_CAP]
+                    pending.append([ev, _CTX_AFTER])
                 out.append(ev)
+            prev.append(line)
         return out, n
 
     def _match(self, rec: LogRecord, rules: list[CompiledRule]) -> Optional[Event]:

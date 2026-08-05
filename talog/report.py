@@ -63,6 +63,8 @@ class ReportContext:
     findings: list[Finding] = field(default_factory=list)
     llm_summary: str = ""        # 로컬 LLM 종합 소견 (--llm 옵션)
     similar_cases: list = field(default_factory=list)   # (유사도,제목,원인,조치,site,date)
+    gpu_watch: list = field(default_factory=list)  # TalogWatch gpu_*.jsonl 샘플
+    #   (ts_epoch, gpu_idx, temp_c, util_pct, mem_mb)
 
 
 def _esc(v) -> str:
@@ -476,9 +478,15 @@ def _errors_section(ctx: ReportContext) -> str:
             m = ctx.recipe.models.get(mi)
             if m:
                 detail = f"{e.model} = {m.model_file} (GPU{m.dev_index}, {m.infer_dll})"
+        ctxt = getattr(e, "context", "")
+        acc = (f"<details class='ctx'><summary>원본 로그 전후 ±3줄</summary>"
+               f"<pre>{_esc(ctxt)}</pre></details>") if ctxt else ""
         rows.append(f"<tr><td>{_fmt_ts(e.ts_text)}</td><td>{_esc(key[0])}</td>"
-                    f"<td class='r'>{cnt}</td><td>{_esc(detail)}</td></tr>")
-    return ("<table class='sortable'><thead><tr><th>최초 발생</th><th>종류</th>"
+                    f"<td class='r'>{cnt}</td><td>{_esc(detail)}{acc}</td></tr>")
+    return ("<p class='legend'>같은 메시지는 묶어 최초 발생 기준으로 표시합니다. "
+            "행의 <b>원본 로그 전후 ±3줄</b>을 펼치면 해당 시점의 주변 기록을 "
+            "바로 확인할 수 있습니다.</p>"
+            "<table class='sortable'><thead><tr><th>최초 발생</th><th>종류</th>"
             "<th>건수</th><th>내용</th></tr></thead><tbody>"
             + "".join(rows) + "</tbody></table>")
 
@@ -702,8 +710,39 @@ def _usage_mini(ctx: ReportContext) -> str:
 
 
 def _models_section(ctx: ReportContext) -> str:
-    """상세: 레시피 로드 명령 이력 + 채널별 모델 로드(Initialize) + 모델별 Tact."""
+    """상세: 레시피 모델 구성 + 로드 명령 이력 + 채널별 로드 + 모델별 Tact."""
     out = []
+    # 0) 레시피 모델 구성 (DLMODEL.ini — 인퍼런스 동작 플래그 포함)
+    if ctx.recipe and ctx.recipe.models:
+        n_offmem = sum(1 for m in ctx.recipe.models.values() if not m.on_memory)
+        out.append(
+            "<h2>레시피 모델 구성 (DLMODEL.ini)</h2>"
+            "<p class='legend'><b>상주</b> = on memory infer — 1이면 기동 시 "
+            "모델을 VRAM 에 올려두고 매 요청은 즉시 실행, 0이면 매 요청마다 "
+            "GPU 락 → 로드 → 추론 → 언로드를 반복하며 인스턴스 수가 1로 "
+            "강제됩니다(느리지만 VRAM 절약).</p>")
+        if n_offmem:
+            out.append(f"<p style='background:#fbeee7;border:1px solid #ecb0a0;"
+                       f"border-radius:6px;padding:9px 13px'><b>⚠ 비상주 모델 "
+                       f"{n_offmem}개</b> — 해당 모델은 매 요청 로드/언로드로 "
+                       f"GPU 직렬화 대기가 발생할 수 있습니다.</p>")
+        mrows = []
+        for m in sorted(ctx.recipe.models.values(), key=lambda x: x.idx):
+            onmem = "1" if m.on_memory else \
+                "<span style='color:#ec835a;font-weight:700'>0 (비상주)</span>"
+            dev = "CPU" if m.dev_type == 0 else f"GPU{m.dev_index}"
+            mrows.append(
+                f"<tr><td class='r'>{m.idx}</td><td>{_esc(m.name)}</td>"
+                f"<td>{_esc(m.model_file)}</td><td>{dev}</td>"
+                f"<td>{_esc(m.task or '-')}</td><td class='r'>{onmem}</td>"
+                f"<td class='r'>{m.instance_count}</td>"
+                f"<td class='r'>{'1' if m.patch_infer else '0'}</td>"
+                f"<td>{_esc(m.infer_dll)}</td></tr>")
+        out.append("<table class='sortable'><thead><tr><th class='r'>#</th>"
+                   "<th>모델</th><th>파일</th><th>장치</th><th>타입</th>"
+                   "<th class='r'>상주</th><th class='r'>인스턴스</th>"
+                   "<th class='r'>패치</th><th>백엔드 DLL</th></tr></thead>"
+                   "<tbody>" + "".join(mrows) + "</tbody></table>")
     # 1) 설비 레시피/모델 로드 명령 (comm)
     rl = [m for m in ctx.model_loads if m.kind == "recipe_load"]
     out.append("<h2>설비 모델 로드 명령 (comm)</h2>")
@@ -843,6 +882,148 @@ def _usage_section(ctx: ReportContext) -> str:
     out.append("<p class='legend'>주의: 이 파일에는 같은 PC 의 talos 프로세스들이 "
                "함께 기록되므로 선이 여러 밴드로 보일 수 있습니다. 추세 판정은 "
                "5분 버킷 상한(주 엔진 프로세스) 기준입니다.</p>")
+    return "".join(out)
+
+
+def _gpu_resource_section(ctx: ReportContext) -> str:
+    """GPU 리소스 (v1.4): [GPU STATUS] VRAM·온도, 모델 로드 VRAM 델타,
+    CUDA 메모리풀, TalogWatch 상주 수집 — GPU0/GPU1 개별 표시."""
+    status = [e for e in ctx.events if e.kind == "GPU_STATUS"]
+    memload = [e for e in ctx.events if e.kind == "GPU_MEMLOAD"]
+    mempool = [e for e in ctx.events if e.kind == "CUDA_MEMPOOL"]
+    waits = [e for e in ctx.events if e.kind == "GPU_WAIT" and e.value > 0]
+    console_map = {e.model: int(e.value) for e in ctx.events
+                   if e.kind == "GPU_MODEL_LOAD"}
+    out = ["<h2>GPU 리소스</h2>"]
+    any_data = False
+
+    # 1) NVML [GPU STATUS] — GPU별 VRAM/온도 시계열 (신규 빌드 로그)
+    if status:
+        any_data = True
+        by_gpu: dict[str, list] = {}
+        for e in status:
+            by_gpu.setdefault(e.status or "0", []).append(e)
+        out.append("<h3>GPU별 VRAM·온도 (NVML 스냅샷, 인퍼런스 전후)</h3>"
+                   "<div style='display:flex;flex-wrap:wrap;gap:16px'>")
+        for g in sorted(by_gpu):
+            evs = by_gpu[g]
+            mem = [(e.ts, e.value) for e in evs]
+            temp = [(e.ts, float(e.name or 0)) for e in evs if e.name]
+            tmax = max((v for _t, v in temp), default=0.0)
+            tcol = "#d03b3b" if tmax >= 85 else "#eb6834"
+            twarn = " ⚠" if tmax >= 85 else ""
+            out.append(
+                f"<div><div style='font-size:12px;font-weight:600'>GPU {_esc(g)}"
+                f" — VRAM 사용량(MB)</div>"
+                + _series_svg(mem, ctx.log_start, ctx.log_end,
+                              w=430, h=100, color="#2a78d6", unit="MB")
+                + f"<div style='font-size:12px;font-weight:600;margin-top:6px'>"
+                f"GPU {_esc(g)} — 온도(°C), 최고 {tmax:.0f}°C{twarn}</div>"
+                + _series_svg(temp, ctx.log_start, ctx.log_end,
+                              w=430, h=74, color=tcol, unit="C") + "</div>")
+        out.append("</div>")
+
+    # 2) 모델 로드 시 VRAM (cudaMemGetInfo 전후 델타)
+    if memload:
+        any_data = True
+        series: dict[str, list] = {}
+        per_model: dict[str, dict] = {}
+        for e in memload:
+            phys = console_map.get(e.model)
+            gl = f"GPU #{phys}" if phys is not None else f"GPU 로컬{e.status}"
+            series.setdefault(gl, []).append((e.ts, e.value))
+            pm = per_model.setdefault(
+                e.model, {"gpu": gl, "n": 0, "deltas": [], "last": 0.0})
+            pm["n"] += 1
+            pm["deltas"].append(float(e.name or 0))
+            pm["last"] = e.value
+        out.append(
+            "<h3>모델 로드 시점 VRAM (cudaMemGetInfo)</h3>"
+            "<p class='legend'>모델을 GPU 에 올릴 때마다 측정된 전체 VRAM "
+            "사용량입니다. 상주(on memory infer=1) 모델은 기동/레시피 전환 시 "
+            "1회, 비상주(=0) 모델은 매 요청마다 기록됩니다."
+            + (" 물리 GPU 번호는 console.log 의 로드 이벤트로 보정했습니다."
+               if console_map else
+               " 이 로그의 GPU 번호는 프로세스 로컬 인덱스입니다 (물리 구분은 "
+               "console.log 필요).") + "</p>"
+            "<div style='display:flex;flex-wrap:wrap;gap:16px'>")
+        for gl in sorted(series):
+            out.append(f"<div><div style='font-size:12px;font-weight:600'>"
+                       f"{_esc(gl)} — 로드 후 VRAM(MB)</div>"
+                       + _series_svg(series[gl], ctx.log_start, ctx.log_end,
+                                     w=430, h=100, color="#2a78d6", unit="MB")
+                       + "</div>")
+        out.append("</div>")
+        rows = "".join(
+            f"<tr><td>{_esc(m)}</td><td>{_esc(d['gpu'])}</td>"
+            f"<td class='r'>{d['n']}</td>"
+            f"<td class='r'>{statistics.mean(d['deltas']):,.0f}</td>"
+            f"<td class='r'>{d['last']:,.0f}</td></tr>"
+            for m, d in sorted(per_model.items(),
+                               key=lambda kv: -kv[1]["n"])[:60])
+        out.append("<table class='sortable'><thead><tr><th>모델</th><th>GPU</th>"
+                   "<th class='r'>로드 횟수</th><th class='r'>평균 증분(MB)</th>"
+                   "<th class='r'>마지막 로드 후(MB)</th></tr></thead><tbody>"
+                   + rows + "</tbody></table>")
+
+    # 3) CUDA 메모리풀 (WDDM, Tenneco 계열 빌드)
+    if mempool:
+        any_data = True
+        by_dev: dict[str, list] = {}
+        for e in mempool:
+            by_dev.setdefault(e.status or "0", []).append((e.ts, e.value))
+        out.append("<h3>CUDA 메모리풀 (usedCur)</h3>"
+                   "<div style='display:flex;flex-wrap:wrap;gap:16px'>")
+        for g in sorted(by_dev):
+            out.append(f"<div><div style='font-size:12px;font-weight:600'>"
+                       f"dev {_esc(g)} — usedCur(MB)</div>"
+                       + _series_svg(by_dev[g], ctx.log_start, ctx.log_end,
+                                     w=430, h=90, color="#2a78d6", unit="MB")
+                       + "</div>")
+        out.append("</div>")
+
+    # 4) 비상주 경로의 GPU 전역 락 대기
+    if waits:
+        any_data = True
+        vs = sorted(e.value for e in waits)
+        p95 = vs[min(len(vs) - 1, int(len(vs) * 0.95))]
+        out.append(f"<p><b>GPU 전역 락 대기</b> (WaitForCriticalSection, "
+                   f"비상주 모델 경로): {len(vs):,}회 · 평균 "
+                   f"{statistics.mean(vs):,.0f}ms · p95 {p95:,.0f}ms — "
+                   f"값이 크면 여러 채널이 같은 GPU 를 직렬로 대기한 것입니다.</p>")
+
+    # 5) TalogWatch 상주 수집 (gpu_*.jsonl — 사용률 포함 유일 소스)
+    if ctx.gpu_watch:
+        any_data = True
+        by_gpu2: dict[int, list] = {}
+        for ts, g, temp, util, mem in ctx.gpu_watch:
+            by_gpu2.setdefault(g, []).append((ts, temp, util, mem))
+        out.append("<h3>TalogWatch 상주 수집 (nvidia-smi, 5분 간격)</h3>"
+                   "<div style='display:flex;flex-wrap:wrap;gap:16px'>")
+        for g in sorted(by_gpu2):
+            rows_g = by_gpu2[g]
+            for label, idx, color, unit in (
+                    ("사용률(%)", 2, "#eb6834", "%"),
+                    ("VRAM(MB)", 3, "#2a78d6", "MB"),
+                    ("온도(°C)", 1, "#1baf7a", "C")):
+                pairs = [(r[0], r[idx]) for r in rows_g]
+                out.append(f"<div><div style='font-size:12px;font-weight:600'>"
+                           f"GPU {g} — {label}</div>"
+                           + _series_svg(pairs, ctx.log_start, ctx.log_end,
+                                         w=340, h=84, color=color, unit=unit)
+                           + "</div>")
+        out.append("</div>")
+
+    if not any_data:
+        out.append(
+            "<p>이 로그 묶음에는 GPU 리소스 기록이 없습니다.</p>"
+            "<p class='legend'>확보 방법 3가지 — ① 신규 talos-vision 빌드는 "
+            "DLInfer.log 에 NVML 스냅샷([GPU STATUS] — VRAM·온도)을 남깁니다. "
+            "② 모델 로드(레시피 전환)가 있는 날짜에는 cudaMemGetInfo 라인으로 "
+            "VRAM 재구성이 가능합니다. ③ GPU 사용률(%)·클럭은 어떤 로그에도 "
+            "없으므로 <code>talog watch</code>(TalogWatch)를 상주시키면 "
+            "nvidia-smi 로 5분 간격 수집됩니다(gpu_*.jsonl). 클럭·스로틀링 "
+            "사유까지 필요하면 플랫폼 로깅 추가를 권장합니다.</p>")
     return "".join(out)
 
 
@@ -1256,6 +1437,12 @@ def render(ctx: ReportContext) -> str:
    border-color: var(--blue); }}
  details summary {{ cursor: pointer; color: var(--ink2); margin-top: 12px;
                     font-size: 12.5px; }}
+ details.ctx summary {{ margin-top: 4px; font-size: 11.5px; color: var(--blue);
+                        font-weight: 600; }}
+ details.ctx pre {{ background: var(--track); border-radius: 6px;
+   padding: 8px 10px; margin: 5px 0 2px; font-size: 11px; line-height: 1.55;
+   white-space: pre-wrap; word-break: break-all; overflow-x: auto;
+   font-family: Consolas, monospace; color: var(--ink2); }}
  a.ilink {{ color: var(--blue); }}
  svg {{ display: block; }}
 </style></head><body>
@@ -1330,6 +1517,7 @@ def render(ctx: ReportContext) -> str:
  </section>
  <section id="sec-sys">
   {_usage_section(ctx)}
+  {_gpu_resource_section(ctx)}
   <h2>프로세스 세대 (재시작 이력)</h2>{_gens_section(ctx)}
   <h2>파싱된 파일</h2>
   <table class='sortable'><thead><tr><th>파일</th><th>분류</th><th class='r'>MB</th>

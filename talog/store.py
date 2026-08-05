@@ -18,7 +18,7 @@ CREATE TABLE events(
     id INTEGER PRIMARY KEY, file_id INTEGER, ts REAL, ts_text TEXT, kind TEXT,
     level TEXT, obj_id TEXT, inner_id TEXT, product_id TEXT, roi_idx INTEGER,
     alg_idx INTEGER, block TEXT, model TEXT, value REAL, status TEXT,
-    name TEXT, alg_list TEXT, extra TEXT, line_no INTEGER);
+    name TEXT, alg_list TEXT, extra TEXT, line_no INTEGER, context TEXT);
 CREATE INDEX ix_events_kind ON events(kind);
 CREATE INDEX ix_events_inner ON events(inner_id);
 CREATE INDEX ix_events_ts ON events(ts);
@@ -48,7 +48,9 @@ CREATE TABLE recipe_algs(
     roi_idx TEXT, dl_model TEXT);
 CREATE TABLE recipe_models(
     idx INTEGER PRIMARY KEY, name TEXT, model_file TEXT,
-    dev_index INTEGER, instance_count INTEGER, infer_dll TEXT);
+    dev_index INTEGER, instance_count INTEGER, infer_dll TEXT,
+    on_memory INTEGER DEFAULT 1, patch_infer INTEGER DEFAULT 0,
+    athena_type INTEGER DEFAULT 0, alg_blocks TEXT DEFAULT '');
 """
 
 
@@ -72,8 +74,9 @@ def insert_file(con: sqlite3.Connection, fi: FileInfo, parsed: bool,
 def insert_events(con: sqlite3.Connection, evs: Iterable[Event]):
     con.executemany(
         "INSERT INTO events(file_id,ts,ts_text,kind,level,obj_id,inner_id,product_id,"
-        "roi_idx,alg_idx,block,model,value,status,name,alg_list,extra,line_no) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "roi_idx,alg_idx,block,model,value,status,name,alg_list,extra,line_no,"
+        "context) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(e.file_id, e.ts, e.ts_text, e.kind, e.level, e.obj_id, e.inner_id,
           e.product_id, e.roi_idx, e.alg_idx, e.block, e.model, e.value,
-          e.status, e.name, e.alg_list, e.extra, e.line_no) for e in evs])
+          e.status, e.name, e.alg_list, e.extra, e.line_no, e.context)
+         for e in evs])

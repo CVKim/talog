@@ -39,7 +39,7 @@ _EXACT = {
     "comm_fail.log": ("comm_fail", True),
     "inspectmng.log": ("inspectmng", True),
     "stopthread.log": ("stopthread", True),
-    "console.log": ("console", False),
+    "console.log": ("console", True),       # 물리 GPU #N 모델 배치의 유일 소스
     "talos.log": ("talos", False),
     "talosn.log": ("talosn", False),
     "dlinfer.log": ("dlinfer", True),       # GPU-모델 매핑 + executeV2 시계열

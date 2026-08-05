@@ -31,7 +31,7 @@ def _fmt_t(text: str) -> str:
 def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
              gens: list[ProcessGen], events: list[Event],
              model_loads: list[ModelLoad], log_start: float, log_end: float,
-             usage_result=None) -> list[Finding]:
+             usage_result=None, recipe=None) -> list[Finding]:
     out: list[Finding] = []
     prod = [i for i in inspections if not i.status.startswith("sim")]
     bad = [i for i in prod if i.status in
@@ -219,6 +219,35 @@ def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
         n = sum(1 for e in events if e.kind == kind)
         if n:
             out.append(Finding("crit", f"{title} {n}건", [], advice))
+
+    # 6.5) GPU 리소스 신호 (v1.4) ------------------------------------------------
+    temps = [float(e.name or 0) for e in events
+             if e.kind == "GPU_STATUS" and e.name]
+    if temps and max(temps) >= 85:
+        out.append(Finding("crit", f"GPU 온도 임계 초과 (최고 {max(temps):.0f}°C)",
+                           ["NVML 스냅샷([GPU STATUS]) 기준 85°C 이상 —  "
+                            "스로틀링으로 인퍼런스 Tact 열화 가능"],
+                           "GPU 냉각(팬/먼지/함체 통풍)을 점검하십시오."))
+    gw = sorted(e.value for e in events if e.kind == "GPU_WAIT" and e.value > 0)
+    if gw and len(gw) >= 20:
+        p95 = gw[min(len(gw) - 1, int(len(gw) * 0.95))]
+        if p95 >= 1000:
+            out.append(Finding(
+                "warn", f"GPU 전역 락 대기 p95 {p95 / 1000:.1f}s ({len(gw):,}회)",
+                ["비상주(on memory infer=0) 모델 경로에서 여러 채널이 같은 "
+                 "GPU 를 직렬로 대기했습니다"],
+                "해당 모델의 on memory infer=1 전환(VRAM 여유 필요) 또는 "
+                "GPU 부하 분산을 검토하십시오."))
+    if recipe is not None and getattr(recipe, "models", None):
+        offmem = [m for m in recipe.models.values() if not m.on_memory]
+        if offmem:
+            names = ", ".join(m.name for m in offmem[:6])
+            out.append(Finding(
+                "info", f"비상주(on memory infer=0) 모델 {len(offmem)}개",
+                [f"{names} — 매 요청마다 GPU 락→로드→추론→언로드를 반복하며 "
+                 f"인스턴스 수가 1로 강제됩니다"],
+                "요청이 잦은 모델이면 on memory infer=1 전환을 검토하십시오 "
+                "(VRAM 사용량 증가와 맞바꿈)."))
 
     # 7) 통신/기타 에러 클러스터 -------------------------------------------------
     err_n = sum(1 for e in events

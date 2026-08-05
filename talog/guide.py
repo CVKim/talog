@@ -23,10 +23,17 @@ AI_GUIDE = """# talog 로그 분석 가이드
   MODEL_GPU_LOAD(status=GPU번호, model, value=로드 ms),
   DLINFER_EXEC(model, status=GPU번호, value=executeV2 ms),
   USAGE(value=RAM MB, status=CPU%, name=스레드 수), ALG_DEACT(정상 스킵),
+  GPU_STATUS(status=GPU번호, value=VRAM MB, name=온도 C — NVML 스냅샷),
+  GPU_MEMLOAD(model, value=로드 후 VRAM MB, name=증분 MB — cudaMemGetInfo),
+  GPU_MODEL_LOAD(model, value=물리 GPU 번호 — console.log),
+  CUDA_MEMPOOL(status=dev, value=usedCur MB), GPU_WAIT(value=GPU 락 대기 ms),
   ERROR, EXC_REDIRECT(name=원본 로그파일). 원문 위치: file_id→files.path, line_no.
+  에러성 kind 는 context 컬럼에 원본 로그 전후 ±3줄 발췌가 있다.
 - process_gens: 프로세스 세대. end_cause(kill|crash|destroy|eof)
 - model_loads: kind=recipe_load(설비 명령)|channel_init(채널 로드), dur_s, status
-- recipe_algs/recipe_models: 레시피 조인 (alg_idx↔결함명↔모델↔GPU dev_index)
+- recipe_algs/recipe_models: 레시피 조인 (alg_idx↔결함명↔모델↔GPU dev_index).
+  recipe_models.on_memory(1=VRAM 상주/0=매 요청 로드), patch_infer, athena_type
+  (2=SEG/3=CLA/11=DET), alg_blocks(후처리 그래프 JSON)
 - files: 파싱된 로그 파일 목록(path, category, records)
 
 ## 검증된 진단 절차

@@ -42,6 +42,15 @@ class RecipeModel:
     dev_index: int = 0
     instance_count: int = 1
     infer_dll: str = ""
+    # v1.4: 인퍼런스 동작 플래그 (DeepLearningInspector.cpp 의 키와 기본값 동일)
+    on_memory: int = 1        # "on memory infer" — 1=VRAM 상주, 0=요청 시 로드/언로드
+    patch_infer: int = 0      # "use patch infer" — 1=패치 슬라이딩 인퍼런스
+    athena_type: int = 0      # "AthenaModelType" — 2=SEG / 3=CLA / 11=DET
+    alg_blocks: str = ""      # "alg blocks name" — 후처리 블록 그래프 JSON
+
+    @property
+    def task(self) -> str:
+        return {2: "SEG", 3: "CLA", 11: "DET"}.get(self.athena_type, "")
 
 
 @dataclass
@@ -162,5 +171,9 @@ def load_recipe(recipe_root: str, version_hint: str = "") -> Recipe:
                 dev_index=int(s.get("dev index", "0") or 0),
                 instance_count=int(s.get("instance count", "1") or 1),
                 infer_dll=s.get("infer dll name", "").strip(),
+                on_memory=int(s.get("on memory infer", "1") or 1),
+                patch_infer=int(s.get("use patch infer", "0") or 0),
+                athena_type=int(s.get("athenamodeltype", "0") or 0),
+                alg_blocks=s.get("alg blocks name", "").strip(),
             )
     return r
