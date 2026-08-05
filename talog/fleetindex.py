@@ -69,7 +69,7 @@ def _trend_section(rows: list[dict]) -> str:
     multi = {k: v for k, v in groups.items() if len(v) >= 2 and k != "(단일)"}
     if not multi:
         return ""
-    out = ["<h2 style='font-size:16px;border-bottom:2px solid #5c9ded;"
+    out = ["<h2 style='font-size:16px;border-bottom:2px solid #2a78d6;"
            "padding-bottom:6px'>설비별 추이</h2>"]
     for equip, days in sorted(multi.items()):
         days.sort(key=lambda r: r["tag"])
@@ -78,11 +78,11 @@ def _trend_section(rows: list[dict]) -> str:
         for d in days:
             day = d["tag"].rsplit("_", 1)[-1]
             h = max(6, int(d["total"] / mx * 46))
-            bar_color = "#c62828" if d["bad"] else "#5c9ded"
-            bad_txt = (f"<div style='color:#c62828;font-weight:700'>"
+            bar_color = "#d03b3b" if d["bad"] else "#2a78d6"
+            bad_txt = (f"<div style='color:#d03b3b;font-weight:700'>"
                        f"이상 {d['bad']}</div>") if d["bad"] else \
-                "<div style='color:#2e7d32'>정상</div>"
-            ng_txt = (f"<div style='color:#e65100'>NG {d['ng']}</div>"
+                "<div style='color:#0ca30c'>정상</div>"
+            ng_txt = (f"<div style='color:#ec835a'>NG {d['ng']}</div>"
                       if d.get("ng") else "")
             cells.append(
                 f"<td style='border:none;text-align:center;padding:6px 14px'>"
@@ -91,10 +91,10 @@ def _trend_section(rows: list[dict]) -> str:
                 f"background:{bar_color};border-radius:3px 3px 0 0'></div></div>"
                 f"<div style='font-weight:700'>{html.escape(day)}일</div>"
                 f"<div>{d['total']:,}건</div>{bad_txt}{ng_txt}"
-                f"<div style='color:#888'>{d['avg_dur']:.1f}s · 재시작 "
+                f"<div style='color:#898781'>{d['avg_dur']:.1f}s · 재시작 "
                 f"{max(0, d['gens'] - 1)}</div></td>")
         out.append(
-            f"<div style='display:inline-block;border:1px solid #e2e8f0;"
+            f"<div style='display:inline-block;border:1px solid #e1e0d9;"
             f"border-radius:10px;margin:8px 12px 8px 0;padding:8px 6px;"
             f"vertical-align:top'><div style='font-weight:800;padding:2px 12px'>"
             f"{html.escape(equip)}</div><table style='border:none'><tr>"
@@ -105,7 +105,7 @@ def _trend_section(rows: list[dict]) -> str:
 def render(rows: list[dict]) -> str:
     body = []
     for r in rows:
-        badge = (f"<span style='color:#c62828;font-weight:700'>{r['bad']}</span>"
+        badge = (f"<span style='color:#d03b3b;font-weight:700'>{r['bad']}</span>"
                  if r["bad"] else "0")
         body.append(
             f"<tr><td><a href='{html.escape(r['tag'])}.html'><b>"
@@ -123,13 +123,13 @@ def render(rows: list[dict]) -> str:
     return f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8"><title>talog 리포트 인덱스</title>
 <style>
- body {{ font-family: 'Malgun Gothic', sans-serif; margin: 30px; color: #222; }}
+ body {{ font-family: 'Malgun Gothic', sans-serif; margin: 30px; color: #0b0b0b; }}
  h1 {{ font-size: 21px; }}
  table {{ border-collapse: collapse; font-size: 13px; margin-top: 14px; }}
- th, td {{ border: 1px solid #ddd; padding: 6px 10px; text-align: left; }}
- th {{ background: #f0f4fa; }} td.r {{ text-align: right; }}
- .sum {{ color: #555; margin-top: 6px; }}
- a {{ color: #1565c0; text-decoration: none; }} a:hover {{ text-decoration: underline; }}
+ th, td {{ border: 1px solid #e1e0d9; padding: 6px 10px; text-align: left; }}
+ th {{ background: #fcfcfb; }} td.r {{ text-align: right; }}
+ .sum {{ color: #52514e; margin-top: 6px; }}
+ a {{ color: #2a78d6; text-decoration: none; }} a:hover {{ text-decoration: underline; }}
 </style></head><body>
 <h1>talog 진단 리포트 인덱스</h1>
 <div class="sum">총 {len(rows)}개 설비-일자 · 검사 {total:,}건 · 이상 {bad}건 ·

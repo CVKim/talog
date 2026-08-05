@@ -28,10 +28,17 @@ _STATUS_KO = {
     "sim_partial": "시뮬레이션 부분 실행",
     "unknown": "불명",
 }
+# 디자인 토큰 — dataviz 검증 팔레트(레퍼런스 인스턴스, 라이트 서피스 기준)
+# 상태색은 status 팔레트, 크기(막대)는 시퀀셜 blue, 보조 시퀀셜은 orange.
 _STATUS_COLOR = {
-    "complete": "#2e7d32", "rejected": "#c62828", "incomplete_lost": "#e65100",
-    "incomplete": "#ad1457", "in_progress_eof": "#546e7a",
-    "sim_complete": "#7cb342", "sim_partial": "#9e9d24", "unknown": "#757575",
+    "complete": "#0ca30c",            # status: good
+    "rejected": "#d03b3b",            # status: critical
+    "incomplete": "#d03b3b",
+    "unknown": "#d03b3b",
+    "incomplete_lost": "#ec835a",     # status: serious
+    "in_progress_eof": "#898781",     # muted (판정 불가)
+    "sim_complete": "#1baf7a",        # categorical slot3 (중립 계열)
+    "sim_partial": "#898781",
 }
 _OK_STATUSES = ("complete", "in_progress_eof", "sim_complete")
 _BAD_STATUSES = ("rejected", "incomplete_lost", "incomplete", "unknown")
@@ -204,8 +211,8 @@ def _timeline_svg(ctx: ReportContext) -> str:
     def x(ts: float) -> float:
         return 40 + (ts - ctx.log_start) / span * (w - 80)
 
-    parts = [f'<svg viewBox="0 0 {w} {h}" style="width:100%;background:#fafafa;'
-             f'border:1px solid #ddd;border-radius:6px">']
+    parts = [f'<svg viewBox="0 0 {w} {h}" style="width:100%;background:#fcfcfb;'
+             f'border:1px solid #e1e0d9;border-radius:6px">']
     import datetime as _dt
     t0 = _dt.datetime.fromtimestamp(ctx.log_start)
     tick = _dt.datetime(t0.year, t0.month, t0.day, t0.hour).timestamp()
@@ -213,8 +220,8 @@ def _timeline_svg(ctx: ReportContext) -> str:
         if tick >= ctx.log_start:
             hh = _dt.datetime.fromtimestamp(tick).strftime("%H시")
             parts.append(f'<line x1="{x(tick):.1f}" y1="20" x2="{x(tick):.1f}" y2="76" '
-                         f'stroke="#e3e3e3"/><text x="{x(tick):.1f}" y="94" font-size="11" '
-                         f'text-anchor="middle" fill="#666">{hh}</text>')
+                         f'stroke="#e1e0d9"/><text x="{x(tick):.1f}" y="94" font-size="11" '
+                         f'text-anchor="middle" fill="#898781">{hh}</text>')
         tick += 3600
     # 검사 틱 — 대량(3천 건 초과) 사이트는 분 단위 밀도 스트립으로 전환
     if len(ctx.inspections) > 3000:
@@ -227,11 +234,11 @@ def _timeline_svg(ctx: ReportContext) -> str:
         for b, cnt in per_min.items():
             hh2 = 8 + cnt / mx * 32
             parts.append(f'<rect x="{x(b * 60):.1f}" y="{68 - hh2:.0f}" width="1.6" '
-                         f'height="{hh2:.0f}" fill="#7cb0e8">'
+                         f'height="{hh2:.0f}" fill="#86b6ef">'
                          f'<title>{cnt}건/분</title></rect>')
         for it in ctx.inspections:
             if it.start_ts and it.status in _BAD_STATUSES:
-                c = _STATUS_COLOR.get(it.status, "#c62828")
+                c = _STATUS_COLOR.get(it.status, "#d03b3b")
                 parts.append(
                     f'<line x1="{x(it.start_ts):.1f}" y1="26" '
                     f'x2="{x(it.start_ts):.1f}" y2="72" stroke="{c}" '
@@ -243,7 +250,7 @@ def _timeline_svg(ctx: ReportContext) -> str:
         for it in ctx.inspections:
             if not it.start_ts:
                 continue
-            c = _STATUS_COLOR.get(it.status, "#757575")
+            c = _STATUS_COLOR.get(it.status, "#898781")
             bad = it.status in _BAD_STATUSES
             yy, hh2, sw = (44, 24, 1.5) if not bad else (30, 46, 3)
             parts.append(
@@ -255,16 +262,16 @@ def _timeline_svg(ctx: ReportContext) -> str:
     for g in ctx.gens:
         if g.start_text != "(전일부터 가동)":
             parts.append(f'<polygon points="{x(g.start_ts):.1f},16 {x(g.start_ts) - 5:.1f},5 '
-                         f'{x(g.start_ts) + 5:.1f},5" fill="#1565c0">'
+                         f'{x(g.start_ts) + 5:.1f},5" fill="#2a78d6">'
                          f'<title>프로세스 시작 {g.start_text}</title></polygon>')
         if g.end_cause in ("crash", "kill", "destroy") and g.end_ts:
             parts.append(f'<text x="{x(g.end_ts):.1f}" y="16" font-size="12" '
-                         f'text-anchor="middle" fill="#c62828">✖<title>종료({g.end_cause}) '
+                         f'text-anchor="middle" fill="#d03b3b">✖<title>종료({g.end_cause}) '
                          f'{g.end_text}</title></text>')
     # 모델 로드 이벤트 마커: 레시피 로드 명령(보라 ▲), 로드 실패(빨간 ▲)
     for m in ctx.model_loads:
         if m.kind == "recipe_load":
-            col = "#6a1b9a" if m.status == "OK" else "#c62828"
+            col = "#4a3aa7" if m.status == "OK" else "#d03b3b"
             parts.append(f'<text x="{x(m.ts):.1f}" y="{h - 20}" font-size="12" '
                          f'text-anchor="middle" fill="{col}">▲<title>모델 로드 '
                          f'{_esc(m.name)} {m.ts_text[:12]} ({_esc(m.status)}, '
@@ -272,13 +279,13 @@ def _timeline_svg(ctx: ReportContext) -> str:
     for e in ctx.events:
         if e.kind == "MODEL_FAIL":
             parts.append(f'<text x="{x(e.ts):.1f}" y="{h - 20}" font-size="12" '
-                         f'text-anchor="middle" fill="#c62828">▲<title>모델 로드 실패 '
+                         f'text-anchor="middle" fill="#d03b3b">▲<title>모델 로드 실패 '
                          f'{_esc(e.model)} {e.ts_text[:12]}</title></text>')
     parts.append("</svg>")
-    legend = ('<div class="legend">범례: <span style="color:#2e7d32">│완료</span> '
-              '<span style="color:#e65100">┃실행 중 소실</span> '
-              '<span style="color:#c62828">┃시작 거부 · ✖프로세스 종료</span> '
-              '<span style="color:#1565c0">▼프로세스 시작</span> · 굵은 선을 클릭하면 '
+    legend = ('<div class="legend">범례: <span style="color:#0ca30c">│완료</span> '
+              '<span style="color:#ec835a">┃실행 중 소실</span> '
+              '<span style="color:#d03b3b">┃시작 거부 · ✖프로세스 종료</span> '
+              '<span style="color:#2a78d6">▼프로세스 시작</span> · 굵은 선을 클릭하면 '
               '해당 검사 상세로 이동합니다</div>')
     return "".join(parts) + legend
 
@@ -299,23 +306,25 @@ def _hourly_svg(ctx: ReportContext) -> str:
     maxn = max(len(v) for v in per_hour.values())
     durs = {h: statistics.mean([d for d in v if d > 0] or [0]) for h, v in per_hour.items()}
     maxd = max(durs.values()) or 1
-    w, h = 1120, 150
-    bw = (w - 90) / max(len(hours), 1)
-    parts = [f'<svg viewBox="0 0 {w} {h}" style="width:100%">']
+    # 버킷이 적을 때(짧은 가동일) 막대가 화면 폭을 가득 채우지 않도록 폭 상한
+    bw = min(64.0, 1030 / max(len(hours), 1))
+    w, h = max(260, int(90 + bw * len(hours) + 10)), 150
+    parts = [f'<svg viewBox="0 0 {w} {h}" '
+             f'style="width:100%;max-width:{w}px;display:block">']
     for i, hh in enumerate(hours):
         n = len(per_hour[hh])
         bh = n / maxn * 90
         xx = 50 + i * bw
         parts.append(f'<rect x="{xx:.0f}" y="{110 - bh:.0f}" width="{bw * 0.55:.0f}" '
-                     f'height="{bh:.0f}" fill="#5c9ded"><title>{hh}시 검사 {n}건</title></rect>')
+                     f'height="{bh:.0f}" fill="#2a78d6"><title>{hh}시 검사 {n}건</title></rect>')
         dh = durs[hh] / maxd * 90
         parts.append(f'<rect x="{xx + bw * 0.58:.0f}" y="{110 - dh:.0f}" '
-                     f'width="{bw * 0.28:.0f}" height="{dh:.0f}" fill="#ef9a4d">'
+                     f'width="{bw * 0.28:.0f}" height="{dh:.0f}" fill="#eb6834">'
                      f'<title>{hh}시 평균 검사시간 {durs[hh]:.2f}초</title></rect>')
         parts.append(f'<text x="{xx + bw * 0.4:.0f}" y="126" font-size="10" '
-                     f'text-anchor="middle" fill="#666">{hh}시</text>')
-    parts.append(f'<text x="50" y="145" font-size="11" fill="#5c9ded">■ 검사 수</text>'
-                 f'<text x="120" y="145" font-size="11" fill="#ef9a4d">■ 평균 검사시간(s)</text>')
+                     f'text-anchor="middle" fill="#898781">{hh}시</text>')
+    parts.append(f'<text x="50" y="145" font-size="11" fill="#2a78d6">■ 검사 수</text>'
+                 f'<text x="120" y="145" font-size="11" fill="#eb6834">■ 평균 검사시간(s)</text>')
     parts.append("</svg>")
     return "".join(parts)
 
@@ -338,12 +347,12 @@ def _duration_hist_svg(ctx: ReportContext) -> str:
     for i, n in enumerate(bins):
         bh = n / mx * 85
         parts.append(f'<rect x="{50 + i * bw:.0f}" y="{100 - bh:.0f}" '
-                     f'width="{bw * 0.85:.0f}" height="{bh:.0f}" fill="#7cb0e8">'
+                     f'width="{bw * 0.85:.0f}" height="{bh:.0f}" fill="#86b6ef">'
                      f'<title>{lo + i * step:.0f}~{lo + (i + 1) * step:.0f}초: {n}건</title></rect>')
     for frac in (0, 0.5, 1.0):
         xx = 50 + frac * (nb * bw)
         parts.append(f'<text x="{xx:.0f}" y="118" font-size="10" text-anchor="middle" '
-                     f'fill="#666">{lo + frac * (hi - lo):.0f}s</text>')
+                     f'fill="#898781">{lo + frac * (hi - lo):.0f}s</text>')
     parts.append("</svg>")
     return "".join(parts)
 
@@ -379,18 +388,18 @@ def _tact_section(ctx: ReportContext) -> str:
                 f"{(t - ctx.log_start) / (ctx.log_end - ctx.log_start) * 180:.0f},"
                 f"{18 - v / mx * 16:.0f}" for t, v in pts)
             spark = (f'<svg viewBox="0 0 180 20" style="width:180px;height:20px">'
-                     f'<polyline points="{poly}" fill="none" stroke="#e65100" '
+                     f'<polyline points="{poly}" fill="none" stroke="#ec835a" '
                      f'stroke-width="1"/></svg>')
         else:
             spark = ""
         bar = int(avg / max_avg * 220)
-        warn = ' style="background:#fff3e0"' if avg >= 30000 else ""
+        warn = ' style="background:#fbeee7"' if avg >= 30000 else ""
         rows.append(
             f"<tr{warn}><td class='r'>{idx}</td><td>{_esc(ch)}</td><td>{_esc(gpu)}</td>"
             f"<td class='r'>{len(vals)}</td><td class='r'>{vals[0] / 1000:.2f}</td>"
             f"<td class='r'><b>{avg / 1000:.2f}</b></td><td class='r'>{p95 / 1000:.2f}</td>"
             f"<td class='r'>{vals[-1] / 1000:.2f}</td>"
-            f"<td><div style='width:{bar}px;height:10px;background:#5c9ded;"
+            f"<td><div style='width:{bar}px;height:10px;background:#2a78d6;"
             f"border-radius:2px'></div></td><td>{spark}</td></tr>")
     return ("<table class='sortable'><thead><tr><th>alg</th><th>채널</th><th>GPU</th>"
             "<th>N</th><th>min(s)</th><th>avg(s)</th><th>p95(s)</th><th>max(s)</th>"
@@ -429,7 +438,7 @@ def _incomplete_section(ctx: ReportContext) -> str:
         if it.remain_list:
             reason.append("플랫폼 REMAIN 덤프: "
                           + _esc(_translate_alglist(ctx.recipe, it.remain_list)))
-        c = _STATUS_COLOR.get(it.status, "#757575")
+        c = _STATUS_COLOR.get(it.status, "#898781")
         rows.append(f"<tr><td>{_fmt_ts(it.start_text)}</td>"
                     f"<td><a href='#' class='ilink' data-id='{_esc(it.inner_id)}'>"
                     f"{_esc(it.inner_id)}</a></td>"
@@ -475,7 +484,7 @@ def _errors_section(ctx: ReportContext) -> str:
 
 
 def _series_svg(pairs: list[tuple[float, float]], t0: float, t1: float,
-                w: int = 340, h: int = 74, color: str = "#e65100",
+                w: int = 340, h: int = 74, color: str = "#ec835a",
                 unit: str = "ms") -> str:
     """(ts, value) 시계열 미니 차트. 최대 240 포인트로 샘플링."""
     if len(pairs) < 2 or t1 <= t0:
@@ -485,9 +494,9 @@ def _series_svg(pairs: list[tuple[float, float]], t0: float, t1: float,
     poly = " ".join(f"{(t - t0) / (t1 - t0) * (w - 8) + 4:.0f},"
                     f"{h - 16 - v / vmax * (h - 26):.1f}" for t, v in pts)
     return (f'<svg viewBox="0 0 {w} {h}" style="width:{w}px;height:{h}px;'
-            f'background:#fafafa;border:1px solid #eee;border-radius:4px">'
+            f'background:#fcfcfb;border:1px solid #e1e0d9;border-radius:4px">'
             f'<polyline points="{poly}" fill="none" stroke="{color}" stroke-width="1.2"/>'
-            f'<text x="4" y="{h - 4}" font-size="9" fill="#999">'
+            f'<text x="4" y="{h - 4}" font-size="9" fill="#898781">'
             f'max {vmax:,.1f}{unit}</text></svg>')
 
 
@@ -537,7 +546,7 @@ def _gpu_model_section(ctx: ReportContext) -> str:
             out.append(
                 f"<div style='width:352px'><div style='font-size:12px;font-weight:600;"
                 f"margin-bottom:2px'>{_esc(m)}</div>"
-                f"<div style='font-size:11px;color:#666'>N={len(vals):,} · "
+                f"<div style='font-size:11px;color:#898781'>N={len(vals):,} · "
                 f"avg {avg:.1f}ms · p95 {p95:.1f}ms · max {vals[-1]:,.1f}ms</div>"
                 f"{chart}</div>")
         out.append("</div>")
@@ -545,10 +554,10 @@ def _gpu_model_section(ctx: ReportContext) -> str:
 
 
 _SEV_STYLE = {
-    "crit": ("#c62828", "#ffebee", "심각"),
-    "warn": ("#e65100", "#fff3e0", "주의"),
-    "info": ("#546e7a", "#eceff1", "참고"),
-    "ok":   ("#2e7d32", "#e8f5e9", "정상"),
+    "crit": ("#d03b3b", "#f9e6e6", "심각"),
+    "warn": ("#ec835a", "#fbeee7", "주의"),
+    "info": ("#898781", "#f0efec", "참고"),
+    "ok":   ("#006300", "#e8f5e9", "정상"),
 }
 
 
@@ -561,7 +570,7 @@ def _findings_section(ctx: ReportContext) -> str:
         out.append(
             "<h2>AI 종합 소견 <span class='hint'>— 로컬 LLM이 아래 룰 진단을 "
             "바탕으로 작성</span></h2>"
-            f"<div style='border:1px solid #b39ddb;background:#f3e5f5;"
+            f"<div style='border:1px solid #c3c2b7;background:#f0efec;"
             f"border-radius:6px;padding:12px 16px;white-space:pre-wrap;"
             f"font-size:13.5px'>{_esc(ctx.llm_summary)}</div>")
     out.append("<h2>자동 진단 소견 <span class='hint'>— 룰 엔진이 로그 전수에서 "
@@ -569,7 +578,7 @@ def _findings_section(ctx: ReportContext) -> str:
     for f in ctx.findings:
         color, bg, label = _SEV_STYLE.get(f.severity, _SEV_STYLE["info"])
         ev = "".join(f"<li>{_esc(x)}</li>" for x in f.evidence)
-        adv = (f"<div style='margin-top:4px;color:#333'>→ {_esc(f.advice)}</div>"
+        adv = (f"<div style='margin-top:4px;color:#0b0b0b'>→ {_esc(f.advice)}</div>"
                if f.advice else "")
         out.append(
             f"<div style='border-left:5px solid {color};background:{bg};"
@@ -579,7 +588,7 @@ def _findings_section(ctx: ReportContext) -> str:
             f"{adv}</div>")
     if ctx.similar_cases:
         rows = "".join(
-            f"<div style='border:1px solid #cbd5e1;border-radius:6px;"
+            f"<div style='border:1px solid #e1e0d9;border-radius:6px;"
             f"padding:8px 12px;margin:6px 0;font-size:13px'>"
             f"<b>{_esc(t)}</b> <span class='hint'>({_esc(site)} {_esc(dt)}, "
             f"유사도 {s})</span><br>원인: {_esc(cz)}<br>조치: {_esc(ac)}</div>"
@@ -610,7 +619,7 @@ def _ng_section(ctx: ReportContext) -> str:
             w = max(3, int(cnt / mx * 420))
             rows.append(
                 f"<div class='mbar'><div class='mname'>{_esc(name)}</div>"
-                f"<div class='mtrack'><div style='width:{w}px;background:#e65100' "
+                f"<div class='mtrack'><div style='width:{w}px;background:#ec835a' "
                 f"class='mfill'></div><span>{cnt}건</span></div></div>")
         out.append("<div class='mbars'>" + "".join(rows) + "</div>")
         if len(counter) > 12:
@@ -636,7 +645,7 @@ def _model_bar_summary(ctx: ReportContext) -> str:
     rows = []
     for m, avg, n in stats:
         w = int(avg / mx * 420)
-        warn = "#e65100" if avg >= 30000 else "#5c9ded"
+        warn = "#ec835a" if avg >= 30000 else "#2a78d6"
         rows.append(
             f"<div class='mbar' onclick=\"gotoSection('sec-model')\">"
             f"<div class='mname'>{_esc(m)}</div>"
@@ -682,13 +691,14 @@ def _usage_mini(ctx: ReportContext) -> str:
                 "표시됩니다.</p>")
     series, slope, rise, span, suspicious = ua
     mem_pairs = [(t, m) for t, m, _c, _th in series]
-    badge = (f"<span style='color:#c62828;font-weight:700'>⚠ 증가 추세 의심 "
+    badge = (f"<span style='color:#d03b3b;font-weight:700'>⚠ 증가 추세 의심 "
              f"+{rise:,.0f}MB/{span:.1f}h</span>" if suspicious
-             else f"<span style='color:#2e7d32'>추세 {slope:+,.0f}MB/h — 안정</span>")
+             else f"<span style='color:#0ca30c'>추세 {slope:+,.0f}MB/h — 안정</span>")
+    line = "#d03b3b" if suspicious else "#2a78d6"
     return (f"<div onclick=\"gotoSection('sec-sys')\" style='cursor:pointer'>"
             f"<div style='font-size:13px;margin-bottom:4px'>RAM(MB) — {badge}</div>"
             + _series_svg(mem_pairs, ctx.log_start, ctx.log_end,
-                          w=520, h=96, color="#c62828", unit="MB") + "</div>")
+                          w=520, h=96, color=line, unit="MB") + "</div>")
 
 
 def _models_section(ctx: ReportContext) -> str:
@@ -699,7 +709,7 @@ def _models_section(ctx: ReportContext) -> str:
     out.append("<h2>설비 모델 로드 명령 (comm)</h2>")
     if rl:
         rows = "".join(
-            f"<tr{' style=background:#ffebee' if m.status not in ('OK',) else ''}>"
+            f"<tr{' style=background:#f9e6e6' if m.status not in ('OK',) else ''}>"
             f"<td>{_fmt_ts(m.ts_text)}</td><td>{_esc(m.name)}</td>"
             f"<td class='r'>{m.dur_s:.1f}s</td><td>{_esc(m.status)}</td></tr>"
             for m in rl)
@@ -715,7 +725,7 @@ def _models_section(ctx: ReportContext) -> str:
     if ci:
         slow = sorted(ci, key=lambda m: -m.dur_s)
         rows = "".join(
-            f"<tr{' style=background:#ffebee' if m.status != 'OK' else ''}>"
+            f"<tr{' style=background:#f9e6e6' if m.status != 'OK' else ''}>"
             f"<td>{_fmt_ts(m.ts_text)}</td><td class='r'>{m.alg_idx}</td>"
             f"<td>{_esc(m.name)}</td><td class='r'>{m.dur_s:.1f}s</td>"
             f"<td>{_esc(m.status)}</td></tr>" for m in slow[:200])
@@ -751,7 +761,7 @@ def _models_section(ctx: ReportContext) -> str:
                         devs.add(m.dev_index)
                 gpu = ", ".join(f"GPU{d}" for d in sorted(devs))
             chs = ", ".join(str(a) for a in sorted(ch_of_model[model])[:12])
-            warn = ' style="background:#fff3e0"' if avg >= 30000 else ""
+            warn = ' style="background:#fbeee7"' if avg >= 30000 else ""
             rows.append(f"<tr{warn}><td>{_esc(model)}</td><td>{_esc(gpu)}</td>"
                         f"<td>{chs}</td><td class='r'>{len(vs)}</td>"
                         f"<td class='r'>{vs[0] / 1000:.2f}</td>"
@@ -810,7 +820,7 @@ def _usage_section(ctx: ReportContext) -> str:
         return "".join(out)
     series, slope, rise, span, suspicious = ua
     if suspicious:
-        out.append(f"<p style='background:#ffebee;border:1px solid #ef9a9a;"
+        out.append(f"<p style='background:#f9e6e6;border:1px solid #ecb0a0;"
                    f"border-radius:6px;padding:10px'><b>⚠ 메모리 증가 추세 의심</b> — "
                    f"{span:.1f}시간 동안 상한 기준 +{rise:,.0f}MB "
                    f"(≈ {slope:,.0f}MB/h). 메모리 릭 여부 점검을 권장합니다.</p>")
@@ -821,10 +831,11 @@ def _usage_section(ctx: ReportContext) -> str:
     cpu_pairs = [(t, c) for t, _m, c, _th in series]
     thr_pairs = [(t, float(th)) for t, _m, _c, th in series]
     out.append("<div style='display:flex;flex-wrap:wrap;gap:16px'>")
+    ram_color = "#d03b3b" if suspicious else "#2a78d6"
     for label, pairs, color, unit in (
-            ("RAM (MB)", mem_pairs, "#c62828", "MB"),
-            ("CPU (%)", cpu_pairs, "#1565c0", "%"),
-            ("스레드 수", thr_pairs, "#2e7d32", "")):
+            ("RAM (MB)", mem_pairs, ram_color, "MB"),
+            ("CPU (%)", cpu_pairs, "#eb6834", "%"),
+            ("스레드 수", thr_pairs, "#1baf7a", "")):
         out.append(f"<div><div style='font-size:12px;font-weight:600'>{label}</div>"
                    + _series_svg(pairs, ctx.log_start, ctx.log_end,
                                  w=520, h=110, color=color, unit=unit) + "</div>")
@@ -899,9 +910,9 @@ function renderList() {
   const show = rows.slice(-400).reverse();   // 최근 400건 표시
   for (const r of show) {
     const [iid, pid, ts, st, status, dur, ndone, nfed, ack, res] = r;
-    const c = STATUS_COLOR[status] || '#757575';
-    const has = DETAIL[iid] ? ' class="ilink" style="cursor:pointer;color:#1565c0"' : '';
-    const resTxt = res === 'NG' ? '<span style="color:#e65100;font-weight:700">NG</span>'
+    const c = STATUS_COLOR[status] || '#898781';
+    const has = DETAIL[iid] ? ' class="ilink" style="cursor:pointer;color:#2a78d6"' : '';
+    const resTxt = res === 'NG' ? '<span style="color:#ec835a;font-weight:700">NG</span>'
       : (res || '-');
     frag.push(`<tr><td>${st}</td><td${has} data-id="${iid}">${iid}</td><td>${pid || '-'}</td>` +
       `<td><span style="color:${c};font-weight:600">${STATUS_KO[status] || status}</span></td>` +
@@ -951,27 +962,27 @@ function renderGantt(iid) {
   const W = 1060, LB = 300, rowH = 18;
   const H = runs.length * rowH + 40;
   const sx = t => LB + t / maxT * (W - LB - 20);
-  const parts = [`<svg viewBox="0 0 ${W} ${H}" style="width:100%;background:#fff;border:1px solid #eee">`];
+  const parts = [`<svg viewBox="0 0 ${W} ${H}" style="width:100%;background:#fff;border:1px solid #e1e0d9">`];
   const gstep = maxT > 120 ? 60 : (maxT > 30 ? 10 : 5);
   for (let t = 0; t <= maxT; t += gstep) {
-    parts.push(`<line x1="${sx(t)}" y1="14" x2="${sx(t)}" y2="${H - 22}" stroke="#f0f0f0"/>` +
-      `<text x="${sx(t)}" y="${H - 8}" font-size="10" text-anchor="middle" fill="#888">+${t}s</text>`);
+    parts.push(`<line x1="${sx(t)}" y1="14" x2="${sx(t)}" y2="${H - 22}" stroke="#f0efec"/>` +
+      `<text x="${sx(t)}" y="${H - 8}" font-size="10" text-anchor="middle" fill="#898781">+${t}s</text>`);
   }
   runs.forEach((r, i) => {
     const [alg, ch, ex, rel, dur, status, model, pre] = r;
     const y = 18 + i * rowH;
-    const color = status === 'done' ? '#5c9ded' : '#e65100';
+    const color = status === 'done' ? '#2a78d6' : '#ec835a';
     const wpx = Math.max(3, sx(rel + Math.max(dur, 0.05)) - sx(rel));
-    parts.push(`<text x="${LB - 6}" y="${y + 11}" font-size="11" text-anchor="end" fill="#333">` +
+    parts.push(`<text x="${LB - 6}" y="${y + 11}" font-size="11" text-anchor="end" fill="#0b0b0b">` +
       `${alg}(${ch})${ex > 1 ? ' #' + ex : ''}</text>`);
     parts.push(`<rect x="${sx(rel)}" y="${y + 2}" width="${wpx}" height="12" rx="2" fill="${color}">` +
       `<title>${ch} exec${ex}\n시작 +${rel}s, 인퍼런스 ${dur ? dur + 's' : '(미완료)'}\n` +
       `전처리 ${pre}ms\n${model}\n상태: ${status}</title></rect>`);
     if (status !== 'done')
-      parts.push(`<text x="${sx(rel) + wpx + 4}" y="${y + 12}" font-size="10" fill="#c62828">소실</text>`);
+      parts.push(`<text x="${sx(rel) + wpx + 4}" y="${y + 12}" font-size="10" fill="#d03b3b">소실</text>`);
   });
   parts.push('</svg>');
-  let head = `<h3>${iid} — <span style="color:${STATUS_COLOR[d.status] || '#333'}">` +
+  let head = `<h3>${iid} — <span style="color:${STATUS_COLOR[d.status] || '#0b0b0b'}">` +
     `${STATUS_KO[d.status] || d.status}</span> (시작 ${d.st})</h3>`;
   if (d.lost && d.lost.length) head += `<p>소실 채널: <b>${d.lost.join(', ')}</b></p>`;
   if (d.nofeed && d.nofeed.length) head += `<p>미투입: ${d.nofeed.join(', ')}</p>`;
@@ -996,34 +1007,34 @@ function renderGraph(iid) {
   GRAPH.rois.forEach((r, i) => roiY[r.id] = yFor(i, nR));
   GRAPH.algs.forEach((a, i) => algY[a.id] = yFor(i, nA));
   const P = [`<svg viewBox="0 0 1100 ${H}" style="width:100%;background:#fff">`];
-  P.push(`<text x="90" y="18" font-size="12" fill="#666" text-anchor="middle">이미지</text>` +
-         `<text x="345" y="18" font-size="12" fill="#666" text-anchor="middle">ROI</text>` +
-         `<text x="770" y="18" font-size="12" fill="#666" text-anchor="middle">알고리즘 (검사 채널)</text>`);
+  P.push(`<text x="90" y="18" font-size="12" fill="#898781" text-anchor="middle">이미지</text>` +
+         `<text x="345" y="18" font-size="12" fill="#898781" text-anchor="middle">ROI</text>` +
+         `<text x="770" y="18" font-size="12" fill="#898781" text-anchor="middle">알고리즘 (검사 채널)</text>`);
   for (const r of GRAPH.rois) if (r.img && imgY[r.img] !== undefined)
-    P.push(`<line x1="165" y1="${imgY[r.img] + 7}" x2="285" y2="${roiY[r.id] + 7}" stroke="#dde5ee" stroke-width="1"/>`);
+    P.push(`<line x1="165" y1="${imgY[r.img] + 7}" x2="285" y2="${roiY[r.id] + 7}" stroke="#e1e0d9" stroke-width="1"/>`);
   for (const a of GRAPH.algs) for (const ri of a.roi) if (roiY[ri] !== undefined) {
-    let ec = '#dde5ee';
-    if (d) { if (lostSet.has(a.id)) ec = '#e65100'; else if (nofeedSet.has(a.id)) ec = '#c62828';
-             else if (doneSet.has(a.id)) ec = '#9ec7ef'; }
+    let ec = '#e1e0d9';
+    if (d) { if (lostSet.has(a.id)) ec = '#ec835a'; else if (nofeedSet.has(a.id)) ec = '#d03b3b';
+             else if (doneSet.has(a.id)) ec = '#9ec5f4'; }
     P.push(`<line x1="435" y1="${roiY[ri] + 7}" x2="565" y2="${algY[a.id] + 7}" stroke="${ec}" stroke-width="1"/>`);
   }
   for (const m of GRAPH.imgs)
-    P.push(`<rect x="20" y="${imgY[m.id]}" width="145" height="15" rx="3" fill="#f5f7fa" stroke="#ccd6e2"/>` +
+    P.push(`<rect x="20" y="${imgY[m.id]}" width="145" height="15" rx="3" fill="#f0efec" stroke="#e1e0d9"/>` +
            `<text x="26" y="${imgY[m.id] + 11.5}" font-size="10.5">${m.label}</text>`);
   for (const r of GRAPH.rois)
-    P.push(`<rect x="285" y="${roiY[r.id]}" width="150" height="15" rx="3" fill="#f5f7fa" stroke="#ccd6e2"/>` +
+    P.push(`<rect x="285" y="${roiY[r.id]}" width="150" height="15" rx="3" fill="#f0efec" stroke="#e1e0d9"/>` +
            `<text x="291" y="${roiY[r.id] + 11.5}" font-size="10.5">${r.id} ${r.label}</text>`);
   for (const a of GRAPH.algs) {
-    let fill = '#fff', stroke = '#b9c6d4', tip;
+    let fill = '#fff', stroke = '#c3c2b7', tip;
     if (d) {
-      if (lostSet.has(a.id)) { fill = '#ffe0b2'; stroke = '#e65100'; tip = '실행 중 소실'; }
-      else if (nofeedSet.has(a.id)) { fill = '#ffcdd2'; stroke = '#c62828'; tip = '이상 미투입'; }
-      else if (skipSet.has(a.id)) { fill = '#eceff1'; stroke = '#b0bec5'; tip = '정상 스킵(조건 비활성)'; }
-      else if (doneSet.has(a.id)) { fill = '#c8e6c9'; stroke = '#2e7d32'; tip = `완료 (실행 ${execCnt[a.id]})`; }
+      if (lostSet.has(a.id)) { fill = '#fbe3d9'; stroke = '#ec835a'; tip = '실행 중 소실'; }
+      else if (nofeedSet.has(a.id)) { fill = '#f8dcdc'; stroke = '#d03b3b'; tip = '이상 미투입'; }
+      else if (skipSet.has(a.id)) { fill = '#f0efec'; stroke = '#c3c2b7'; tip = '정상 스킵(조건 비활성)'; }
+      else if (doneSet.has(a.id)) { fill = '#d7efd7'; stroke = '#0ca30c'; tip = `완료 (실행 ${execCnt[a.id]})`; }
       else { tip = a.dl ? '기록 없음' : '비 DL 채널'; }
     } else {
-      if (a.lost) { fill = '#ffe0b2'; stroke = '#e65100'; }
-      else if (a.done) { fill = '#dfeefc'; stroke = '#5c9ded'; }
+      if (a.lost) { fill = '#fbe3d9'; stroke = '#ec835a'; }
+      else if (a.done) { fill = '#cde2fb'; stroke = '#2a78d6'; }
       tip = `당일 완료 ${a.done}회` + (a.lost ? `, 소실 ${a.lost}회` : '');
     }
     P.push(`<rect x="565" y="${algY[a.id]}" width="510" height="15" rx="3" fill="${fill}" stroke="${stroke}">` +
@@ -1032,11 +1043,11 @@ function renderGraph(iid) {
   }
   P.push('</svg>');
   const mode = d ? `검사 <b>${iid}</b> 상태` : '일자 요약 (파랑=당일 실행, 주황=소실 발생 채널)';
-  const legend = d ? ' · <span style="color:#2e7d32">■완료</span> <span style="color:#e65100">■소실</span>' +
-    ' <span style="color:#c62828">■이상 미투입</span> <span style="color:#78909c">■정상 스킵</span>' : '';
+  const legend = d ? ' · <span style="color:#0ca30c">■완료</span> <span style="color:#ec835a">■소실</span>' +
+    ' <span style="color:#d03b3b">■이상 미투입</span> <span style="color:#898781">■정상 스킵</span>' : '';
   document.getElementById('graph-mode').innerHTML = mode + legend +
-    (GRAPH.hasRecipe ? '' : ' · <span style="color:#999">(레시피 없음 — 관측 기반 축약 그래프)</span>');
-  box.innerHTML = `<div style="max-height:680px;overflow:auto;border:1px solid #eee;border-radius:6px">${P.join('')}</div>`;
+    (GRAPH.hasRecipe ? '' : ' · <span style="color:#898781">(레시피 없음 — 관측 기반 축약 그래프)</span>');
+  box.innerHTML = `<div style="max-height:680px;overflow:auto;border:1px solid #e1e0d9;border-radius:6px">${P.join('')}</div>`;
 }
 
 function gotoSection(id) {
@@ -1121,15 +1132,15 @@ def render(ctx: ReportContext) -> str:
                               "RECIPE_FAIL", "EXC_REDIRECT"))
     # (라벨, 값, 색, 클릭 시 이동) — 이동이 'main-bad' 면 종합 페이지 내 스크롤
     cards = [
-        ("검사 수", str(total), "#333", "sec-insp"),
-        ("완료", str(n.get("complete", 0)), "#2e7d32", "sec-insp"),
-        ("이상", str(n_bad), "#c62828" if n_bad else "#2e7d32", "main-bad"),
-        ("NG 판정", str(n_ng), "#e65100" if n_ng else "#2e7d32", "main-bad"),
-        ("에러", str(n_err), "#c62828" if n_err else "#2e7d32", "sec-err"),
-        ("평균 검사시간", f"{avg_dur:.2f}s" if avg_dur else "-", "#333", "sec-tact"),
-        ("최대 검사시간", f"{max_dur:.2f}s" if max_dur else "-", "#333", "sec-tact"),
-        ("재시작", str(max(0, len(ctx.gens) - 1)), "#1565c0", "sec-sys"),
-        ("시뮬레이션", str(n_sim), "#7cb342", "sec-insp"),
+        ("검사 수", str(total), "#0b0b0b", "sec-insp"),
+        ("완료", str(n.get("complete", 0)), "#0ca30c", "sec-insp"),
+        ("이상", str(n_bad), "#d03b3b" if n_bad else "#0ca30c", "main-bad"),
+        ("NG 판정", str(n_ng), "#ec835a" if n_ng else "#0ca30c", "main-bad"),
+        ("에러", str(n_err), "#d03b3b" if n_err else "#0ca30c", "sec-err"),
+        ("평균 검사시간", f"{avg_dur:.2f}s" if avg_dur else "-", "#0b0b0b", "sec-tact"),
+        ("최대 검사시간", f"{max_dur:.2f}s" if max_dur else "-", "#0b0b0b", "sec-tact"),
+        ("재시작", str(max(0, len(ctx.gens) - 1)), "#2a78d6", "sec-sys"),
+        ("시뮬레이션", str(n_sim), "#1baf7a", "sec-insp"),
     ]
     card_html = "".join(
         f"<div class='card' onclick=\"{'gotoSection' if t != 'main-bad' else 'scrollMain'}"
@@ -1144,7 +1155,7 @@ def render(ctx: ReportContext) -> str:
     ua = _usage_analysis(ctx)
     leak_banner = ""
     if ua is not None and ua[4]:
-        leak_banner = (f"<p style='background:#ffebee;border:1px solid #ef9a9a;"
+        leak_banner = (f"<p style='background:#f9e6e6;border:1px solid #ecb0a0;"
                        f"border-radius:6px;padding:10px;margin-top:14px'>"
                        f"<b>⚠ 메모리 증가 추세 의심</b> — {ua[3]:.1f}시간 동안 "
                        f"+{ua[2]:,.0f}MB (≈ {ua[1]:,.0f}MB/h). 시스템 탭에서 "
@@ -1161,55 +1172,92 @@ def render(ctx: ReportContext) -> str:
 <html lang="ko"><head><meta charset="utf-8">
 <title>talog — {_esc(ctx.title)}</title>
 <style>
- body {{ font-family: 'Malgun Gothic', sans-serif; margin: 0; color: #222; }}
- header {{ background: #1e2a3a; color: #fff; padding: 14px 26px; }}
- header h1 {{ font-size: 19px; margin: 0; }}
- header .meta {{ color: #b8c4d4; font-size: 12px; margin-top: 5px; }}
- header .meta b {{ color: #fff; }}
- nav {{ background: #16202d; padding: 0 26px; display: flex; gap: 4px; }}
- .tabbtn {{ background: none; border: none; color: #9fb0c3; padding: 10px 18px;
-            font-size: 14px; cursor: pointer; font-family: inherit; }}
- .tabbtn.on {{ color: #fff; border-bottom: 3px solid #5c9ded; font-weight: 600; }}
- main {{ padding: 18px 26px 40px; }}
+ :root {{
+   --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e;
+   --muted: #898781; --grid: #e1e0d9; --line: rgba(11,11,11,.10);
+   --blue: #2a78d6; --blue-100: #cde2fb; --orange: #eb6834;
+   --good: #0ca30c; --good-text: #006300; --warn: #fab219;
+   --serious: #ec835a; --crit: #d03b3b; --track: #f0efec;
+ }}
+ * {{ box-sizing: border-box; }}
+ body {{ font-family: "Pretendard", system-ui, -apple-system, "Segoe UI",
+         "Malgun Gothic", sans-serif; margin: 0; color: var(--ink);
+         background: var(--page); font-size: 13px; line-height: 1.45; }}
+ header {{ background: var(--surface); border-bottom: 1px solid var(--line);
+           padding: 14px 28px 0; }}
+ header h1 {{ font-size: 17px; margin: 0; letter-spacing: -.2px; }}
+ header h1::before {{ content: ""; display: inline-block; width: 9px; height: 9px;
+   border-radius: 50%; background: var(--blue); margin-right: 8px; }}
+ header .meta {{ color: var(--muted); font-size: 11.5px; margin: 5px 0 10px; }}
+ header .meta b {{ color: var(--ink2); font-weight: 600; }}
+ nav {{ display: flex; gap: 2px; }}
+ .tabbtn {{ background: none; border: none; color: var(--ink2); padding: 9px 14px;
+            font-size: 13px; cursor: pointer; font-family: inherit;
+            border-bottom: 2px solid transparent; }}
+ .tabbtn:hover {{ color: var(--ink); }}
+ .tabbtn.on {{ color: var(--ink); border-bottom-color: var(--blue);
+               font-weight: 700; }}
+ main {{ padding: 18px 28px 44px; max-width: 1560px; margin: 0 auto; }}
  .tabpane {{ display: none; }}
- h2 {{ font-size: 16px; margin-top: 30px; border-bottom: 2px solid #5c9ded;
-       padding-bottom: 6px; }}
- table {{ border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }}
- th, td {{ border: 1px solid #ddd; padding: 5px 8px; text-align: left; }}
- th {{ background: #f0f4fa; position: sticky; top: 0; }}
- td.r, th.r {{ text-align: right; }}
- .cards {{ display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; }}
- .card {{ border: 1px solid #ddd; border-radius: 8px; padding: 11px 16px;
-          min-width: 88px; text-align: center; background: #fff; cursor: pointer;
-          transition: box-shadow .15s; }}
- .card:hover {{ box-shadow: 0 2px 8px rgba(21,101,192,.25); }}
- .card .num {{ font-size: 24px; font-weight: 700; }}
- .card .lbl {{ font-size: 12px; color: #666; margin-top: 4px; }}
- .hint {{ font-size: 12px; color: #999; font-weight: 400; }}
- .cols {{ display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }}
+ h2 {{ font-size: 11.5px; margin: 30px 0 8px; color: var(--muted);
+       font-weight: 700; text-transform: uppercase; letter-spacing: .6px; }}
+ h2 .hint {{ text-transform: none; letter-spacing: 0; }}
+ table {{ border-collapse: collapse; width: 100%; font-size: 12.5px;
+          background: var(--surface); border: 1px solid var(--line);
+          border-radius: 8px; overflow: hidden; }}
+ th, td {{ border: 0; border-bottom: 1px solid var(--grid); padding: 6px 10px;
+           text-align: left; }}
+ tbody tr:last-child td {{ border-bottom: 0; }}
+ tbody tr:hover td {{ background: rgba(42,120,214,.045); }}
+ th {{ background: var(--surface); position: sticky; top: 0; color: var(--muted);
+       font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px;
+       border-bottom: 1px solid var(--line); }}
+ td.r, th.r {{ text-align: right; font-variant-numeric: tabular-nums; }}
+ .cards {{ display: grid; gap: 10px; margin-top: 12px;
+           grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }}
+ .card {{ border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+          background: var(--surface); cursor: pointer; }}
+ .card:hover {{ border-color: var(--blue); }}
+ .card .num {{ font-size: 22px; font-weight: 700; letter-spacing: -.4px; }}
+ .card .lbl {{ font-size: 10.5px; color: var(--muted); margin-top: 3px;
+               text-transform: uppercase; letter-spacing: .5px; }}
+ .hint {{ font-size: 11.5px; color: var(--muted); font-weight: 400; }}
+ .cols {{ display: flex; gap: 26px; flex-wrap: wrap; align-items: flex-start; }}
  .col {{ flex: 1 1 460px; min-width: 420px; }}
- .mbars {{ margin-top: 8px; }}
- .mbar {{ display: flex; align-items: center; margin: 3px 0; cursor: pointer; }}
- .mbar:hover .mname {{ color: #1565c0; }}
- .mname {{ width: 240px; font-size: 12px; text-align: right; padding-right: 8px;
-           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
- .mtrack {{ flex: 1; display: flex; align-items: center; gap: 6px; }}
- .mfill {{ height: 13px; border-radius: 2px; min-width: 2px; }}
- .mtrack span {{ font-size: 11px; color: #555; white-space: nowrap; }}
- .fbtn {{ border: 1px solid #cbd5e1; background: #fff; border-radius: 14px;
-          padding: 5px 14px; margin-left: 6px; cursor: pointer; font-size: 12.5px;
-          font-family: inherit; }}
- .fbtn.on {{ background: #1e2a3a; color: #fff; border-color: #1e2a3a; }}
- .subnav {{ position: sticky; top: 0; background: #fff; border-bottom: 1px solid #ddd;
-            padding: 8px 0; z-index: 5; }}
- .subnav a {{ color: #1565c0; margin-right: 18px; cursor: pointer; font-size: 13px; }}
+ .mbars {{ margin-top: 6px; background: var(--surface); border: 1px solid var(--line);
+           border-radius: 8px; padding: 10px 14px; }}
+ .mbar {{ display: flex; align-items: center; margin: 4px 0; cursor: pointer; }}
+ .mbar:hover .mname {{ color: var(--blue); }}
+ .mname {{ width: 235px; font-size: 12px; text-align: right; padding-right: 10px;
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+           color: var(--ink2); }}
+ .mtrack {{ flex: 1; display: flex; align-items: center; gap: 7px; }}
+ .mfill {{ height: 8px; border-radius: 4px; min-width: 3px; }}
+ .mtrack span {{ font-size: 11px; color: var(--muted); white-space: nowrap;
+                 font-variant-numeric: tabular-nums; }}
+ .fbtn {{ border: 1px solid var(--line); background: var(--surface);
+          border-radius: 15px; padding: 4px 13px; margin-left: 6px;
+          cursor: pointer; font-size: 12px; font-family: inherit;
+          color: var(--ink2); }}
+ .fbtn:hover {{ border-color: var(--blue); color: var(--ink); }}
+ .fbtn.on {{ background: var(--ink); color: #fff; border-color: var(--ink); }}
+ .subnav {{ position: sticky; top: 0; background: var(--page);
+            border-bottom: 1px solid var(--line); padding: 9px 0; z-index: 5; }}
+ .subnav a {{ color: var(--ink2); margin-right: 20px; cursor: pointer;
+              font-size: 12.5px; font-weight: 600; }}
+ .subnav a:hover {{ color: var(--blue); }}
  section {{ scroll-margin-top: 46px; }}
- .legend {{ font-size: 12px; color: #555; margin-top: 4px; }}
- .ok {{ color: #2e7d32; font-weight: 600; }}
- input[type=text] {{ font-size: 14px; padding: 7px 10px; width: 340px;
-                     border: 1px solid #bbb; border-radius: 6px; }}
- details summary {{ cursor: pointer; color: #1565c0; margin-top: 10px; }}
- a.ilink {{ color: #1565c0; }}
+ .legend {{ font-size: 11.5px; color: var(--muted); margin-top: 5px; }}
+ .ok {{ color: var(--good-text); font-weight: 600; }}
+ input[type=text] {{ font-size: 13px; padding: 7px 12px; width: 320px;
+   border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+   font-family: inherit; }}
+ input[type=text]:focus {{ outline: 2px solid var(--blue-100);
+   border-color: var(--blue); }}
+ details summary {{ cursor: pointer; color: var(--ink2); margin-top: 12px;
+                    font-size: 12.5px; }}
+ a.ilink {{ color: var(--blue); }}
+ svg {{ display: block; }}
 </style></head><body>
 <header><h1>talog 진단 리포트 — {_esc(ctx.title)}</h1>
 <div class="meta">{_esc(ctx.day_dir)}{stitch_note}<br>{recipe_html}</div></header>
@@ -1260,7 +1308,7 @@ def render(ctx: ReportContext) -> str:
      <button class="fbtn" data-f="ok" onclick="setFilter('ok')">완료</button>
      <button class="fbtn" data-f="eof" onclick="setFilter('eof')">절단</button>
      <button class="fbtn" onclick="exportCsv()" style="margin-left:14px">⬇ CSV 내보내기</button>
-     <span id="insp-count" style="color:#666;font-size:13px;margin-left:10px"></span></p>
+     <span id="insp-count" style="color:#898781;font-size:13px;margin-left:10px"></span></p>
   <div id="gantt-box" style="margin:14px 0"></div>
   <table><thead><tr><th>시작</th><th>inner id</th><th>product id</th><th>상태</th>
   <th>판정</th><th class='r'>검사시간</th><th class='r'>완료/투입</th></tr></thead>

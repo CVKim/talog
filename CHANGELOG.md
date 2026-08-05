@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.0 (2026-08-05)
+
+- **리포트 비주얼 전면 리디자인**: 검증된 데이터 시각화 팔레트로 교체
+  (CVD 안전 검증 완료 — 계열 blue `#2a78d6`/orange/aqua, 상태색
+  good/warning/serious/critical 분리). 라이트 서피스 토큰 시스템(:root CSS
+  변수), 컴팩트 KPI 타일, 언더라인 탭, 헤어라인 테이블(hover 워시 +
+  tabular-nums), 8px 라운드 바, 대문자 마이크로 섹션 헤더
+- 상태색 의미 정리: 완료 green / 거부·미완 critical red / 소실 serious
+  orange / 절단·시뮬 부분 muted / 시뮬 완료 aqua
+- fleet 인덱스·추이 차트도 동일 팔레트 적용
+- cmfb#1/MR 실로그를 설비 레시피(CMFB, 1163-M7AA)와 조인 재검증
+  (종속성 그래프·모델명 매핑·DEACTIVATE 분류 활성화)
+
 ## 1.2.0 (2026-08-03)
 
 - **NG 판정 분포**: INSPECT_END NG 페이로드의 결함명을 파싱해 리포트 종합에
