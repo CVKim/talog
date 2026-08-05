@@ -69,7 +69,7 @@ def _trend_section(rows: list[dict]) -> str:
     multi = {k: v for k, v in groups.items() if len(v) >= 2 and k != "(단일)"}
     if not multi:
         return ""
-    out = ["<h2 style='font-size:16px;border-bottom:2px solid #2a78d6;"
+    out = ["<h2 style='font-size:15px;border-bottom:2px solid var(--blue);"
            "padding-bottom:6px'>설비별 추이</h2>"]
     for equip, days in sorted(multi.items()):
         days.sort(key=lambda r: r["tag"])
@@ -78,7 +78,7 @@ def _trend_section(rows: list[dict]) -> str:
         for d in days:
             day = d["tag"].rsplit("_", 1)[-1]
             h = max(6, int(d["total"] / mx * 46))
-            bar_color = "#d03b3b" if d["bad"] else "#2a78d6"
+            bar_color = "#d03b3b" if d["bad"] else "var(--blue)"
             bad_txt = (f"<div style='color:#d03b3b;font-weight:700'>"
                        f"이상 {d['bad']}</div>") if d["bad"] else \
                 "<div style='color:#0ca30c'>정상</div>"
@@ -94,8 +94,9 @@ def _trend_section(rows: list[dict]) -> str:
                 f"<div style='color:#898781'>{d['avg_dur']:.1f}s · 재시작 "
                 f"{max(0, d['gens'] - 1)}</div></td>")
         out.append(
-            f"<div style='display:inline-block;border:1px solid #e1e0d9;"
-            f"border-radius:10px;margin:8px 12px 8px 0;padding:8px 6px;"
+            f"<div style='display:inline-block;border:1px solid var(--line);"
+            f"background:var(--surface);box-shadow:var(--shadow);"
+            f"border-radius:12px;margin:8px 12px 8px 0;padding:8px 6px;"
             f"vertical-align:top'><div style='font-weight:800;padding:2px 12px'>"
             f"{html.escape(equip)}</div><table style='border:none'><tr>"
             + "".join(cells) + "</tr></table></div>")
@@ -121,17 +122,54 @@ def render(rows: list[dict]) -> str:
     bad = sum(r["bad"] for r in rows)
     ng = sum(r["ng"] for r in rows)
     return f"""<!DOCTYPE html>
-<html lang="ko"><head><meta charset="utf-8"><title>talog 리포트 인덱스</title>
+<html lang="ko" data-theme="dark"><head><meta charset="utf-8">
+<title>talog 리포트 인덱스</title>
+<script>try{{var t=localStorage.getItem('talog-theme');
+if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
 <style>
- body {{ font-family: 'Malgun Gothic', sans-serif; margin: 30px; color: #0b0b0b; }}
- h1 {{ font-size: 21px; }}
- table {{ border-collapse: collapse; font-size: 13px; margin-top: 14px; }}
- th, td {{ border: 1px solid #e1e0d9; padding: 6px 10px; text-align: left; }}
- th {{ background: #fcfcfb; }} td.r {{ text-align: right; }}
- .sum {{ color: #52514e; margin-top: 6px; }}
- a {{ color: #2a78d6; text-decoration: none; }} a:hover {{ text-decoration: underline; }}
+ :root {{ --page:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7;
+   --muted:#898781; --grid:#2c2c2a; --line:rgba(255,255,255,.09);
+   --blue:#3987e5; --aqua:#199e70; --track:#242422;
+   --shadow:0 0 0 1px rgba(255,255,255,.03); }}
+ [data-theme="light"] {{ --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b;
+   --ink2:#52514e; --muted:#898781; --grid:#e1e0d9; --line:rgba(11,11,11,.10);
+   --blue:#2a78d6; --aqua:#1baf7a; --track:#f0efec;
+   --shadow:0 1px 2px rgba(11,11,11,.04),0 12px 32px -20px rgba(11,11,11,.25); }}
+ * {{ box-sizing:border-box; }}
+ body {{ font-family:"Pretendard",system-ui,-apple-system,"Segoe UI",
+   "Malgun Gothic",sans-serif; margin:0; padding:26px 32px;
+   color:var(--ink); background:var(--page); font-size:13px; }}
+ body::before {{ content:""; position:fixed; top:0; left:0; right:0; height:3px;
+   background:linear-gradient(90deg,var(--blue),var(--aqua)); }}
+ .brand {{ display:flex; align-items:center; gap:9px; margin-bottom:4px; }}
+ .mark {{ width:24px; height:24px; border-radius:7px;
+   background:linear-gradient(135deg,var(--blue),var(--aqua)); position:relative; }}
+ .mark::after {{ content:""; position:absolute; left:6px; right:6px; bottom:6px;
+   height:4px; border-radius:2px; background:rgba(255,255,255,.9); }}
+ h1 {{ font-size:17px; margin:0; letter-spacing:-.2px; }}
+ table {{ border-collapse:separate; border-spacing:0; font-size:13px;
+   margin-top:14px; background:var(--surface); border:1px solid var(--line);
+   border-radius:12px; overflow:hidden; box-shadow:var(--shadow); }}
+ th, td {{ border:0; border-bottom:1px solid var(--grid); padding:7px 12px;
+   text-align:left; }}
+ tbody tr:last-child td {{ border-bottom:0; }}
+ tbody tr:hover td {{ background:rgba(57,135,229,.10); }}
+ th {{ color:var(--muted); font-size:10.5px; text-transform:uppercase;
+   letter-spacing:.5px; }}
+ td.r {{ text-align:right; font-variant-numeric:tabular-nums; }}
+ .sum {{ color:var(--ink2); margin-top:6px; }}
+ a {{ color:var(--blue); text-decoration:none; }}
+ a:hover {{ text-decoration:underline; }}
+ code {{ background:var(--track); border-radius:5px; padding:1.5px 7px; }}
+ .themebtn {{ float:right; border:1px solid var(--line); background:var(--surface);
+   color:var(--ink2); border-radius:999px; padding:5px 14px; cursor:pointer;
+   font-family:inherit; font-size:12px; }}
 </style></head><body>
-<h1>talog 진단 리포트 인덱스</h1>
+<button class="themebtn" onclick="var d=document.documentElement;
+var n=d.dataset.theme!=='light'?'light':'dark';d.dataset.theme=n;
+try{{localStorage.setItem('talog-theme',n)}}catch(e){{}};this.textContent=
+n==='light'?'☾ 다크':'☀ 라이트'">☀ 라이트</button>
+<div class="brand"><span class="mark"></span><h1>talog 진단 리포트 인덱스</h1></div>
 <div class="sum">총 {len(rows)}개 설비-일자 · 검사 {total:,}건 · 이상 {bad}건 ·
 NG {ng}건 — 행을 클릭하면 해당 리포트가 열립니다.</div>
 {_trend_section(rows)}
