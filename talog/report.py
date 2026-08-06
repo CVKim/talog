@@ -1020,6 +1020,37 @@ def _usage_section(ctx: ReportContext) -> str:
     return "".join(out)
 
 
+def _gpu_mini(ctx: ReportContext) -> str:
+    """종합 페이지용: GPU VRAM·온도 미니 요약 (클릭 시 시스템·GPU 상세로).
+
+    [GPU STATUS] 데이터가 있을 때만 표시한다.
+    """
+    status = [e for e in ctx.events if e.kind == "GPU_STATUS"]
+    if not status:
+        return ("<h2>GPU</h2><p class='legend'>이 로그에는 GPU 계측"
+                "([GPU STATUS])이 없습니다 — 신규 talos-vision 빌드부터 "
+                "DLInfer.log 에 기록됩니다. 상세 분석 › 시스템·GPU 에 확보 "
+                "방법을 안내합니다.</p>")
+    by_gpu: dict[str, list] = {}
+    for e in status:
+        by_gpu.setdefault(e.status or "0", []).append(e)
+    out = ["<h2>GPU <span class='hint'>— 클릭 시 상세(시스템·GPU)</span></h2>"]
+    for g in sorted(by_gpu):
+        evs = by_gpu[g]
+        mem = [(e.ts, e.value) for e in evs]
+        temps = [float(e.name) for e in evs if e.name and float(e.name) > 0]
+        tmax = max(temps, default=0.0)
+        twarn = (" <span style='color:var(--crit-text);font-weight:700'>⚠"
+                 "</span>" if tmax >= 85 else "")
+        out.append(
+            f"<div onclick=\"gotoSection('sec-sys')\" style='cursor:pointer'>"
+            f"<div style='font-size:13px;margin-bottom:4px'>GPU {_esc(g)} — "
+            f"VRAM(MB), 온도 최고 <b>{tmax:.0f}°C</b>{twarn}</div>"
+            + _series_svg(mem, ctx.log_start, ctx.log_end,
+                          w=520, h=80, color="#2a78d6", unit="MB") + "</div>")
+    return "".join(out)
+
+
 def _gpu_resource_section(ctx: ReportContext) -> str:
     """GPU 리소스 (v1.4): [GPU STATUS] VRAM·온도, 모델 로드 VRAM 델타,
     CUDA 메모리풀, TalogWatch 상주 수집 — GPU0/GPU1 개별 표시."""
@@ -1814,6 +1845,7 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
    {_errors_summary(ctx)}
    <h2>메모리</h2>
    {_usage_mini(ctx)}
+   {_gpu_mini(ctx)}
   </div>
  </div>
  <h2>시간대별 검사 수 / 평균 검사시간</h2>{_hourly_svg(ctx)}
@@ -1825,7 +1857,7 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
   <a onclick="gotoSection('sec-tact')">채널 Tact</a>
   <a onclick="gotoSection('sec-model')">모델·GPU</a>
   <a onclick="gotoSection('sec-err')">에러 전체</a>
-  <a onclick="gotoSection('sec-sys')">시스템</a>
+  <a onclick="gotoSection('sec-sys')">시스템·GPU</a>
  </div>
  <section id="sec-insp">
   <h2>검사 조회</h2>
