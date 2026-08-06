@@ -352,33 +352,104 @@ def _hourly_svg(ctx: ReportContext) -> str:
     return "".join(parts)
 
 
+def _dist_svg(values: list[float], unit: str = "ms", w: int = 520,
+              h: int = 158) -> str:
+    """지연시간 분포 히스토그램 + 백분위 마커 (p50·avg·p95·p99, 꼬리 강조).
+
+    x축은 p99×1.25 로 클립해 본체가 뭉개지지 않게 하고, 넘는 max 는 주석으로
+    표기한다. p95 초과 구간(상위 5%)은 주황으로 음영·착색된다.
+    """
+    if len(values) < 8:
+        return ""
+    vs = sorted(values)
+    n = len(vs)
+
+    def pct(p: float) -> float:
+        return vs[min(n - 1, int(n * p))]
+
+    p50, p95, p99 = pct(.5), pct(.95), pct(.99)
+    avg = statistics.mean(vs)
+    vmax = vs[-1]
+    hi = max(p99 * 1.25, p95 * 1.1, avg * 1.2, 1e-9)
+    clipped = vmax > hi * 1.02
+    fmt = (lambda v: f"{v:,.0f}") if hi >= 20 else (lambda v: f"{v:.2f}")
+    nb = max(18, min(30, w // 18))
+    step = hi / nb
+    bins = [0] * nb
+    for v in vs:
+        bins[min(nb - 1, int(v / step))] += 1
+    mxb = max(bins) or 1
+    x0, x1 = 8, w - 8
+    base, top = h - 26, 34
+    bw = (x1 - x0) / nb
+
+    def sx(v: float) -> float:
+        return x0 + min(v, hi) / hi * (x1 - x0)
+
+    parts = [f'<svg viewBox="0 0 {w} {h}" style="width:100%;max-width:{w}px;'
+             f'background:var(--surface);border:1px solid var(--line);'
+             f'border-radius:10px;box-shadow:var(--shadow)">']
+    # 상위 5% 꼬리 음영
+    parts.append(f'<rect x="{sx(p95):.1f}" y="{top - 4}" '
+                 f'width="{max(0.0, x1 - sx(p95)):.1f}" '
+                 f'height="{base - top + 4}" '
+                 f'style="fill:var(--serious)" fill-opacity=".08"/>')
+    for i, cnt in enumerate(bins):
+        if not cnt:
+            continue
+        bh = max(2.0, cnt / mxb * (base - top - 4))
+        color = ("var(--serious)" if (i + 0.5) * step > p95
+                 else "var(--blue)")
+        parts.append(
+            f'<rect x="{x0 + i * bw + 1:.1f}" y="{base - bh:.1f}" '
+            f'width="{max(1.0, bw - 2):.1f}" height="{bh:.1f}" rx="2" '
+            f'style="fill:{color}"><title>{fmt(i * step)}~'
+            f'{fmt((i + 1) * step)}{unit}: {cnt:,}건</title></rect>')
+    parts.append(f'<line x1="{x0}" y1="{base}" x2="{x1}" y2="{base}" '
+                 f'style="stroke:var(--grid)"/>')
+
+    def marker(v: float, label: str, ly: int, solid: bool = False):
+        xx = sx(v)
+        col = "var(--serious-text)" if solid else "var(--muted)"
+        dash = "" if solid else ' stroke-dasharray="4 4"'
+        wgt = ' font-weight="700"' if solid else ""
+        anchor = ("start" if xx < x0 + 30 else
+                  "end" if xx > x1 - 30 else "middle")
+        parts.append(f'<line x1="{xx:.1f}" y1="{ly + 4}" x2="{xx:.1f}" '
+                     f'y2="{base}" style="stroke:{col}"{dash} '
+                     f'stroke-width="{1.6 if solid else 1}"/>')
+        parts.append(f'<text x="{xx:.1f}" y="{ly}" font-size="9.5" '
+                     f'text-anchor="{anchor}" style="fill:{col}"{wgt}>'
+                     f'{label}</text>')
+
+    marker(p50, f"p50 {fmt(p50)}", 13)
+    marker(avg, f"avg {fmt(avg)}", 29)
+    marker(p95, f"p95 {fmt(p95)}", 13, solid=True)
+    if p99 > p95 * 1.03:
+        marker(p99, f"p99 {fmt(p99)}", 29)
+    tail_n = n - int(n * 0.95)
+    narrow = w < 480       # 좁은 카드는 하단 캡션 겹침 방지를 위해 축약
+    parts.append(f'<text x="{x0}" y="{h - 6}" font-size="9.5" class="mut">'
+                 f'0{unit}</text>')
+    right = f"{fmt(hi)}{unit}"
+    if clipped:
+        right += "+" if narrow else f" · max {fmt(vmax)}{unit} (축 밖)"
+    parts.append(f'<text x="{x1}" y="{h - 6}" font-size="9.5" class="mut" '
+                 f'text-anchor="end">{right}'
+                 + (f'<title>max {fmt(vmax)}{unit} — 축은 p99×1.25 에서 절단'
+                    f'</title>' if clipped and narrow else '') + '</text>')
+    if not narrow:
+        parts.append(f'<text x="{(x0 + x1) / 2:.0f}" y="{h - 6}" '
+                     f'font-size="9.5" class="mut" text-anchor="middle">'
+                     f'N={n:,} · 상위 5% {tail_n:,}건</text>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
 def _duration_hist_svg(ctx: ReportContext) -> str:
     durs = [(i.end_ts - i.start_ts) for i in ctx.inspections
             if i.end_ts and i.start_ts and i.status == "complete"]
-    if len(durs) < 3:
-        return ""
-    lo, hi = min(durs), max(durs)
-    nb = 24
-    step = (hi - lo) / nb or 1
-    bins = [0] * nb
-    for d in durs:
-        bins[min(nb - 1, int((d - lo) / step))] += 1
-    mx = max(bins) or 1
-    w, h = 1120, 130
-    bw = (w - 90) / nb
-    parts = [f'<svg viewBox="0 0 {w} {h}" style="width:100%">']
-    for i, n in enumerate(bins):
-        bh = n / mx * 85
-        parts.append(f'<rect x="{50 + i * bw:.0f}" y="{100 - bh:.0f}" '
-                     f'width="{bw * 0.85:.0f}" height="{bh:.0f}" rx="3" '
-                     f'style="fill:var(--blue-soft)">'
-                     f'<title>{lo + i * step:.0f}~{lo + (i + 1) * step:.0f}초: {n}건</title></rect>')
-    for frac in (0, 0.5, 1.0):
-        xx = 50 + frac * (nb * bw)
-        parts.append(f'<text x="{xx:.0f}" y="118" font-size="10" text-anchor="middle" '
-                     f'class="mut">{lo + frac * (hi - lo):.0f}s</text>')
-    parts.append("</svg>")
-    return "".join(parts)
+    return _dist_svg(durs, unit="s", w=1120, h=176)
 
 
 # ---------------------------------------------------------------------------
@@ -425,13 +496,29 @@ def _tact_section(ctx: ReportContext) -> str:
             f"<td class='r'>{vals[-1] / 1000:.2f}</td>"
             f"<td><div style='width:{bar}px;height:10px;background:var(--blue);"
             f"border-radius:5px'></div></td><td>{spark}</td></tr>")
+    # 소요 상위 채널의 분포 히스토그램 (백분위 마커)
+    dist_cards = []
+    for idx, ch, pairs, vals, avg in stats[:8]:
+        chart = _dist_svg([v for _t, v in pairs], "ms", w=352, h=140)
+        if chart:
+            dist_cards.append(
+                f"<div style='width:352px'><div style='font-size:12px;"
+                f"font-weight:600;margin-bottom:3px'>{idx}({_esc(ch)})</div>"
+                f"{chart}</div>")
+    dist_html = ""
+    if dist_cards:
+        dist_html = ("<h2>채널별 인퍼런스 분포 <span class='hint'>— 소요 상위 "
+                     f"{len(dist_cards)}개 채널 · 주황=상위 5% 꼬리, 굵은 선="
+                     "p95</span></h2>"
+                     "<div style='display:flex;flex-wrap:wrap;gap:14px'>"
+                     + "".join(dist_cards) + "</div>")
     return ("<p class='legend'>N = 해당 채널의 인퍼런스 실행 횟수 · "
             "min/avg/p95/max = 채널 인퍼런스 소요(초)</p>"
             "<table class='sortable'><thead><tr><th>alg</th><th>채널</th><th>GPU</th>"
             "<th class='r'>N</th><th class='r'>min(s)</th><th class='r'>avg(s)</th>"
             "<th class='r'>p95(s)</th><th class='r'>max(s)</th>"
             "<th>avg 막대</th><th>시계열(일자 전체)</th></tr></thead><tbody>"
-            + "".join(rows) + "</tbody></table>")
+            + "".join(rows) + "</tbody></table>" + dist_html)
 
 
 def _incomplete_section(ctx: ReportContext) -> str:
@@ -642,7 +729,11 @@ def _gpu_model_section(ctx: ReportContext) -> str:
                         f"<td class='r'>{sv[-1]:,.1f}</td></tr>")
                 if rows_s:
                     sd = (f"<div class='sdetail' id='sd{sd_id}'>"
-                          f"<table><thead><tr><th>스테이지</th>"
+                          f"<div class='legend' style='margin:6px 0 3px'>"
+                          f"executeV2 분포 (백분위 마커)</div>"
+                          + _dist_svg(vals, "ms", w=352, h=140)
+                          + f"<table style='margin-top:8px'><thead><tr>"
+                          f"<th>스테이지</th>"
                           f"<th class='r'>avg(ms)</th><th class='r'>p95(ms)</th>"
                           f"<th class='r'>max(ms)</th>"
                           f"</tr></thead><tbody>" + "".join(rows_s)
@@ -1882,7 +1973,9 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
  </section>
  <section id="sec-tact">
   <h2>채널별 인퍼런스 Tact</h2>{_tact_section(ctx)}
-  <h2>검사시간 분포 (완료 건)</h2>{_duration_hist_svg(ctx)}
+  <h2>검사시간 분포 (완료 건) <span class="hint">— 파랑=하위 95%, 주황=상위
+  5% 꼬리, 굵은 선=p95. 축은 p99×1.25 에서 절단(max 는 주석)</span></h2>
+  {_duration_hist_svg(ctx)}
  </section>
  <section id="sec-model">{_models_section(ctx)}</section>
  <section id="sec-err">
