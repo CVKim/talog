@@ -117,6 +117,10 @@ dlinfer:
   # CPU 접두는 OpenVino 백엔드 사이트 대응 (status = 디바이스 인덱스)
   - kind: DLINFER_EXEC
     msg: '(?:GPU|CPU): (?P<status>\d+) - Model: (?P<model>\S+?), DeviceIdx:\d+, executeV2 Tact = (?P<value>[\d.]+)'
+  # 인퍼런스 스테이지별 Tact (모델 상세 분해용): name=스테이지, value=ms
+  #   Infer 는 합계(전처리+복사+실행+검증), 나머지는 개별 스테이지
+  - kind: DLINFER_STAGE
+    msg: '(?:GPU|CPU): (?P<status>\d+) - Model: (?P<model>\S+?), DeviceIdx:\d+, (?P<name>ProcessInput|copyInputToDevice|VerifyOutput|Infer) Tact = (?P<value>[\d.]+)'
   - kind: MODEL_GPU_LOAD
     header: 'CTRTLoader::LoadDLModel$'
     msg: 'GPU: (?P<status>\d+) - Model: (?P<model>\S+?), DeviceIdx:\d+, Tact = (?P<value>[\d.]+)'

@@ -425,8 +425,11 @@ def _tact_section(ctx: ReportContext) -> str:
             f"<td class='r'>{vals[-1] / 1000:.2f}</td>"
             f"<td><div style='width:{bar}px;height:10px;background:var(--blue);"
             f"border-radius:5px'></div></td><td>{spark}</td></tr>")
-    return ("<table class='sortable'><thead><tr><th>alg</th><th>채널</th><th>GPU</th>"
-            "<th>N</th><th>min(s)</th><th>avg(s)</th><th>p95(s)</th><th>max(s)</th>"
+    return ("<p class='legend'>N = 해당 채널의 인퍼런스 실행 횟수 · "
+            "min/avg/p95/max = 채널 인퍼런스 소요(초)</p>"
+            "<table class='sortable'><thead><tr><th>alg</th><th>채널</th><th>GPU</th>"
+            "<th class='r'>N</th><th class='r'>min(s)</th><th class='r'>avg(s)</th>"
+            "<th class='r'>p95(s)</th><th class='r'>max(s)</th>"
             "<th>avg 막대</th><th>시계열(일자 전체)</th></tr></thead><tbody>"
             + "".join(rows) + "</tbody></table>")
 
@@ -516,25 +519,42 @@ def _errors_section(ctx: ReportContext) -> str:
 def _series_svg(pairs: list[tuple[float, float]], t0: float, t1: float,
                 w: int = 340, h: int = 74, color: str = "#ec835a",
                 unit: str = "ms") -> str:
-    """(ts, value) 시계열 미니 차트 (라인 + 영역 채움). 최대 240pt 샘플링."""
+    """(ts, value) 시계열 미니 차트 (라인 + 영역 채움 + 축 라벨).
+
+    y축: 0 ~ 최대값(좌상단 표기), 중간 그리드 1줄. x축: 시작~끝 시각(HH:MM).
+    최대 240pt 샘플링.
+    """
     if len(pairs) < 2 or t1 <= t0:
         return ""
+    import datetime as _dt
     c = _c(color)
     pts = sorted(pairs)[:: max(1, len(pairs) // 240)]
     vmax = max(v for _t, v in pts) or 1
-    xy = [((t - t0) / (t1 - t0) * (w - 8) + 4,
-           h - 16 - v / vmax * (h - 26)) for t, v in pts]
+    base = h - 15                      # y=0 기준선
+    top = 13                           # 최대값 위치
+    xy = [((t - t0) / (t1 - t0) * (w - 10) + 5,
+           base - v / vmax * (base - top)) for t, v in pts]
     poly = " ".join(f"{x:.0f},{y:.1f}" for x, y in xy)
-    area = (f"{xy[0][0]:.0f},{h - 14} " + poly
-            + f" {xy[-1][0]:.0f},{h - 14}")
+    area = f"{xy[0][0]:.0f},{base} " + poly + f" {xy[-1][0]:.0f},{base}"
+    mid = (base + top) / 2
+    hhmm0 = _dt.datetime.fromtimestamp(t0).strftime("%H:%M")
+    hhmm1 = _dt.datetime.fromtimestamp(t1).strftime("%H:%M")
     return (f'<svg viewBox="0 0 {w} {h}" style="width:{w}px;height:{h}px;'
             f'background:var(--surface);border:1px solid var(--line);'
             f'border-radius:10px;box-shadow:var(--shadow)">'
+            f'<line x1="5" y1="{mid:.0f}" x2="{w - 5}" y2="{mid:.0f}" '
+            f'style="stroke:var(--grid)" stroke-dasharray="3 4"/>'
+            f'<line x1="5" y1="{base}" x2="{w - 5}" y2="{base}" '
+            f'style="stroke:var(--grid)"/>'
             f'<polygon points="{area}" style="fill:{c}" fill-opacity=".12"/>'
             f'<polyline points="{poly}" fill="none" style="stroke:{c}" '
             f'stroke-width="1.6" stroke-linejoin="round"/>'
-            f'<text x="7" y="{h - 5}" font-size="9" class="mut">'
-            f'max {vmax:,.1f}{unit}</text></svg>')
+            f'<text x="6" y="10" font-size="8.5" class="mut">'
+            f'{vmax:,.1f}{unit}</text>'
+            f'<text x="6" y="{base - 2}" font-size="8.5" class="mut">0</text>'
+            f'<text x="6" y="{h - 3}" font-size="8.5" class="mut">{hhmm0}</text>'
+            f'<text x="{w - 6}" y="{h - 3}" font-size="8.5" class="mut" '
+            f'text-anchor="end">{hhmm1}</text></svg>')
 
 
 def _gpu_model_section(ctx: ReportContext) -> str:
@@ -570,22 +590,78 @@ def _gpu_model_section(ctx: ReportContext) -> str:
                + "".join(rows) + "</tbody></table>")
 
     if execs:
+        # 스테이지별 Tact 집계 (클릭 시 파이프라인 분해 상세)
+        stages: dict[str, dict[str, list[float]]] = {}
+        for e in ctx.events:
+            if e.kind == "DLINFER_STAGE":
+                m = e.model.rsplit(".", 1)[0]
+                stages.setdefault(m, {}).setdefault(e.name, []).append(e.value)
         out.append("<h2>모델별 GPU 실행시간(executeV2) 추이</h2>"
                    "<p class='legend'>순수 GPU 커널 실행시간(ms)입니다. 동시 실행이 "
-                   "겹치는 시간대에 값이 상승하면 GPU 경합을 의미합니다.</p>")
+                   "겹치는 시간대에 값이 상승하면 GPU 경합을 의미합니다. "
+                   "N = 인퍼런스 실행 횟수. <b>카드를 클릭하면 스테이지 분해</b>"
+                   "(전처리→복사→실행→검증)를 보여줍니다.</p>")
         out.append("<div style='display:flex;flex-wrap:wrap;gap:14px'>")
+        sd_id = 0
         for m, pairs in sorted(execs.items(),
                                key=lambda kv: -statistics.mean(v for _t, v in kv[1])):
             vals = sorted(v for _t, v in pairs)
             avg = statistics.mean(vals)
             p95 = vals[min(len(vals) - 1, int(len(vals) * 0.95))]
             chart = _series_svg(pairs, ctx.log_start, ctx.log_end)
+            sd = ""
+            st = stages.get(m, {})
+            if st or vals:
+                sd_id += 1
+                # 파이프라인 순서: 전처리 → H2D 복사 → 커널 실행 → 검증 → 합계
+                order = [("ProcessInput", "전처리(ProcessInput)"),
+                         ("copyInputToDevice", "입력 복사(H2D)"),
+                         ("executeV2", "커널 실행(executeV2)"),
+                         ("VerifyOutput", "출력 검증(VerifyOutput)"),
+                         ("Infer", "합계(Infer)")]
+                data = dict(st)
+                data["executeV2"] = vals
+                rows_s = []
+                mx_avg = max((statistics.mean(v) for k, v in data.items()
+                              if v), default=1) or 1
+                for key, label in order:
+                    sv = sorted(data.get(key, []))
+                    if not sv:
+                        continue
+                    savg = statistics.mean(sv)
+                    sp95 = sv[min(len(sv) - 1, int(len(sv) * 0.95))]
+                    bw_px = max(2, int(savg / mx_avg * 78))
+                    rows_s.append(
+                        f"<tr><td>{label}</td>"
+                        f"<td class='r' style='white-space:nowrap'>"
+                        f"<span style='display:inline-block;width:{bw_px}px;"
+                        f"height:7px;background:var(--blue);border-radius:3px;"
+                        f"margin-right:6px;vertical-align:1px'></span>"
+                        f"{savg:,.1f}</td>"
+                        f"<td class='r'>{sp95:,.1f}</td>"
+                        f"<td class='r'>{sv[-1]:,.1f}</td></tr>")
+                if rows_s:
+                    sd = (f"<div class='sdetail' id='sd{sd_id}'>"
+                          f"<table><thead><tr><th>스테이지</th>"
+                          f"<th class='r'>avg(ms)</th><th class='r'>p95(ms)</th>"
+                          f"<th class='r'>max(ms)</th>"
+                          f"</tr></thead><tbody>" + "".join(rows_s)
+                          + "</tbody></table>"
+                          f"<div class='legend'>스테이지별 N={len(vals):,} "
+                          f"(인퍼런스 실행 횟수와 동일)</div></div>")
+            click = (f" onclick=\"document.getElementById('sd{sd_id}')"
+                     f".classList.toggle('show')\" style='cursor:pointer'"
+                     if sd else "")
             out.append(
-                f"<div style='width:352px'><div style='font-size:12px;font-weight:600;"
-                f"margin-bottom:2px'>{_esc(m)}</div>"
-                f"<div style='font-size:11px;color:var(--muted)'>N={len(vals):,} · "
-                f"avg {avg:.1f}ms · p95 {p95:.1f}ms · max {vals[-1]:,.1f}ms</div>"
-                f"{chart}</div>")
+                f"<div{click}><div style='width:352px'>"
+                f"<div style='font-size:12px;font-weight:600;"
+                f"margin-bottom:2px'>{_esc(m)}"
+                + (" <span class='hint'>▾ 스테이지</span>" if sd else "")
+                + f"</div>"
+                f"<div style='font-size:11px;color:var(--muted)'>"
+                f"N={len(vals):,}회 실행 · avg {avg:.1f}ms · p95 {p95:.1f}ms · "
+                f"max {vals[-1]:,.1f}ms</div>"
+                f"{chart}</div>{sd}</div>")
         out.append("</div>")
     return "".join(out)
 
@@ -862,9 +938,13 @@ def _models_section(ctx: ReportContext) -> str:
                         f"<td class='r'><b>{avg / 1000:.2f}</b></td>"
                         f"<td class='r'>{p95 / 1000:.2f}</td>"
                         f"<td class='r'>{vs[-1] / 1000:.2f}</td></tr>")
-        out.append("<table class='sortable'><thead><tr><th>모델</th><th>GPU</th>"
-                   "<th>사용 채널(alg)</th><th>N</th><th>min(s)</th><th>avg(s)</th>"
-                   "<th>p95(s)</th><th>max(s)</th></tr></thead><tbody>"
+        out.append("<p class='legend'>N = 해당 모델(가중치)의 인퍼런스 실행 횟수 "
+                   "(InspectMC 파이프라인 단위)</p>"
+                   "<table class='sortable'><thead><tr><th>모델</th><th>GPU</th>"
+                   "<th>사용 채널(alg)</th><th class='r'>N</th>"
+                   "<th class='r'>min(s)</th><th class='r'>avg(s)</th>"
+                   "<th class='r'>p95(s)</th><th class='r'>max(s)</th>"
+                   "</tr></thead><tbody>"
                    + "".join(rows) + "</tbody></table>")
     else:
         out.append("<p>모델별 Tact 데이터 없음</p>")
@@ -958,25 +1038,44 @@ def _gpu_resource_section(ctx: ReportContext) -> str:
         by_gpu: dict[str, list] = {}
         for e in status:
             by_gpu.setdefault(e.status or "0", []).append(e)
-        out.append("<h3>GPU별 VRAM·온도 (NVML 스냅샷, 인퍼런스 전후)</h3>"
-                   "<div style='display:flex;flex-wrap:wrap;gap:16px'>")
+        out.append("<h3>GPU별 VRAM·온도 (NVML 스냅샷, 인퍼런스 전후)</h3>")
         for g in sorted(by_gpu):
             evs = by_gpu[g]
             mem = [(e.ts, e.value) for e in evs]
-            temp = [(e.ts, float(e.name or 0)) for e in evs if e.name]
-            tmax = max((v for _t, v in temp), default=0.0)
+            mvals = sorted(v for _t, v in mem)
+            # 온도 0°C 는 NVML 읽기 실패(무효 리딩) — 추세에서 제외하고 따로 집계
+            temp_all = [float(e.name or 0) for e in evs if e.name]
+            n_zero = sum(1 for v in temp_all if v == 0)
+            temp = [(e.ts, float(e.name)) for e in evs
+                    if e.name and float(e.name) > 0]
+            tvals = sorted(v for _t, v in temp)
+            tmax = tvals[-1] if tvals else 0.0
+            tavg = statistics.mean(tvals) if tvals else 0.0
             tcol = "#d03b3b" if tmax >= 85 else "#eb6834"
             twarn = " ⚠" if tmax >= 85 else ""
+            zero_chip = (f"<span class='chip'>온도 무효 리딩(0°C) "
+                         f"<b>{n_zero:,}</b>회 — NVML 읽기 실패, 추세 제외"
+                         f"</span>" if n_zero else "")
             out.append(
+                f"<div class='chips'>"
+                f"<span class='chip'>GPU {_esc(g)} 샘플 <b>{len(evs):,}</b>개"
+                f"</span>"
+                f"<span class='chip'>VRAM <b>{mvals[0]:,.0f} ~ "
+                f"{mvals[-1]:,.0f}MB</b> (평균 "
+                f"{statistics.mean(mvals):,.0f})</span>"
+                f"<span class='chip'>온도 평균 <b>{tavg:.0f}°C</b> · 최고 "
+                f"<b>{tmax:.0f}°C</b>{twarn}</span>{zero_chip}</div>")
+            out.append(
+                "<div style='display:flex;flex-wrap:wrap;gap:16px'>"
                 f"<div><div style='font-size:12px;font-weight:600'>GPU {_esc(g)}"
                 f" — VRAM 사용량(MB)</div>"
                 + _series_svg(mem, ctx.log_start, ctx.log_end,
                               w=430, h=100, color="#2a78d6", unit="MB")
-                + f"<div style='font-size:12px;font-weight:600;margin-top:6px'>"
-                f"GPU {_esc(g)} — 온도(°C), 최고 {tmax:.0f}°C{twarn}</div>"
+                + f"</div><div><div style='font-size:12px;font-weight:600'>"
+                f"GPU {_esc(g)} — 온도(°C)</div>"
                 + _series_svg(temp, ctx.log_start, ctx.log_end,
-                              w=430, h=74, color=tcol, unit="C") + "</div>")
-        out.append("</div>")
+                              w=430, h=100, color=tcol, unit="C")
+                + "</div></div>")
 
     # 2) 모델 로드 시 VRAM (cudaMemGetInfo 전후 델타)
     if memload:
@@ -1214,11 +1313,17 @@ function renderGantt(iid) {
   const H = runs.length * rowH + 40;
   const sx = t => LB + t / maxT * (W - LB - 20);
   const parts = [`<svg viewBox="0 0 ${W} ${H}" style="width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px">`];
-  const gstep = maxT > 120 ? 60 : (maxT > 30 ? 10 : 5);
-  for (let t = 0; t <= maxT; t += gstep) {
+  // 적응형 눈금: 검사 길이에 맞춰 5~8칸이 되도록 선택
+  const nice = [0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600];
+  const gstep = nice.find(s => maxT / s <= 7) || 1200;
+  const fmtT = t => '+' + (gstep < 1 ? t.toFixed(1) : Math.round(t)) + 's';
+  for (let t = 0; t + gstep * 0.35 < maxT; t += gstep) {
     parts.push(`<line x1="${sx(t)}" y1="14" x2="${sx(t)}" y2="${H - 22}" style="stroke:var(--track)"/>` +
-      `<text x="${sx(t)}" y="${H - 8}" font-size="10" text-anchor="middle" class="mut">+${t}s</text>`);
+      `<text x="${sx(t)}" y="${H - 8}" font-size="10" text-anchor="middle" class="mut">${fmtT(t)}</text>`);
   }
+  // 종료 시점 라벨 (검사 총 소요)
+  parts.push(`<line x1="${sx(maxT)}" y1="14" x2="${sx(maxT)}" y2="${H - 22}" style="stroke:var(--grid)" stroke-dasharray="3 4"/>` +
+    `<text x="${sx(maxT)}" y="${H - 8}" font-size="10" text-anchor="middle" style="fill:var(--ink2)" font-weight="600">+${maxT.toFixed(2)}s 끝</text>`);
   runs.forEach((r, i) => {
     const [alg, ch, ex, rel, dur, status, model, pre] = r;
     const y = 18 + i * rowH;
@@ -1233,8 +1338,9 @@ function renderGantt(iid) {
       parts.push(`<text x="${sx(rel) + wpx + 4}" y="${y + 12}" font-size="10" fill="#d03b3b">소실</text>`);
   });
   parts.push('</svg>');
-  let head = `<h3>${iid} — <span style="color:${STATUS_COLOR[d.status] || 'var(--ink)'}">` +
-    `${STATUS_KO[d.status] || d.status}</span> (시작 ${d.st})</h3>`;
+  let head = `<h3><span class="mono">${iid}</span> — <span style="color:${STATUS_COLOR[d.status] || 'var(--ink)'}">` +
+    `${STATUS_KO[d.status] || d.status}</span> <span class="hint">(시작 ${d.st} · ` +
+    `채널 최종 종료까지 ${maxT.toFixed(2)}s · 막대에 마우스를 올리면 채널별 상세)</span></h3>`;
   if (d.lost && d.lost.length) head += `<p>소실 채널: <b>${d.lost.join(', ')}</b></p>`;
   if (d.nofeed && d.nofeed.length) head += `<p>미투입: ${d.nofeed.join(', ')}</p>`;
   if (d.remain) head += `<p>플랫폼 REMAIN 덤프: ${d.remain}</p>`;
@@ -1605,6 +1711,15 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
  .mono {{ font-family: ui-monospace, Consolas, monospace; font-size: .95em;
           font-variant-numeric: tabular-nums; }}
  .scrollwrap {{ max-height: 480px; overflow: auto; border-radius: 12px; }}
+ .sdetail {{ display: none; margin-top: 8px; width: 352px; }}
+ .sdetail.show {{ display: block; }}
+ .sdetail table {{ font-size: 11.5px; }}
+ .sdetail th, .sdetail td {{ padding: 4px 8px; }}
+ .chips {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 10px; }}
+ .chip {{ border: 1px solid var(--line); background: var(--surface);
+   border-radius: 999px; padding: 4px 13px; font-size: 11.5px;
+   color: var(--ink2); box-shadow: var(--shadow); }}
+ .chip b {{ color: var(--ink); font-variant-numeric: tabular-nums; }}
  tbody tr:nth-child(even) td {{
    background: color-mix(in srgb, var(--ink) 2.2%, transparent); }}
  tbody tr:hover td {{ background: var(--tint-blue); }}

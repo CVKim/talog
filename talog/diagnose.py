@@ -221,8 +221,9 @@ def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
             out.append(Finding("crit", f"{title} {n}건", [], advice))
 
     # 6.5) GPU 리소스 신호 (v1.4) ------------------------------------------------
-    temps = [float(e.name or 0) for e in events
-             if e.kind == "GPU_STATUS" and e.name]
+    # 0°C 는 NVML 읽기 실패(무효 리딩) — 통계에서 제외
+    temps = [float(e.name) for e in events
+             if e.kind == "GPU_STATUS" and e.name and float(e.name) > 0]
     if temps and max(temps) >= 85:
         out.append(Finding("crit", f"GPU 온도 임계 초과 (최고 {max(temps):.0f}°C)",
                            ["NVML 스냅샷([GPU STATUS]) 기준 85°C 이상 —  "

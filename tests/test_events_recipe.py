@@ -388,6 +388,12 @@ def gpu_result(extractor, tmp_path_factory):
         _line("2026/07/27-00:12:42.000", "Debug", "CDLInfer::InferStart",
               " - GPU: 0 - Model: 3D_SHOULDER_3D6L.onnx, DeviceIdx:0, "
               "WaitForCriticalSection Tact = 1250.0"),
+        _line("2026/07/27-00:12:43.000", "Debug", "CDLInferOnGPU::InferAthena",
+              "GPU: 0 - Model: 3D_SHOULDER_3D6L.onnx, DeviceIdx:0, "
+              "copyInputToDevice Tact = 49.0"),
+        _line("2026/07/27-00:12:43.100", "Debug", "CDLInferOnGPU::InferAthena",
+              " - GPU: 0 - Model: 3D_SHOULDER_3D6L.onnx, DeviceIdx:0, "
+              "Infer Tact = 335.0"),
     ])
     fi = classify(str(path))
     evs, _n = extractor.extract_file(fi, file_id=9)
@@ -438,3 +444,10 @@ def test_console_gpu_model_load(extractor, tmp_path):
     ev = _by_kind(evs)["GPU_MODEL_LOAD"][0]
     assert ev.model == "3D_SHOULDER_3D6L.onnx"
     assert ev.value == 1.0
+
+
+def test_dlinfer_stage_rule(gpu_result):
+    # 스테이지 Tact: name=스테이지명, value=ms (executeV2 는 별도 kind 유지)
+    st = {e.name: e.value for e in gpu_result["DLINFER_STAGE"]}
+    assert st["copyInputToDevice"] == pytest.approx(49.0)
+    assert st["Infer"] == pytest.approx(335.0)

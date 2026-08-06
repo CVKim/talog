@@ -253,7 +253,8 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
                 if fi.category == "dlinfer":
                     # 고케이던스 사이트의 GPU 계측 홍수는 균등 샘플링으로 상한
                     # (GPU_STATUS 는 신규 빌드에서 인퍼런스당 2회 기록됨)
-                    for hk in ("DLINFER_EXEC", "GPU_STATUS", "GPU_WAIT"):
+                    for hk in ("DLINFER_EXEC", "DLINFER_STAGE", "GPU_STATUS",
+                               "GPU_WAIT"):
                         hi = [e for e in evs if e.kind == hk]
                         if len(hi) > 300_000:
                             step = len(hi) // 300_000 + 1
