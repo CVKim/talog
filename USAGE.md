@@ -1,12 +1,13 @@
-# talog 사용 설명서 (DRAFT v0.1)
+# talog 사용 설명서
 
-talos 계열 검사 설비(타이어·볼조인트·부싱 등) 로그를 자동 분석하여
+talos 계열 검사 설비(타이어·볼조인트·부싱·미러 등) 로그를 자동 분석하여
 **인터랙티브 HTML 리포트 + 자동 진단 소견 + 조회용 DB**를 생성하고,
 로컬 LLM으로 자연어 질의까지 지원하는 로그 분석기입니다.
 
-- 위치: `E:\talos-log-analyzer`
-- 검증 사이트: 한국타이어 PC3, CTR 4설비(c1xx·cmfb#1·f150·v710), Tenneco 부싱
-  (일 4.3만 검사·300만 라인급까지 검증)
+- 저장소: https://github.com/CVKim/talog (버전은 `talog.exe --version`)
+- 검증 사이트: 한국타이어 PC3, CTR 4설비(c1xx·cmfb#1·f150·v710), Tenneco
+  부싱, MR 미러 (일 4.3만 검사·300만 라인급까지 검증)
+- **설치 불필요** — `talog.exe` 는 Python 없이 Windows 에서 바로 실행됩니다.
 
 ---
 
@@ -35,9 +36,9 @@ dist\talog.exe "H:\...\log\cmfb#1" --recipe "D:\AIV\MODEL\CMFB - V2" --open
 | `--fast` | 대용량 종속성 그래프 로그 생략 (속도 우선) |
 | `--detail N` | 간트 상세 내장 검사 수 (기본 60) |
 
-여러 리포트를 한 페이지에서 보려면:
+여러 설비 폴더를 한 번에 돌리고 통합 인덱스까지 만들려면:
 ```
-python make_index.py <출력폴더>     → index.html + AI_GUIDE.md 생성
+talog.exe fleet <설비 폴더들이 있는 루트>   → 설비별 리포트 + index.html
 ```
 
 **설비 여러 대를 한 번에 (fleet 모드)**:
