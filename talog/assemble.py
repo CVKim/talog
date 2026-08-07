@@ -400,9 +400,12 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
             it.status = "incomplete"
         elif it.end_ts:
             it.status = "complete"
-        elif from_machine and near_eof:
-            # 로그 절단 구간은 소실 판정보다 우선한다 (절단 시점 실행 중이던
-            # 검사를 '실행 중 소실'로 오판하지 않도록)
+        elif near_eof:
+            # 로그 절단 구간은 소실/시뮬 판정보다 우선한다. 절단 시점 실행 중이던
+            # 검사를 '실행 중 소실'로 오판하지 않고, 설비 신호 파일(comm 등)이
+            # 먼저 잘려 신호가 '없는 게 아니라 잘린' 검사를 시뮬레이션으로
+            # 오판하지 않는다 (Tenneco 30 실측: 파일별 절단 13분 차 → 꼬리
+            # 양산 검사 191건이 sim_partial 로 오분류되던 사례)
             it.status = "in_progress_eof"             # 로그 절단(판정 불가)
         elif it.n_lost:
             it.status = "incomplete_lost"             # 실행 중 소실

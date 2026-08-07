@@ -285,3 +285,30 @@ def test_diagnose_model_fail_crit():
     assert f.severity == "crit"
     assert "DLMODEL0005" in f.title
     assert "2건" in f.title
+
+
+def test_no_machine_signal_near_eof_is_not_simulation():
+    """설비 신호 파일(comm/InspStarter)이 먼저 잘린 꼬리 구간의 검사는 신호가
+    '없는 게 아니라 잘린' 것이므로 시뮬레이션이 아니라 in_progress_eof 로
+    분류되어야 한다 (Tenneco 30 실사고: 양산 191건이 sim_partial 오분류)."""
+    runs = [ChannelRun(inner_id="T", alg_idx=2, channel="ch2", status="done",
+                       feed_ts=950.0, feed_text=_tt(950.0),
+                       infer_start_ts=950.0, infer_end_ts=951.0,
+                       infer_ms=300.0)]
+    out = build_inspections([], runs=runs, dl_channels={2: "ch2"},
+                            gens=[], log_end_ts=1100.0, comm_end_ts=1000.0)
+    assert len(out) == 1
+    assert out[0].status == "in_progress_eof"
+
+
+def test_no_machine_signal_within_coverage_stays_simulation():
+    """comm 커버리지 안쪽(절단과 무관)에서 설비 신호 없이 돈 검사는 여전히
+    시뮬레이션으로 분류되어야 한다 (PC3 새벽 시뮬 케이스 보존)."""
+    runs = [ChannelRun(inner_id="S", alg_idx=2, channel="ch2", status="done",
+                       feed_ts=100.0, feed_text=_tt(100.0),
+                       infer_start_ts=100.0, infer_end_ts=101.0,
+                       infer_ms=300.0)]
+    out = build_inspections([], runs=runs, dl_channels={2: "ch2"},
+                            gens=[], log_end_ts=10000.0, comm_end_ts=10000.0)
+    assert len(out) == 1
+    assert out[0].status == "sim_complete"
