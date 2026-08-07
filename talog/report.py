@@ -359,9 +359,10 @@ def _dist_svg(values: list[float], unit: str = "ms", w: int = 520,
     x축은 p99×1.25 로 클립해 본체가 뭉개지지 않게 하고, 넘는 max 는 주석으로
     표기한다. p95 초과 구간(상위 5%)은 주황으로 음영·착색된다.
     """
-    if len(values) < 8:
+    # 음수/비유한 값 방어 (존 병합·스티칭 경계에서 종료<시작 레코드 가능)
+    vs = sorted(v for v in values if v >= 0)
+    if len(vs) < 8:
         return ""
-    vs = sorted(values)
     n = len(vs)
 
     def pct(p: float) -> float:
@@ -377,7 +378,7 @@ def _dist_svg(values: list[float], unit: str = "ms", w: int = 520,
     step = hi / nb
     bins = [0] * nb
     for v in vs:
-        bins[min(nb - 1, int(v / step))] += 1
+        bins[min(nb - 1, max(0, int(v / step)))] += 1
     mxb = max(bins) or 1
     x0, x1 = 8, w - 8
     base, top = h - 26, 34

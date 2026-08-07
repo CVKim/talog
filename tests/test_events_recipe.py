@@ -451,3 +451,13 @@ def test_dlinfer_stage_rule(gpu_result):
     st = {e.name: e.value for e in gpu_result["DLINFER_STAGE"]}
     assert st["copyInputToDevice"] == pytest.approx(49.0)
     assert st["Infer"] == pytest.approx(335.0)
+
+
+def test_dist_svg_negative_values_do_not_crash():
+    # 존 병합/스티칭 경계에서 음수 duration 이 섞여도 히스토그램이 죽지 않아야
+    # 한다 (v1.7.1 회귀 — Tenneco 30 실사고: IndexError)
+    from talog.report import _dist_svg
+    vals = [-120.0, -0.5] + [float(v) for v in range(1, 40)]
+    svg = _dist_svg(vals, unit="s")
+    assert svg.startswith("<svg")
+    assert "p95" in svg
