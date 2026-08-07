@@ -58,6 +58,7 @@ class Inspection:
     n_zones: int = 0              # 시작 승인(ACK)된 그룹(존) 수 — Tenneco 등
     n_zones_done: int = 0         # END 를 받은 그룹(존) 수
     timed_out: bool = False       # [TIMEOUT] 으로 판정 미송신 (코드 검증 근거)
+    reject_zone: int = 0          # 거부 시점의 투입 존(groupId) — 0=미상
     defects: list[str] = field(default_factory=list)   # NG 판정 결함명 목록
     lost_channels: list[str] = field(default_factory=list)
     nofeed_channels: list[str] = field(default_factory=list)
@@ -138,14 +139,16 @@ def build_model_loads(events: list[Event],
     return out
 
 
-def _parse_ng_defects(extra: str, inner_id: str) -> list[str]:
-    """INSPECT_END NG 페이로드에서 결함명 목록을 뽑는다.
+def _parse_ng_defects(extra: str, inner_id: str,
+                      decision: str = "NG") -> list[str]:
+    """INSPECT_END NG/REWORK 페이로드에서 결함명 목록을 뽑는다.
 
-    형식(CommSender.cpp 검증): V3.0,<국>,NG,<개수>,<결함1>,..,<결함N>,<inner>,...
+    형식(CommSender.cpp 검증):
+        V3.0,<국>,<판정>[,<개수>,<결함1>,..,<결함N>],<inner>,<product>,<존>
     """
     toks = [t.strip() for t in (extra or "").split(",")]
     try:
-        ng_i = toks.index("NG")
+        ng_i = toks.index(decision)
         inner_i = toks.index(inner_id)
     except ValueError:
         return []
@@ -169,6 +172,15 @@ def build_process_gens(events: list[Event], log_end_ts: float) -> list[ProcessGe
         elif e.kind == "BATCH" and "kill" in e.name.lower():
             marks.append((e.ts, "kill", e.ts_text))
     marks.sort()
+    # 풀 5종 일반화(eFunction/eDraw/...)로 기동 1회에 create/destroy 마커가
+    # 여러 개 생긴다 — 30초 내 같은 종류 연속 마커는 한 번의 기동/정지로 병합
+    dedup: list[tuple[float, str, str]] = []
+    for m in marks:
+        if dedup and m[1] == dedup[-1][1] and m[1] in ("create", "destroy") \
+                and m[0] - dedup[-1][0] < 30:
+            continue
+        dedup.append(m)
+    marks = dedup
     gens: list[ProcessGen] = []
     cur: Optional[ProcessGen] = None
     # 첫 create 이전 구간: 전일부터 가동 중이던 세대로 시드한다
@@ -203,13 +215,28 @@ def build_runs_for_file(alg_idx: int, channel: str,
     if True:  # (구조 유지 블록 — 별도 함수 분리 예정)
         last_reset: Optional[Event] = None
         last_reset_ts_any = 0.0      # 연쇄(2차 실행) 귀속 오염 방지용
+        n_since_reset = 0            # tact-close 모드: 이번 검사에서 닫힌 run 수
         cur_feed: dict[str, float | str | int] = {}
         open_by_obj: dict[str, ChannelRun] = {}      # obj_id -> 진행 중 run
         chain_by_obj: dict[str, tuple[str, float]] = {}  # obj_id -> (inner, 직전 종료 ts)
+
+        def _synth_lost():
+            # tact-close 모드에서 투입(FEED)됐으나 Tact 로 닫히지 못한 검사
+            # = 실행 중 소실 (Tenneco 30 실측: RESET 28,494 vs TACT 28,491)
+            if last_reset is not None and cur_feed and n_since_reset == 0:
+                runs.append(ChannelRun(
+                    inner_id=last_reset.inner_id, alg_idx=alg_idx,
+                    channel=channel, feed_ts=last_reset.ts,
+                    feed_text=last_reset.ts_text,
+                    roi_idx=int(cur_feed.get("roi", 0) or 0),
+                    infer_start_ts=last_reset.ts, status="lost"))
+
         for e in evs:
             if e.kind == "RESET":
+                _synth_lost()
                 last_reset = e
                 last_reset_ts_any = e.ts
+                n_since_reset = 0
                 cur_feed = {}
             elif e.kind == "FEED" and last_reset is not None:
                 cur_feed = {"roi": e.roi_idx}
@@ -241,6 +268,32 @@ def build_runs_for_file(alg_idx: int, channel: str,
                 runs.append(run)
             elif e.kind == "TACT_INFER":
                 run = open_by_obj.pop(e.obj_id, None)
+                if run is None:
+                    # tact-close 모드: Execute 시작(Info) 라인을 남기지 않는
+                    # 빌드(Tenneco 계열)는 Debug Tact 라인 1줄이 실행 전체를
+                    # 대표한다 → 즉석에서 완료 run 을 합성한다. 멀티모델
+                    # 채널은 같은 RESET 에 여러 Tact 가 이어지므로 last_reset
+                    # 을 소비하지 않고 exec_no 만 증가시킨다.
+                    inner, exec_no = "", 1
+                    if last_reset is not None \
+                            and e.ts - last_reset.ts <= _ATTACH_WINDOW:
+                        inner = last_reset.inner_id
+                        n_since_reset += 1
+                        exec_no = n_since_reset
+                    else:
+                        ch = chain_by_obj.get(e.obj_id)
+                        if ch and e.ts - ch[1] <= _CHAIN_WINDOW \
+                                and last_reset_ts_any <= ch[1]:
+                            inner, exec_no = ch[0], 2
+                    if inner:
+                        st = e.ts - (e.value or 0) / 1000.0
+                        run = ChannelRun(
+                            inner_id=inner, alg_idx=alg_idx, channel=channel,
+                            exec_no=exec_no, infer_start_ts=st, feed_ts=st,
+                            feed_text=e.ts_text,
+                            roi_idx=int(cur_feed.get("roi", 0) or 0),
+                            pre_ms=float(cur_feed.get("pre", 0) or 0))
+                        runs.append(run)
                 if run is not None:
                     run.infer_end_ts = e.ts
                     run.infer_ms = e.value
@@ -256,6 +309,7 @@ def build_runs_for_file(alg_idx: int, channel: str,
                             and 0 <= e.ts - r.infer_end_ts <= 10.0:
                         r.post_ms = e.value
                         break
+        _synth_lost()      # 파일 말미(EOF)에서 열린 채 끝난 검사
     return runs
 
 
@@ -279,17 +333,32 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
     last_start: Optional[Inspection] = None
     ack_groups: dict[str, set] = {}      # inner -> ACK 받은 그룹(존) 집합
     end_groups: dict[str, set] = {}      # inner -> END 받은 그룹(존) 집합
+    last_recv: Optional[Event] = None    # 직전 M2V_INSPECT_START 수신 (존 포함)
     for e in events:
         if e.kind == "INSP_START":
             it = get(e.inner_id)
-            it.start_ts, it.start_text = e.ts, e.ts_text
-            it.product_id = e.product_id
-            it.wait_threads = int(e.value)
+            if not it.start_ts:
+                # 다존 설비(Tenneco 4존)는 같은 inner 로 START 가 존마다
+                # 반복 수신된다 — 첫 존 시작 = 검사 시작 (덮어쓰면 검사시간이
+                # 마지막 존 사이클로 왜곡: 30일 실측 9.8s → 0.61s 오류)
+                it.start_ts, it.start_text = e.ts, e.ts_text
+                it.product_id = e.product_id
+                it.wait_threads = int(e.value)
+            else:
+                # 최저 잔여 스레드는 고갈 진단용으로 유지
+                it.wait_threads = min(it.wait_threads, int(e.value))
             last_start = it
+        elif e.kind == "INSP_RECV":
+            last_recv = e
         elif e.kind == "INSP_REJECT":
             # comm.log 부재 시에도 거부를 식별한다 (직전 INSP_START 에 귀속)
             if last_start is not None and not last_start.ack_status:
                 last_start.ack_status = "NoInspThread"
+            # 거부가 어느 존 투입 시점이었는지 (직전 수신 라인의 groupId)
+            if last_start is not None and last_recv is not None \
+                    and last_recv.inner_id == last_start.inner_id \
+                    and abs(e.ts - last_recv.ts) <= 2.0:
+                last_start.reject_zone = int(last_recv.value)
         elif e.kind in ("REJECT_BUSYCAM", "REJECT_NOTREADY", "REJECT_SIM"):
             # 코드 검증된 추가 거부 경로 (InspStarter.cpp)
             if last_start is not None and not last_start.ack_status:
@@ -322,11 +391,12 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
             elif "INSPECT_END" in e.name:
                 it.end_ts, it.end_text = e.ts, e.ts_text
                 # 다존 설비: 어느 한 존이라도 NG 면 최종 판정은 NG 로 유지한다
+                # (Tenneco 30 확증: 부품 단위 종합판정 메시지 부재, PLC 가
+                #  존 OR 로 배출 판정 — 존 스티키가 유일한 올바른 집계)
                 if it.end_result != "NG":
                     it.end_result = e.status
-                if e.status == "NG":
-                    # NG 페이로드: ...,NG,<개수>,<결함1..N>,<inner>,... (코드 검증)
-                    for d in _parse_ng_defects(e.extra, e.inner_id):
+                if e.status in ("NG", "REWORK"):
+                    for d in _parse_ng_defects(e.extra, e.inner_id, e.status):
                         if d not in it.defects:
                             it.defects.append(d)
                 if e.value:
@@ -394,9 +464,8 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
         it.n_zones_done = len(end_groups.get(it.inner_id, ()))
         if it.ack_status and it.ack_status != "OK":
             it.status = "rejected"                    # NoInspThread 등
-        elif it.end_ts and it.n_zones > 1 \
-                and it.n_zones_done < it.n_zones and not near_eof:
-            # 다존 설비에서 일부 존만 END 수신 (커버리지 내) = 부분 완료
+        elif it.n_zones and 0 < it.n_zones_done < it.n_zones and not near_eof:
+            # 다존 설비에서 일부 존만 END 수신 (커버리지 내) = 존 부분 완료
             it.status = "incomplete"
         elif it.end_ts:
             it.status = "complete"
@@ -408,7 +477,11 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
             # 양산 검사 191건이 sim_partial 로 오분류되던 사례)
             it.status = "in_progress_eof"             # 로그 절단(판정 불가)
         elif it.n_lost:
-            it.status = "incomplete_lost"             # 실행 중 소실
+            it.status = "incomplete_lost"             # 실행 중 소실 (채널 근거)
+        elif it.n_zones and it.n_zones_done < it.n_zones:
+            # ACK 만 받고 END 0건 + 채널 소실 근거도 없음 = 존 미완료
+            # (감사 D: end_ts 요구로 존 정보가 우회되던 케이스의 잔여분)
+            it.status = "incomplete"
         elif not from_machine:
             it.status = "sim_complete" if (it.n_fed and it.n_done >= it.n_fed) \
                 else "sim_partial"

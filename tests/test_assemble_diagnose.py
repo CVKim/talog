@@ -312,3 +312,81 @@ def test_no_machine_signal_within_coverage_stays_simulation():
                             gens=[], log_end_ts=10000.0, comm_end_ts=10000.0)
     assert len(out) == 1
     assert out[0].status == "sim_complete"
+
+
+def test_tact_close_mode_builds_runs_without_block_start():
+    """Execute 시작(Info) 라인이 없는 빌드(Tenneco)에서는 Debug Tact 라인이
+    실행 전체를 대표한다 — run 이 즉석 합성되어야 한다 (감사 A: channel_runs
+    0건 실사고). 멀티모델 채널은 같은 RESET 에 exec_no 가 증가한다."""
+    evs = [
+        _ev("RESET", 100.0, inner_id="X", product_id="P"),
+        _ev("FEED", 100.1, roi_idx=7),
+        _ev("TACT_INFER", 100.5, model="OD_A", value=400.0),
+        _ev("TACT_INFER", 100.9, model="OD_B", value=350.0),
+        _ev("RESET", 105.0, inner_id="Y", product_id="P"),
+        _ev("FEED", 105.1, roi_idx=7),
+        _ev("TACT_INFER", 105.6, model="OD_A", value=410.0),
+    ]
+    runs = build_runs_for_file(1, "OD", evs)
+    done = [r for r in runs if r.status == "done"]
+    assert len(done) == 3
+    assert [r.inner_id for r in done] == ["X", "X", "Y"]
+    assert [r.exec_no for r in done] == [1, 2, 1]
+    assert done[0].infer_ms == 400.0
+    assert done[0].roi_idx == 7
+
+
+def test_tact_close_mode_synthesizes_lost_run():
+    """투입(FEED)됐으나 Tact 로 닫히지 못한 검사(재기동 경계)는 lost run 으로
+    합성되어야 한다 (Tenneco 30 실측: RESET 28,494 vs TACT 28,491)."""
+    evs = [
+        _ev("RESET", 100.0, inner_id="X", product_id="P"),
+        _ev("FEED", 100.1, roi_idx=3),
+        # Tact 없이 파일 종료 (크래시/재기동)
+    ]
+    runs = build_runs_for_file(1, "OD", evs)
+    assert len(runs) == 1
+    assert runs[0].status == "lost"
+    assert runs[0].inner_id == "X"
+
+
+def test_multizone_first_start_preserved_duration():
+    """다존 설비: 같은 inner 로 START 가 존마다 반복 수신돼도 검사 시작은
+    첫 START 를 유지해야 한다 (감사 B: 검사시간 9.8s → 0.61s 왜곡 실사고)."""
+    events = [
+        _ev("INSP_START", 100.0, inner_id="Z", product_id="P", value=3.0),
+        _ev("COMM_MSG", 100.1, inner_id="Z", name="V2M_INSPECT_START_ACK",
+            status="OK", value=1.0),
+        _ev("COMM_MSG", 101.0, inner_id="Z", name="V2M_INSPECT_END",
+            status="OK", value=1.0),
+        _ev("INSP_START", 103.0, inner_id="Z", product_id="P", value=2.0),
+        _ev("COMM_MSG", 103.1, inner_id="Z", name="V2M_INSPECT_START_ACK",
+            status="OK", value=2.0),
+        _ev("COMM_MSG", 104.0, inner_id="Z", name="V2M_INSPECT_END",
+            status="OK", value=2.0),
+    ]
+    out = build_inspections(events, runs=[], dl_channels={},
+                            gens=[], log_end_ts=10000.0, comm_end_ts=10000.0)
+    assert len(out) == 1
+    it = out[0]
+    assert it.start_ts == 100.0            # 첫 존 START 유지
+    assert it.end_ts == 104.0              # 마지막 존 END
+    assert it.wait_threads == 2            # 최저 잔여 스레드 기록
+    assert it.status == "complete"
+
+
+def test_zone_partial_without_any_end_is_incomplete():
+    """ACK 존만 있고 END 가 0건인 다존 검사도 존 부분 완료(incomplete)로
+    분류되어야 한다 (감사 D: end_ts 요구 조건이 존 정보를 우회시키던 버그)."""
+    events = [
+        _ev("INSP_START", 100.0, inner_id="W", product_id="P", value=3.0),
+        _ev("COMM_MSG", 100.1, inner_id="W", name="V2M_INSPECT_START_ACK",
+            status="OK", value=1.0),
+        _ev("COMM_MSG", 100.2, inner_id="W", name="V2M_INSPECT_START_ACK",
+            status="OK", value=2.0),
+    ]
+    out = build_inspections(events, runs=[], dl_channels={},
+                            gens=[], log_end_ts=10000.0, comm_end_ts=10000.0)
+    assert len(out) == 1
+    assert out[0].status == "incomplete"
+    assert out[0].n_zones == 2 and out[0].n_zones_done == 0

@@ -24,6 +24,10 @@ alg:
   - kind: FEED
     header: 'BaseInspector::SetInputImage$'
     msg: 'Feed input image\. roi index: (?P<roi_idx>\d+), MIL_ID: (?P<extra>.*)$'
+  # FOV 선별 실패: 메시지 선두에 inner_id 보유 (Tenneco PickSpecificFov)
+  - kind: FOV_FAIL
+    header: 'Dataflow::PickSpecificFov::Execute$'
+    msg: '^(?P<inner_id>\d{12,}) \) can not find result defect name : (?P<name>.+)$'
   - kind: MODEL_FAIL
     msg: 'Failed to create ALG Blocks - DLMODEL: (?P<model>\S+)'
   - kind: MODEL_FAIL
@@ -36,8 +40,10 @@ alg:
     msg: 'Model : (?P<model>.+?), PreProcessing Tact = (?P<value>[\d.]+)'
   - kind: TACT_INFER
     msg: 'Model : (?P<model>.+?), InspectMC Tact = (?P<value>[\d.]+)'
+  # 후처리 Tact 3형 지원: 'Model : X, PostProcessing' / 'Model Load: X, PostProcessing'
+  # / 'Model Load: X,<블록명> PostProcessing' (Tenneco MeasurePointToBlobDistance)
   - kind: TACT_POST
-    msg: 'Model(?: Load)?\s*:\s*(?P<model>.+?), PostProcessing Tact = (?P<value>[\d.]+)'
+    msg: 'Model(?: Load)?\s*:\s*(?P<model>[^,]+?),\s*(?:[\w:]+ )?PostProcessing Tact = (?P<value>[\d.]+)'
   - kind: TACT_ETC
     msg: '(?P<block>[\w:]+)- (?:Processing )?Tact = (?P<value>[\d.]+)'
   # 폴백: 모델명 없는 InspectMC (OCR/바코드/룰 후처리 블록 커버)
@@ -47,6 +53,10 @@ alg:
 inspstarter:
   - kind: INSP_START
     msg: 'eAIVProtocol_M2V_InspStart is arrived\. Waiting thread count = (?P<value>\d+), innerid: (?P<inner_id>\S+), productId: (?P<product_id>\S*)'
+  # 존(groupId) 포함 수신 라인 (CommAiv.cpp) — 다존 설비 거부의 존 귀속용
+  - kind: INSP_RECV
+    header: 'CCommAiv::OnCommRecv$'
+    msg: 'Recive M2V_INSPECT_START\. innerId: (?P<inner_id>\S+), productId: (?P<product_id>[^,]*), groupId: (?P<value>\d+)'
   - kind: INSP_REJECT
     msg: 'All Seq thread is running or not initialized'
   # 코드 검증(InspStarter.cpp): NoInspThread 외의 검사 거부 경로들
@@ -80,6 +90,12 @@ seq:
     msg: '\| Processing Time : (?P<value>[\d.]+)\s*msec'
   - kind: SEQ_FINISH
     msg: 'CommonSeq CheckFinish done: (?P<value>[\d.]+)\s*msec'
+  # 검사 시작->결과 송신 총 소요 (CommonSeq.cpp m_nInspTime — 존 단위 사이클타임)
+  - kind: SEND_RESULT
+    msg: 'SendResultToOthers done: (?P<value>\d+)\s*msec'
+  # 이미지 저장 경로 지연 (100ms 초과 시에만 로그 — 자체 필터된 이상신호)
+  - kind: SYMLINK_SLOW
+    msg: 'fs::create_directory_symlink: (?P<value>\d+)\(ms\)'
   - kind: REMAIN_TOTAL
     msg: '\[TOTAL\] innerId: (?P<inner_id>\S+), started alg list: (?P<alg_list>.*)$'
   - kind: REMAIN
@@ -93,11 +109,17 @@ comm:
 
 pool:
   - kind: POOL_CREATE
-    msg: 'WorkerThreadPool is created: eFunction$'
+    msg: 'WorkerThreadPool is created: (?P<name>e\w+)$'
   - kind: POOL_DESTROY
-    msg: 'StopAllThreadJob for eFunction$'
+    msg: 'StopAllThreadJob for (?P<name>e\w+)$'
 
 exception:
+  # SafeCall 래퍼가 잡은 SEH 예외 (액세스 위반 등) — status=예외코드,
+  #   roi_idx=ImgIdx, block=발생 위치, name=Talos ID
+  - kind: EXC_SAFE
+    msg: '\[Exception\] ThreadId: \d+, Talos ID: (?P<name>\S+?), ImgIdx: (?P<roi_idx>\d+), Code: (?P<status>0x[0-9a-fA-F]+), Location: (?P<block>\S+)'
+  - kind: EXC_CALLER
+    msg: '\[Caller\] (?P<name>\S+) ! (?P<block>\S+) \+ (?P<extra>0x[0-9a-fA-F]+)'
   - kind: CRASH
     msg: '\[exception_callback\] exception occurred'
   - kind: EXC_REDIRECT
@@ -105,7 +127,7 @@ exception:
 
 inspskipper:
   - kind: RECIPE_LOAD
-    msg: 'Load InspSkipper recipe : \[(?P<value>\d+)\](?P<name>.+)$'
+    msg: 'Load InspSkipper recipe : (?:\[(?P<value>\d+)\])?(?P<name>\S+)'
 
 comm_fail:
   - kind: COMM_FAIL
@@ -140,6 +162,9 @@ dlinfer:
   # GPU_WAIT: 비상주(on memory infer=0) 경로의 GPU 전역 락 대기 (ms)
   - kind: GPU_WAIT
     msg: 'WaitForCriticalSection Tact = (?P<value>[\d.]+)'
+  # GPU 컨텍스트 사망 (enqueueV3 실패 — 스레드 전원 블로킹의 근원)
+  - kind: GPU_FATAL
+    msg: 'enqueueV3 cudaGetLastError: (?P<extra>.+)$'
   - kind: MODEL_FAIL
     msg: 'Could not find trt : (?P<model>\S+?),'
   - kind: INFER_ERROR
@@ -162,4 +187,9 @@ relgraph:
     msg: 'IID\[(?P<inner_id>[^\]]+)\]\s+GroupID\[\d+\] \([^)]+\) - \(alg, (?P<value>\d+)\) connection val: DEACTIVATE_VAL'
 
 inspectmng: []
-stopthread: []
+
+# 시퀀스 정지: value>0 이면 진행 중 검사가 스레드 정지로 강제 중단된 것
+stopthread:
+  - kind: STOP_ALL
+    header: 'SSeqGroupMng::StopAllThreads$'
+    msg: '\+ Working Seq Thread count before stop: (?P<value>\d+)'

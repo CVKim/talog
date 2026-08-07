@@ -207,7 +207,7 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
     max_ts = 0.0
     fid = 0
     # alg 요약으로 보존할 이벤트 종류 (원시 대량 이벤트는 런 조립 후 해제)
-    _ALG_KEEP = ("MODEL_FAIL", "INIT_START", "INIT_END", "ERROR")
+    _ALG_KEEP = ("MODEL_FAIL", "INIT_START", "INIT_END", "ERROR", "FOV_FAIL")
 
     comm_end = 0.0        # END 커버리지 종점 (comm 로그의 마지막 시각)
     for fi in files:
@@ -299,15 +299,16 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
         "INSERT INTO inspections(inner_id,product_id,start_ts,start_text,wait_threads,"
         "ack_status,end_ts,end_text,end_result,status,duration_s,n_fed,n_done,n_lost,"
         "n_nofeed,n_skipped,n_zones,n_zones_done,defects,lost_channels,"
-        "nofeed_channels,remain_list,gen_id) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "nofeed_channels,remain_list,gen_id,reject_zone) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(i.inner_id, i.product_id, i.start_ts, i.start_text, i.wait_threads,
           i.ack_status, i.end_ts, i.end_text, i.end_result, i.status,
-          (i.end_ts - i.start_ts) if i.end_ts and i.start_ts else 0,
+          (i.end_ts - i.start_ts)
+          if i.end_ts and i.start_ts and i.end_ts >= i.start_ts else 0,
           i.n_fed, i.n_done, i.n_lost, i.n_nofeed, i.n_skipped,
           i.n_zones, i.n_zones_done, ",".join(i.defects),
           ",".join(i.lost_channels), ",".join(i.nofeed_channels),
-          i.remain_list, i.gen_id) for i in inspections])
+          i.remain_list, i.gen_id, i.reject_zone) for i in inspections])
     con.executemany(
         "INSERT INTO model_loads(kind,ts,ts_text,name,alg_idx,dur_s,status) "
         "VALUES(?,?,?,?,?,?,?)",

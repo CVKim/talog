@@ -346,8 +346,10 @@ def _hourly_svg(ctx: ReportContext) -> str:
         parts.append(f'<text x="{xx + bw * 0.4:.0f}" y="126" font-size="10" '
                      f'text-anchor="middle" class="mut">{hh}시</text>')
     parts.append(f'<text x="50" y="145" font-size="11" style="fill:var(--blue)">'
-                 f'■ 검사 수</text><text x="120" y="145" font-size="11" '
-                 f'style="fill:var(--orange)">■ 평균 검사시간(s)</text>')
+                 f'■ 검사 수 (최대 {maxn:,}건)</text>'
+                 f'<text x="220" y="145" font-size="11" '
+                 f'style="fill:var(--orange)">■ 평균 검사시간(s) '
+                 f'(최대 {maxd:.2f}s)</text>')
     parts.append("</svg>")
     return "".join(parts)
 
@@ -409,8 +411,16 @@ def _dist_svg(values: list[float], unit: str = "ms", w: int = 520,
     parts.append(f'<line x1="{x0}" y1="{base}" x2="{x1}" y2="{base}" '
                  f'style="stroke:var(--grid)"/>')
 
+    placed: dict[int, float] = {}    # 라벨 행(y) -> 마지막 라벨 x (겹침 방지)
+
     def marker(v: float, label: str, ly: int, solid: bool = False):
         xx = sx(v)
+        # 같은 행의 직전 라벨과 46px 미만이면 다른 행으로 회피
+        if ly in placed and abs(xx - placed[ly]) < 46:
+            ly = 29 if ly == 13 else 13
+            if ly in placed and abs(xx - placed[ly]) < 46:
+                return               # 양쪽 다 겹치면 라벨 생략 (선만 유지 아래)
+        placed[ly] = xx
         col = "var(--serious-text)" if solid else "var(--muted)"
         dash = "" if solid else ' stroke-dasharray="4 4"'
         wgt = ' font-weight="700"' if solid else ""
@@ -423,9 +433,9 @@ def _dist_svg(values: list[float], unit: str = "ms", w: int = 520,
                      f'text-anchor="{anchor}" style="fill:{col}"{wgt}>'
                      f'{label}</text>')
 
+    marker(p95, f"p95 {fmt(p95)}", 13, solid=True)   # 강조 마커 우선 배치
     marker(p50, f"p50 {fmt(p50)}", 13)
     marker(avg, f"avg {fmt(avg)}", 29)
-    marker(p95, f"p95 {fmt(p95)}", 13, solid=True)
     if p99 > p95 * 1.03:
         marker(p99, f"p99 {fmt(p99)}", 29)
     tail_n = n - int(n * 0.95)
@@ -513,6 +523,13 @@ def _tact_section(ctx: ReportContext) -> str:
                      "p95</span></h2>"
                      "<div style='display:flex;flex-wrap:wrap;gap:14px'>"
                      + "".join(dist_cards) + "</div>")
+    # 사이클타임: 시퀀스 시작 → 결과 송신 완료 (SendResultToOthers, 존 단위)
+    sr = [e.value for e in ctx.events if e.kind == "SEND_RESULT"]
+    if len(sr) >= 8:
+        dist_html += ("<h2>사이클타임 분포 <span class='hint'>— 시퀀스 시작→"
+                      "결과 송신 완료(SendResultToOthers, 존 단위). 채널 "
+                      "인퍼런스보다 큰 이 값이 설비가 체감하는 소요입니다"
+                      "</span></h2>" + _dist_svg(sr, "ms", w=760, h=165))
     return ("<p class='legend'>N = 해당 채널의 인퍼런스 실행 횟수 · "
             "min/avg/p95/max = 채널 인퍼런스 소요(초)</p>"
             "<table class='sortable'><thead><tr><th>alg</th><th>채널</th><th>GPU</th>"
@@ -530,15 +547,25 @@ def _incomplete_section(ctx: ReportContext) -> str:
     if len(bad) > 300:
         note = f"<p class='legend'>총 {len(bad)}건 중 앞 300건만 표시합니다.</p>"
         bad = bad[:300]
+    n_all_ch = len(ctx.dl_channels) or 0
     rows = []
     for it in bad:
         reason = []
+        # 가장 정보량 큰 사유(존 부분 완료)를 첫 줄로
+        if it.n_zones and it.n_zones_done < it.n_zones:
+            reason.append(f"<b>존 부분 완료</b>: {it.n_zones_done}/{it.n_zones}존만 "
+                          f"END 수신")
         if it.ack_status and it.ack_status != "OK":
+            zone = f", 존{it.reject_zone} 투입 시점" if it.reject_zone else ""
             reason.append(f"설비 회신 <b>{_esc(it.ack_status)}</b>"
-                          f" (가용 스레드 {it.wait_threads})")
+                          f" (가용 스레드 {it.wait_threads}{zone})")
         if it.lost_channels:
             reason.append("실행 중 소실: " + _esc(", ".join(it.lost_channels)))
-        if it.nofeed_channels and len(it.nofeed_channels) <= 15:
+        if it.n_nofeed and n_all_ch and it.n_nofeed >= n_all_ch:
+            # 전 채널 미투입 = 채널 로그 미파싱/절단 의심 — 장황한 나열 대신 축약
+            reason.append(f"전 채널({it.n_nofeed}) 실행기록 없음 — 채널 로그 "
+                          f"절단/미파싱 의심")
+        elif it.nofeed_channels and len(it.nofeed_channels) <= 15:
             reason.append("<b>이상 미투입</b>: " + _esc(", ".join(it.nofeed_channels)))
         elif it.n_nofeed:
             reason.append(f"<b>이상 미투입</b> {it.n_nofeed}채널")
@@ -547,9 +574,6 @@ def _incomplete_section(ctx: ReportContext) -> str:
         if it.timed_out:
             reason.append("<b>타임아웃</b>: 판정 결과가 설비로 미송신 "
                           "(플랫폼 [TIMEOUT] 조기 리턴)")
-        if it.n_zones > 1 and it.n_zones_done < it.n_zones:
-            reason.append(f"<b>존 부분 완료</b>: {it.n_zones_done}/{it.n_zones}존만 "
-                          f"END 수신")
         if it.remain_list:
             reason.append("플랫폼 REMAIN 덤프: "
                           + _esc(_translate_alglist(ctx.recipe, it.remain_list)))
@@ -567,25 +591,47 @@ def _incomplete_section(ctx: ReportContext) -> str:
             + "".join(rows) + "</tbody></table>")
 
 
+_ERR_KIND_DESC = {
+    "COMM_FAIL": "소켓 수신 길이 오류 (RecvLength)",
+    "CRASH": "프로세스 예외 종료 (exception_callback)",
+    "EXC_SAFE": "SEH 예외 (SafeCall 포착)",
+    "FOV_FAIL": "FOV 선별 실패 (결함명 미발견)",
+    "GPU_FATAL": "GPU 컨텍스트 치명 오류 (enqueueV3)",
+}
+
+
+def _err_group_key(msg: str) -> str:
+    """에러 그룹핑 키 정규화 — 검사 id/수치가 같은 메시지를 갈라놓지 않게."""
+    import re as _re
+    msg = _re.sub(r"\b\d{12,}\b", "<id>", msg)
+    msg = _re.sub(r"\d+\(ms\)", "N(ms)", msg)
+    msg = _re.sub(r"0x[0-9a-fA-F]{6,}", "0x<addr>", msg)
+    return msg
+
+
 def _errors_section(ctx: ReportContext) -> str:
     errs = [e for e in ctx.events
             if e.kind in ("ERROR", "MODEL_FAIL", "CRASH", "COMM_FAIL",
-                          "RECIPE_FAIL", "EXC_REDIRECT")]
+                          "RECIPE_FAIL", "EXC_REDIRECT", "EXC_SAFE",
+                          "FOV_FAIL", "GPU_FATAL")]
     if not errs:
         return "<p class='ok'>에러가 없습니다.</p>"
     grouped = Counter()
     first: dict = {}
     for e in errs:
         if e.kind == "EXC_REDIRECT":
-            key = (f"예외(@{e.name})", e.extra[:80])
+            key = (f"예외(@{e.name})", _err_group_key(e.extra[:120]))
         else:
-            key = (e.kind, e.model or e.extra[:120] or e.name)
+            kd = ("WARN" if e.extra.startswith("[WARNING]") else e.kind)
+            key = (kd, _err_group_key(e.model or e.extra[:150] or e.name
+                                      or _ERR_KIND_DESC.get(e.kind, "")))
         grouped[key] += 1
         first.setdefault(key, e)
     rows = []
     for key, cnt in grouped.most_common():
         e = first[key]
-        detail = e.model or e.extra or e.name
+        detail = (e.model or e.extra or e.name
+                  or _ERR_KIND_DESC.get(e.kind, ""))
         if e.kind == "MODEL_FAIL" and ctx.recipe:
             mi = int(e.model.replace("DLMODEL", "")) if e.model.startswith("DLMODEL") else 0
             m = ctx.recipe.models.get(mi)
@@ -823,6 +869,55 @@ def _findings_section(ctx: ReportContext) -> str:
     return "".join(out)
 
 
+def _ng_recipe_segments(ctx: ReportContext) -> str:
+    """기종(레시피) 교체 경계로 NG% 를 분리 — 혼합 지표의 해석 왜곡 방지.
+
+    감사 C 실증: Tenneco 30 혼합 NG 56% = NUPE 6.3% + THETA3 68.0% 의 착시.
+    """
+    rl = sorted((m for m in ctx.model_loads
+                 if m.kind == "recipe_load" and m.name), key=lambda m: m.ts)
+    if not rl:
+        return ""
+    # 경계 시각들 (같은 레시피 연속 로드는 병합)
+    bounds: list[tuple[float, str]] = []
+    for m in rl:
+        if not bounds or bounds[-1][1] != m.name:
+            bounds.append((m.ts, m.name))
+    if len(bounds) < 2:
+        return ""
+    segs = []
+    for i, (ts, name) in enumerate(bounds):
+        end = bounds[i + 1][0] if i + 1 < len(bounds) else float("inf")
+        items = [x for x in ctx.inspections
+                 if x.end_result in ("OK", "NG") and x.start_ts
+                 and ts <= x.start_ts < end]
+        if len(items) < 30:
+            continue
+        n_ng = sum(1 for x in items if x.end_result == "NG")
+        top = Counter(d for x in items for d in x.defects).most_common(3)
+        segs.append((name, ts, items, n_ng, top))
+    if len(segs) < 2:
+        return ""
+    rows = []
+    import datetime as _dt
+    for name, ts, items, n_ng, top in segs:
+        rate = n_ng / len(items) * 100
+        col = ("var(--crit-text)" if rate >= 30 else
+               "var(--serious-text)" if rate >= 10 else "var(--good-text)")
+        tops = ", ".join(f"{d} {n:,}" for d, n in top) or "-"
+        rows.append(
+            f"<tr><td>{_esc(name)}</td>"
+            f"<td>{_dt.datetime.fromtimestamp(ts).strftime('%H:%M')}~</td>"
+            f"<td class='r'>{len(items):,}</td><td class='r'>{n_ng:,}</td>"
+            f"<td class='r' style='color:{col};font-weight:700'>{rate:.1f}%</td>"
+            f"<td>{_esc(tops)}</td></tr>")
+    return ("<p class='legend'><b>기종(레시피) 구간별 분리</b> — 혼합 NG% 는 "
+            "기종별 편차를 가립니다</p>"
+            "<table><thead><tr><th>기종</th><th>구간</th><th class='r'>판정</th>"
+            "<th class='r'>NG</th><th class='r'>NG%</th><th>상위 결함</th>"
+            "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>")
+
+
 def _ng_section(ctx: ReportContext) -> str:
     """NG 판정 분포 — 결함명별 발생 건수 (품질 관점)."""
     ng = [i for i in ctx.inspections if i.end_result == "NG"]
@@ -853,6 +948,7 @@ def _ng_section(ctx: ReportContext) -> str:
     else:
         out.append("<p class='legend'>NG 건은 있으나 결함명 페이로드가 없습니다 "
                    "(설비 프로토콜 버전에 따라 미포함될 수 있음).</p>")
+    out.append(_ng_recipe_segments(ctx))
     return "".join(out)
 
 
@@ -885,14 +981,17 @@ def _errors_summary(ctx: ReportContext) -> str:
     """종합 페이지용: 에러 상위 그룹 요약."""
     errs = [e for e in ctx.events
             if e.kind in ("ERROR", "MODEL_FAIL", "CRASH", "COMM_FAIL",
-                          "RECIPE_FAIL", "EXC_REDIRECT")]
+                          "RECIPE_FAIL", "EXC_REDIRECT", "EXC_SAFE",
+                          "FOV_FAIL", "GPU_FATAL")]
     if not errs:
         return "<p class='ok'>에러가 없습니다.</p>"
     grouped = Counter()
     first: dict = {}
     for e in errs:
-        key = (f"예외(@{e.name})" if e.kind == "EXC_REDIRECT" else e.kind,
-               (e.model or e.extra[:90] or e.name))
+        kd = (f"예외(@{e.name})" if e.kind == "EXC_REDIRECT" else
+              ("WARN" if e.extra.startswith("[WARNING]") else e.kind))
+        key = (kd, _err_group_key(e.model or e.extra[:110] or e.name
+                                  or _ERR_KIND_DESC.get(e.kind, "")))
         grouped[key] += 1
         first.setdefault(key, e)
     rows = []
@@ -1322,6 +1421,7 @@ def _gens_section(ctx: ReportContext) -> str:
 # ---------------------------------------------------------------------------
 _JS = r"""
 const SUMMARY = __SUMMARY__;
+const TOTAL_INSP = __TOTAL__;
 const DETAIL = __DETAIL__;
 const GRAPH = __GRAPH__;
 const STATUS_KO = __STATUS_KO__;
@@ -1348,7 +1448,11 @@ function toggleTheme() {
   syncThemeBtn();
 }
 
-function fmtDur(s) { return s ? s.toFixed(2) + 's' : '-'; }
+function fmtDur(s) {
+  if (!s) return '-';
+  if (s < 0) return '<span class="pill p-incomplete_lost" title="다존 로그 절단 경계 — 측정 불가">' + s.toFixed(2) + 's?</span>';
+  return s.toFixed(2) + 's';
+}
 
 let STATUS_FILTER = 'all';
 const BAD_SET = new Set(['rejected', 'incomplete_lost', 'incomplete', 'unknown']);
@@ -1377,7 +1481,11 @@ function setFilter(name) {
 
 function renderList() {
   const tb = document.getElementById('insp-body');
-  const rows = filteredRows();
+  let rows = filteredRows();
+  // 기본(전체) 뷰에서는 '로그 절단(판정 불가)' 꼬리가 화면을 도배하지 않도록
+  // 제외한다 — 절단 건은 '절단' 필터 버튼으로 조회
+  if (STATUS_FILTER === 'all')
+    rows = rows.filter(r => r[4] !== 'in_progress_eof');
   const frag = [];
   const show = rows.slice(-400).reverse();   // 최근 400건 표시
   for (const r of show) {
@@ -1393,8 +1501,11 @@ function renderList() {
       `<td class="r">${fmtDur(dur)}</td><td class="r">${ndone}/${nfed}</td></tr>`);
   }
   tb.innerHTML = frag.join('');
+  const capNote = (typeof TOTAL_INSP !== 'undefined' && TOTAL_INSP > SUMMARY.length)
+    ? ` · 전체 ${TOTAL_INSP.toLocaleString()}건 중 최근 9,000건+이상 전건 내장`
+    : '';
   document.getElementById('insp-count').textContent =
-    `${rows.length}건 매칭 (표시 ${show.length}건, 상세 보유 ${Object.keys(DETAIL).length}건)`;
+    `${rows.length}건 매칭 (표시 ${show.length}건, 상세 보유 ${Object.keys(DETAIL).length}건)${capNote}`;
   bindLinks();
 }
 
@@ -1426,8 +1537,13 @@ function renderGantt(iid) {
   }
   const runs = d.runs;
   if (!runs.length) {
-    box.innerHTML = `<h3>${iid} — ${STATUS_KO[d.status] || d.status} (${d.st})</h3>` +
-      `<p>채널 실행 기록이 없습니다 (투입 전 거부).</p>`;
+    const why = d.status === 'rejected'
+      ? '투입 전 거부된 검사입니다.'
+      : (d.status === 'in_progress_eof'
+        ? '로그 절단 구간이라 채널 기록이 잘렸습니다.'
+        : '채널 실행 로그가 파싱되지 않았습니다 (alg 로그 포맷/레벨 미매칭 가능 — 진단 소견 참조).');
+    box.innerHTML = `<h3><span class="mono">${iid}</span> — ${STATUS_KO[d.status] || d.status} (${d.st})</h3>` +
+      `<p>${why}</p>`;
     return;
   }
   let maxT = 1;
@@ -1473,7 +1589,11 @@ function renderGantt(iid) {
 function renderGraph(iid) {
   const box = document.getElementById('graph-box');
   if (!box || !GRAPH.algs.length) { if (box) box.innerHTML = '<p>그래프 데이터 없음</p>'; return; }
-  const d = iid ? DETAIL[iid] : null;
+  let d = iid ? DETAIL[iid] : null;
+  // 완료 검사인데 채널 런이 하나도 없으면(채널 로그 미파싱) 전 채널을
+  // '이상 미투입' 빨강으로 칠하는 허위 표시를 피하고 중립(일자 요약)로 렌더
+  const noRuns = d && d.status === 'complete' && !d.runs.length;
+  if (noRuns) d = null;
   const doneSet = new Set(), execCnt = {};
   if (d) for (const r of d.runs) { if (r[5] === 'done') doneSet.add(r[0]); execCnt[r[0]] = (execCnt[r[0]] || 0) + 1; }
   const lostSet = new Set(d ? d.lostIdx : []), nofeedSet = new Set(d ? d.nofeedIdx : []),
@@ -1486,15 +1606,18 @@ function renderGraph(iid) {
   GRAPH.imgs.forEach((m, i) => imgY[m.id] = yFor(i, nI));
   GRAPH.rois.forEach((r, i) => roiY[r.id] = yFor(i, nR));
   GRAPH.algs.forEach((a, i) => algY[a.id] = yFor(i, nA));
-  // 이미지 데이터가 없으면 이미지 컬럼을 접어 죽은 공간을 제거한다
+  // 이미지/ROI 데이터가 없으면 해당 컬럼을 접어 죽은 공간을 제거한다
   const hasImg = GRAPH.imgs.length > 0;
-  const roiX = hasImg ? 285 : 40, algX = hasImg ? 565 : 320;
-  const algW = 1075 - algX;
+  const hasRoi = GRAPH.rois.length > 0;
+  const roiX = hasImg ? 285 : 40;
+  const algX = hasImg ? 565 : (hasRoi ? 320 : 40);
+  const algW = Math.min(1075 - algX, 560);
   const P = [`<svg viewBox="0 0 1100 ${H}" style="width:100%;background:var(--surface)">`];
   if (hasImg)
     P.push(`<text x="90" y="18" font-size="12" class="mut" text-anchor="middle">이미지</text>`);
-  P.push(`<text x="${roiX + 75}" y="18" font-size="12" class="mut" text-anchor="middle">ROI</text>` +
-         `<text x="${algX + 205}" y="18" font-size="12" class="mut" text-anchor="middle">알고리즘 (검사 채널)</text>`);
+  if (hasRoi)
+    P.push(`<text x="${roiX + 75}" y="18" font-size="12" class="mut" text-anchor="middle">ROI</text>`);
+  P.push(`<text x="${algX + 205}" y="18" font-size="12" class="mut" text-anchor="middle">알고리즘 (검사 채널)</text>`);
   for (const r of GRAPH.rois) if (r.img && imgY[r.img] !== undefined)
     P.push(`<line x1="165" y1="${imgY[r.img] + 7}" x2="${roiX}" y2="${roiY[r.id] + 7}" style="stroke:var(--edge)" stroke-width="1"/>`);
   for (const a of GRAPH.algs) for (const ri of a.roi) if (roiY[ri] !== undefined) {
@@ -1599,7 +1722,8 @@ def render(ctx: ReportContext) -> str:
     n = Counter(i.status for i in ctx.inspections)
     total = len(ctx.inspections)
     durations = [(i.end_ts - i.start_ts) for i in ctx.inspections
-                 if i.end_ts and i.start_ts and i.status == "complete"]
+                 if i.end_ts and i.start_ts and i.end_ts > i.start_ts
+                 and i.status == "complete"]
     avg_dur = statistics.mean(durations) if durations else 0
     max_dur = max(durations) if durations else 0
 
@@ -1616,7 +1740,9 @@ def render(ctx: ReportContext) -> str:
     n_ng = sum(1 for i in ctx.inspections if i.end_result == "NG")
     n_err = sum(1 for e in ctx.events
                 if e.kind in ("ERROR", "MODEL_FAIL", "CRASH", "COMM_FAIL",
-                              "RECIPE_FAIL", "EXC_REDIRECT"))
+                              "RECIPE_FAIL", "EXC_REDIRECT", "EXC_SAFE",
+                              "FOV_FAIL", "GPU_FATAL")
+                and not e.extra.startswith("[WARNING]"))
     # (라벨, 값, 색, 클릭 시 이동) — 이동이 'main-bad' 면 종합 페이지 내 스크롤
     # 히어로 카드: "이 설비가 지금 아픈가?" 에 즉답
     n_crit = sum(1 for f in ctx.findings if f.severity == "crit")
@@ -1679,6 +1805,7 @@ def render(ctx: ReportContext) -> str:
 
     summary_json, detail_json = _build_payload(ctx)
     js = (_JS.replace("__SUMMARY__", summary_json)
+             .replace("__TOTAL__", str(total))
              .replace("__DETAIL__", detail_json)
              .replace("__GRAPH__", _build_graph(ctx))
              .replace("__STATUS_KO__", json.dumps(_STATUS_KO, ensure_ascii=False))
@@ -1806,6 +1933,7 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
    linear-gradient(135deg, var(--tint-ok), var(--surface) 65%); }}
  .pill {{ display: inline-block; padding: 2.5px 10px; border-radius: 999px;
    font-size: 11px; font-weight: 700; letter-spacing: .2px;
+   white-space: nowrap;
    background: color-mix(in srgb, currentColor 15%, transparent); }}
  .hint {{ font-size: 11.5px; color: var(--muted); font-weight: 400; }}
  .cols {{ display: flex; gap: 26px; flex-wrap: wrap; align-items: flex-start; }}
@@ -1974,8 +2102,9 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
  </section>
  <section id="sec-tact">
   <h2>채널별 인퍼런스 Tact</h2>{_tact_section(ctx)}
-  <h2>검사시간 분포 (완료 건) <span class="hint">— 파랑=하위 95%, 주황=상위
-  5% 꼬리, 굵은 선=p95. 축은 p99×1.25 에서 절단(max 는 주석)</span></h2>
+  <h2>검사시간 분포 (완료 건) <span class="hint">— 첫 START→마지막 END
+  (다존 설비는 존 이송 시간 포함). 파랑=하위 95%, 주황=상위 5% 꼬리,
+  굵은 선=p95. 축은 p99×1.25 에서 절단(max 는 주석)</span></h2>
   {_duration_hist_svg(ctx)}
  </section>
  <section id="sec-model">{_models_section(ctx)}</section>

@@ -28,6 +28,7 @@ CREATE TABLE inspections(
     end_result TEXT, status TEXT, duration_s REAL,
     n_fed INTEGER, n_done INTEGER, n_lost INTEGER, n_nofeed INTEGER,
     n_skipped INTEGER, n_zones INTEGER, n_zones_done INTEGER,
+    reject_zone INTEGER DEFAULT 0,
     defects TEXT, lost_channels TEXT, nofeed_channels TEXT,
     remain_list TEXT, gen_id INTEGER);
 CREATE TABLE model_loads(

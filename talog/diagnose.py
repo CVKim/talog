@@ -9,6 +9,7 @@ PC3 0727 RCA 등에서 검증된 진단 플레이북을 코드로 내장하여, 
 from __future__ import annotations
 
 import statistics
+from collections import Counter
 from dataclasses import dataclass, field
 
 from .assemble import ChannelRun, Inspection, ModelLoad, ProcessGen
@@ -41,21 +42,40 @@ def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
     if bad:
         ev: list[str] = []
         kills = [g for g in gens if g.end_cause in ("kill", "crash")]
+        gpu_fatal_ts = [e.ts for e in events if e.kind == "GPU_FATAL"]
         for it in bad[:8]:
             # 검사 시작 직후~15분 내의 종료만 소실 원인 후보로 본다
             # (시작 이전의 재시작은 이 검사와 무관)
             near = next((g for g in kills if g.end_ts and
                          -60 < g.end_ts - (it.start_ts or 0) < 900), None)
+            # 거부 ±2분 내 GPU 컨텍스트 치명 오류 → 스레드 고갈의 근원 특정
+            near_gpu = any(abs(t - (it.start_ts or 0)) <= 120
+                           for t in gpu_fatal_ts)
             if it.status == "rejected":
+                zone = f", 존{it.reject_zone} 투입 시점" if it.reject_zone else ""
+                cause = (" — GPU 컨텍스트 사망(enqueueV3 오류)으로 Seq 스레드 "
+                         "전원 블로킹" if near_gpu
+                         else " — 직전 검사들이 스레드를 점유한 상태")
                 ev.append(f"{_fmt_t(it.start_text)} {it.inner_id}: 설비 회신 "
-                          f"{it.ack_status} (가용 Seq 스레드 {it.wait_threads}) — "
-                          f"직전 검사들이 스레드를 점유한 상태")
+                          f"{it.ack_status} (가용 Seq 스레드 "
+                          f"{it.wait_threads}{zone}){cause}")
             elif it.status == "incomplete_lost":
                 cause = (f", {_fmt_t(near.end_text)} 프로세스 "
                          + ("kill과 시간 일치" if near.end_cause == "kill"
                             else "크래시와 시간 일치") if near else "")
+                if near_gpu:
+                    cause += " (동시간 GPU 컨텍스트 오류 동반)"
                 ev.append(f"{_fmt_t(it.start_text)} {it.inner_id}: "
                           f"{', '.join(it.lost_channels[:4])} 실행 중 소실{cause}")
+            elif it.n_zones and it.n_zones_done < it.n_zones:
+                cause = (f" — {_fmt_t(near.end_text)} "
+                         + ("kill 재시작으로 잔여 존 유실"
+                            if near.end_cause == "kill"
+                            else "크래시로 잔여 존 유실") if near else "")
+                if near_gpu:
+                    cause += " (동시간 GPU 컨텍스트 오류 동반)"
+                ev.append(f"{_fmt_t(it.start_text)} {it.inner_id}: "
+                          f"존 {it.n_zones_done}/{it.n_zones}만 완료{cause}")
             else:
                 ev.append(f"{_fmt_t(it.start_text)} {it.inner_id}: {it.n_fed}채널 "
                           f"투입 후 완료 신호 없음")
@@ -220,6 +240,81 @@ def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
         if n:
             out.append(Finding("crit", f"{title} {n}건", [], advice))
 
+    # 6.3) GPU 컨텍스트 치명 오류 (감사 D: 스레드 전원 블로킹 → NoInspThread 근원)
+    n_gf = sum(1 for e in events if e.kind == "GPU_FATAL")
+    if n_gf:
+        first_gf = next(e for e in events if e.kind == "GPU_FATAL")
+        out.append(Finding("crit", f"GPU 컨텍스트 치명 오류 {n_gf}건 (enqueueV3)",
+                           [f"{_fmt_t(first_gf.ts_text)} 최초 — CUDA 컨텍스트가 "
+                            f"죽으면 인퍼런스 스레드가 전원 블로킹되어 "
+                            f"NoInspThread 거부·검사 소실로 이어집니다"],
+                           "GPU 드라이버/VRAM 상태를 점검하고, 재발 시 해당 "
+                           "시간대 전력/온도 이력을 함께 확인하십시오."))
+    # 6.4) SEH 예외 (SafeCall 포착 — 액세스 위반 등)
+    seh = [e for e in events if e.kind == "EXC_SAFE"]
+    if seh:
+        codes = Counter((e.status, e.block) for e in seh)
+        ev = [f"{code} @ {loc} — {n}건" for (code, loc), n in
+              codes.most_common(4)]
+        out.append(Finding("crit", f"SEH 예외 {len(seh)}건 (SafeCall 포착)",
+                           ev, "0xc0000005(액세스 위반)가 반복되면 해당 위치의 "
+                           "방어 코드 점검을 플랫폼 팀과 협의하십시오."))
+    # 6.45) 스레드 정지 시점 진행 중 검사 강제 중단 (StopThread)
+    stops = [e for e in events if e.kind == "STOP_ALL" and e.value > 0]
+    if stops:
+        out.append(Finding("crit",
+                           f"스레드 정지 시점 진행 중 검사 강제 중단 {len(stops)}회",
+                           [f"{_fmt_t(e.ts_text)} 정지 시 실행 중 스레드 "
+                            f"{e.value:.0f}개" for e in stops[:5]],
+                           "재기동/모델 교체 전 진행 중 검사 완료 대기 절차를 "
+                           "권장합니다."))
+    # 6.47) 이미지 저장 경로 지연 (100ms 초과만 로그되는 자체 필터 신호)
+    slow_fs = [e.value for e in events if e.kind == "SYMLINK_SLOW"]
+    if slow_fs and max(slow_fs) >= 500:
+        out.append(Finding("warn",
+                           f"이미지 저장 경로 지연 {len(slow_fs)}건 "
+                           f"(최대 {max(slow_fs):.0f}ms)",
+                           ["저장 디스크/NAS 지연은 스레드 점유 시간을 늘려 "
+                            "NoInspThread 계열 장애의 선행지표가 됩니다"],
+                           "저장 경로 디스크 상태(조각화/네트워크)를 점검하십시오."))
+    # 6.48) 기종(레시피) 교체 후 특정 결함 급증 — 티칭/임계 부적합 신호.
+    # 같은 레시피의 연속 재로드는 경계가 아니다 — 이름이 바뀌는 지점만 경계로
+    # 삼고, before/after 를 인접 경계로 닫아 1회만 발화한다.
+    rl = sorted((m for m in model_loads if m.kind == "recipe_load"
+                 and m.name), key=lambda m: m.ts)
+    bounds = [m for i, m in enumerate(rl)
+              if i == 0 or m.name != rl[i - 1].name]
+    fired: set[tuple[str, str]] = set()
+    for bi, m in enumerate(bounds):
+        prev_ts = bounds[bi - 1].ts if bi > 0 else 0.0
+        next_ts = bounds[bi + 1].ts if bi + 1 < len(bounds) else float("inf")
+        before = [i for i in prod if i.end_result in ("OK", "NG")
+                  and i.start_ts and prev_ts <= i.start_ts < m.ts - 600]
+        after = [i for i in prod if i.end_result in ("OK", "NG")
+                 and i.start_ts and m.ts + 600 < i.start_ts < next_ts]
+        if len(before) < 100 or len(after) < 100:
+            continue
+
+        def _share(items, d):
+            return sum(1 for i in items if d in i.defects) / max(1, len(items))
+
+        after_defs = Counter(d for i in after for d in i.defects)
+        for d, _n in after_defs.most_common(3):
+            if (m.name, d) in fired:
+                continue
+            sb, sa = _share(before, d), _share(after, d)
+            if sb < 0.01 and sa > 0.20:
+                fired.add((m.name, d))
+                out.append(Finding(
+                    "warn", f"기종 교체 후 '{d}' 판정 급증",
+                    [f"{_fmt_t(m.ts_text)} '{m.name}' 구간 — 직전 기종 "
+                     f"{sb * 100:.1f}% → 이 기종 {sa * 100:.1f}% "
+                     f"({sum(1 for i in after if d in i.defects):,}"
+                     f"/{len(after):,}건)"],
+                    "실제 불량률로 보기 어려운 계단 점프입니다 — 해당 기종 "
+                    "레시피의 측정 임계/티칭 적합성을 점검하십시오."))
+                break
+
     # 6.5) GPU 리소스 신호 (v1.4) ------------------------------------------------
     # 0°C 는 NVML 읽기 실패(무효 리딩) — 통계에서 제외
     temps = [float(e.name) for e in events
@@ -251,8 +346,10 @@ def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
                 "(VRAM 사용량 증가와 맞바꿈)."))
 
     # 7) 통신/기타 에러 클러스터 -------------------------------------------------
+    # [WARNING] 접두 라인은 플랫폼이 스스로 '경고'로 분류한 것 — 에러 집계 제외
     err_n = sum(1 for e in events
-                if e.kind in ("ERROR", "COMM_FAIL", "RECIPE_FAIL", "EXC_REDIRECT"))
+                if e.kind in ("ERROR", "COMM_FAIL", "RECIPE_FAIL", "EXC_REDIRECT")
+                and not e.extra.startswith("[WARNING]"))
     if err_n >= 20:
         out.append(Finding("info", f"에러/예외 로그 {err_n}건",
                            ["대부분 재시작 구간의 소켓 단절/재연결이면 무해하나, "

@@ -22,7 +22,8 @@ _RULES_PATH = os.path.join(os.path.dirname(__file__), "rules", "events.yaml")
 # 에러성 이벤트에 원본 로그 전후 발췌(context)를 붙이는 대상 kind
 _CTX_KINDS = frozenset((
     "ERROR", "CRASH", "EXC_REDIRECT", "MODEL_FAIL", "INFER_ERROR",
-    "COMM_FAIL", "RECIPE_FAIL", "GRAB_FAIL", "ALG_TIMEOUT", "IMG_TIMEOUT"))
+    "COMM_FAIL", "RECIPE_FAIL", "GRAB_FAIL", "ALG_TIMEOUT", "IMG_TIMEOUT",
+    "FOV_FAIL", "EXC_SAFE", "GPU_FATAL"))
 _CTX_BEFORE = 3        # 발췌할 이전/이후 레코드 수
 _CTX_AFTER = 3
 _CTX_LINE_CAP = 200    # 발췌 레코드당 문자 수 상한
@@ -174,12 +175,12 @@ class Extractor:
             prev = toks[:i]
             # NG END 는 'NG,<개수>,<결함1..N>,inner,...' 라 inner 직전 토큰이
             # 결함명이다 (CommSender.cpp 실측) → 알려진 상태 토큰을 우선 탐색
-            known = ("OK", "NG", "NoInspThread", "BusyCam", "NotModelLoaded",
-                     "SimulationModelLoaded", "GroupIndexError",
-                     "NotMatchedSequenceType", "StorageNotEnough",
-                     "LightDisconnected")
+            known = ("OK", "NG", "REWORK", "NoInspThread", "BusyCam",
+                     "NotModelLoaded", "SimulationModelLoaded",
+                     "GroupIndexError", "NotMatchedSequenceType",
+                     "StorageNotEnough", "LightDisconnected")
             ev.status = next((t for t in prev if t in known),
                              prev[-1] if prev and not prev[-1].isdigit() else "")
         if toks and toks[-1].isdigit() and len(toks[-1]) <= 2:
             ev.value = float(toks[-1])       # 그룹(존) 번호
-        ev.extra = ev.extra[:200]
+        ev.extra = ev.extra[:300]            # 복수 결함 페이로드 보존 여유
