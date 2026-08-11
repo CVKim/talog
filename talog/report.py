@@ -1516,7 +1516,7 @@ function renderRows(show, matched, extraNote) {
   document.getElementById('insp-count').textContent =
     `${matched.toLocaleString()}건 매칭 (표시 ${show.length}건${extraNote})`;
   const pg = document.getElementById('pageNav');
-  if (pg) pg.style.display = SERVER_MODE ? 'inline' : 'none';
+  if (pg) pg.style.display = 'inline';     // 내장/서버 모드 공통 페이지 이동
   bindLinks();
 }
 
@@ -1548,11 +1548,13 @@ function renderList() {
   // 시간대 필터 (내장 모드): r[3] = "HH:MM:SS.fff"
   if (tf) rows = rows.filter(r => r[3].slice(0, 5) >= tf);
   if (tt) rows = rows.filter(r => r[3].slice(0, 5) <= tt);
-  // 최신순: 꼬리 400건을 역순으로 / 과거순: 머리 400건을 그대로
-  const show = SORT_DESC ? rows.slice(-400).reverse() : rows.slice(0, 400);
-  const capNote = (typeof TOTAL_INSP !== 'undefined' && TOTAL_INSP > SUMMARY.length)
-    ? ` · 전체 ${TOTAL_INSP.toLocaleString()}건 중 일부만 내장(6만 상한)`
-    : `, 상세 보유 ${Object.keys(DETAIL).length}건`;
+  // 내장 모드도 페이지 이동 지원: 정렬 방향으로 늘어놓고 PAGE_OFF 슬라이스
+  const ordered = SORT_DESC ? rows.slice().reverse() : rows;
+  if (PAGE_OFF >= ordered.length) PAGE_OFF = Math.max(0, ordered.length - 400);
+  const show = ordered.slice(PAGE_OFF, PAGE_OFF + 400);
+  const capNote = ((typeof TOTAL_INSP !== 'undefined' && TOTAL_INSP > SUMMARY.length)
+    ? ` · 전체 ${TOTAL_INSP.toLocaleString()}건 중 일부만 내장(6만 상한)` : '')
+    + `, ${PAGE_OFF + 1}~${PAGE_OFF + show.length}`;
   renderRows(show, rows.length, capNote);
 }
 
