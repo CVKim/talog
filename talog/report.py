@@ -109,9 +109,11 @@ def _translate_alglist(recipe: Recipe | None, lst: str) -> str:
 def _build_payload(ctx: ReportContext) -> tuple[str, str]:
     """(요약 JSON, 상세 JSON) 을 만든다. 고케이던스 사이트는 요약을 상한한다."""
     src = ctx.inspections
-    if len(src) > 9000:
+    # 전 건 내장이 원칙 (일 4.3만 실측 ≈ 3.8MB 로 브라우저 무리 없음).
+    # 안전 상한 6만 초과 시에만 이상 전건 + 최근 순으로 절사한다.
+    if len(src) > 60000:
         bad = [i for i in src if i.status in _BAD_STATUSES]
-        src = bad + [i for i in src if i.status not in _BAD_STATUSES][-9000:]
+        src = bad + [i for i in src if i.status not in _BAD_STATUSES][-60000:]
         src.sort(key=lambda i: i.start_ts or 0)
     summary = []
     for it in src:
@@ -1455,7 +1457,19 @@ function fmtDur(s) {
 }
 
 let STATUS_FILTER = 'all';
+let SORT_DESC = true;      // true=최신순(기본), false=과거순
+let PAGE_OFF = 0;          // 서버 모드 페이지 오프셋
+// talog view(로컬 서버)로 열리면 검사 조회·간트 상세를 DB 쿼리로 전환한다
+const SERVER_MODE = location.protocol.startsWith('http');
 const BAD_SET = new Set(['rejected', 'incomplete_lost', 'incomplete', 'unknown']);
+
+function toggleSort() {
+  SORT_DESC = !SORT_DESC;
+  PAGE_OFF = 0;
+  const b = document.getElementById('sortBtn');
+  if (b) b.textContent = SORT_DESC ? '정렬: 최신순 ▾' : '정렬: 과거순 ▴';
+  renderList();
+}
 
 function applyFilter(rows) {
   if (STATUS_FILTER === 'bad') return rows.filter(r => BAD_SET.has(r[4]));
@@ -1474,25 +1488,23 @@ function filteredRows() {
 
 function setFilter(name) {
   STATUS_FILTER = name;
+  PAGE_OFF = 0;
   document.querySelectorAll('.fbtn').forEach(b =>
     b.classList.toggle('on', b.dataset.f === name));
   renderList();
 }
 
-function renderList() {
+function movePage(delta) {
+  PAGE_OFF = Math.max(0, PAGE_OFF + delta);
+  renderList();
+}
+
+function renderRows(show, matched, extraNote) {
   const tb = document.getElementById('insp-body');
-  let rows = filteredRows();
-  // 기본(전체) 뷰에서는 '로그 절단(판정 불가)' 꼬리가 화면을 도배하지 않도록
-  // 제외한다 — 절단 건은 '절단' 필터 버튼으로 조회
-  if (STATUS_FILTER === 'all')
-    rows = rows.filter(r => r[4] !== 'in_progress_eof');
   const frag = [];
-  const show = rows.slice(-400).reverse();   // 최근 400건 표시
   for (const r of show) {
     const [iid, pid, ts, st, status, dur, ndone, nfed, ack, res] = r;
-    const has = DETAIL[iid]
-      ? ' class="ilink mono" style="cursor:pointer;color:var(--blue)"'
-      : ' class="mono"';
+    const has = ' class="ilink mono" style="cursor:pointer;color:var(--blue)"';
     const resTxt = res === 'NG' ? '<span class="pill p-ng">NG</span>'
       : (res || '-');
     frag.push(`<tr><td>${st}</td><td${has} data-id="${iid}">${iid}</td><td>${pid || '-'}</td>` +
@@ -1501,12 +1513,36 @@ function renderList() {
       `<td class="r">${fmtDur(dur)}</td><td class="r">${ndone}/${nfed}</td></tr>`);
   }
   tb.innerHTML = frag.join('');
-  const capNote = (typeof TOTAL_INSP !== 'undefined' && TOTAL_INSP > SUMMARY.length)
-    ? ` · 전체 ${TOTAL_INSP.toLocaleString()}건 중 최근 9,000건+이상 전건 내장`
-    : '';
   document.getElementById('insp-count').textContent =
-    `${rows.length}건 매칭 (표시 ${show.length}건, 상세 보유 ${Object.keys(DETAIL).length}건)${capNote}`;
+    `${matched.toLocaleString()}건 매칭 (표시 ${show.length}건${extraNote})`;
+  const pg = document.getElementById('pageNav');
+  if (pg) pg.style.display = SERVER_MODE ? 'inline' : 'none';
   bindLinks();
+}
+
+function renderList() {
+  if (SERVER_MODE) {
+    const q = encodeURIComponent(
+      (document.getElementById('insp-search').value || '').trim());
+    fetch(`/api/insp?filter=${STATUS_FILTER}&q=${q}` +
+          `&sort=${SORT_DESC ? 'desc' : 'asc'}&offset=${PAGE_OFF}&limit=400`)
+      .then(r => r.json())
+      .then(d => renderRows(d.rows, d.total,
+        `, ${PAGE_OFF + 1}~${PAGE_OFF + d.rows.length} · DB 직접 조회`))
+      .catch(() => renderRows([], 0, ' — 서버 응답 없음'));
+    return;
+  }
+  let rows = filteredRows();
+  // 기본(전체) 뷰에서는 '로그 절단(판정 불가)' 꼬리가 화면을 도배하지 않도록
+  // 제외한다 — 절단 건은 '절단' 필터 버튼으로 조회
+  if (STATUS_FILTER === 'all')
+    rows = rows.filter(r => r[4] !== 'in_progress_eof');
+  // 최신순: 꼬리 400건을 역순으로 / 과거순: 머리 400건을 그대로
+  const show = SORT_DESC ? rows.slice(-400).reverse() : rows.slice(0, 400);
+  const capNote = (typeof TOTAL_INSP !== 'undefined' && TOTAL_INSP > SUMMARY.length)
+    ? ` · 전체 ${TOTAL_INSP.toLocaleString()}건 중 일부만 내장(6만 상한)`
+    : `, 상세 보유 ${Object.keys(DETAIL).length}건`;
+  renderRows(show, rows.length, capNote);
 }
 
 function exportCsv() {
@@ -1675,6 +1711,18 @@ function openInspection(iid) {
   gotoSection('sec-insp');
   document.getElementById('insp-search').value = iid;
   renderList(iid);
+  if (!DETAIL[iid] && SERVER_MODE) {
+    // 서버 모드: 어떤 검사든 간트 상세를 DB 에서 온디맨드로 불러온다
+    fetch('/api/detail?inner=' + encodeURIComponent(iid))
+      .then(r => r.json())
+      .then(d => {
+        if (d && !d.error) DETAIL[iid] = d;
+        renderGantt(iid);
+        renderGraph(DETAIL[iid] ? iid : null);
+      })
+      .catch(() => { renderGantt(iid); renderGraph(null); });
+    return;
+  }
   renderGantt(iid);
   renderGraph(DETAIL[iid] ? iid : null);
 }
@@ -1711,7 +1759,7 @@ window.addEventListener('DOMContentLoaded', () => {
   renderList('');
   renderGraph(null);
   document.getElementById('insp-search').addEventListener('input',
-    ev => renderList(ev.target.value));
+    () => { PAGE_OFF = 0; renderList(); });
   makeSortable();
   bindLinks();
 });
@@ -2087,7 +2135,13 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
      <button class="fbtn" data-f="ng" onclick="setFilter('ng')">NG</button>
      <button class="fbtn" data-f="ok" onclick="setFilter('ok')">완료</button>
      <button class="fbtn" data-f="eof" onclick="setFilter('eof')">절단</button>
-     <button class="fbtn" onclick="exportCsv()" style="margin-left:14px">⬇ CSV 내보내기</button>
+     <button class="fbtn" id="sortBtn" onclick="toggleSort()"
+             style="margin-left:14px">정렬: 최신순 ▾</button>
+     <span id="pageNav" style="display:none">
+       <button class="fbtn" onclick="movePage(-400)">◀ 이전</button>
+       <button class="fbtn" onclick="movePage(400)">다음 ▶</button>
+     </span>
+     <button class="fbtn" onclick="exportCsv()">⬇ CSV 내보내기</button>
      <span id="insp-count" style="color:var(--muted);font-size:13px;margin-left:10px"></span></p>
   <div id="gantt-box" style="margin:14px 0"></div>
   <table><thead><tr><th>시작</th><th>inner id</th><th>product id</th><th>상태</th>

@@ -347,6 +347,8 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
             else:
                 # 최저 잔여 스레드는 고갈 진단용으로 유지
                 it.wait_threads = min(it.wait_threads, int(e.value))
+                if not it.product_id:
+                    it.product_id = e.product_id
             last_start = it
         elif e.kind == "INSP_RECV":
             last_recv = e

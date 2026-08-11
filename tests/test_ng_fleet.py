@@ -63,3 +63,42 @@ def test_fleet_index_render_contains_rows():
     assert "eq1_01" in html_doc
     assert "NG" in html_doc
     assert "12.3s" in html_doc
+
+
+def test_viewer_queries(tmp_path):
+    """talog view 의 페이지/상세 쿼리 — SUMMARY/DETAIL 포맷 계약 검증."""
+    import sqlite3
+    from talog import store
+    from talog.assemble import ChannelRun, Inspection
+    from talog.viewer import query_insp, query_detail, query_meta
+    db = str(tmp_path / "v.sqlite")
+    con = store.open_db(db)
+    insp = [Inspection(inner_id=f"I{i:03d}", product_id="P", start_ts=100.0 + i,
+                       start_text=f"00:00:{i:02d}.000", end_ts=101.0 + i,
+                       end_result="NG" if i % 2 else "OK", status="complete",
+                       n_fed=2, n_done=2) for i in range(10)]
+    con.executemany(
+        "INSERT INTO inspections(inner_id,product_id,start_ts,start_text,"
+        "wait_threads,ack_status,end_ts,end_text,end_result,status,duration_s,"
+        "n_fed,n_done,n_lost,n_nofeed,n_skipped,n_zones,n_zones_done,defects,"
+        "lost_channels,nofeed_channels,remain_list,gen_id,reject_zone) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [(i.inner_id, i.product_id, i.start_ts, i.start_text, -1, "OK",
+          i.end_ts, "", i.end_result, i.status, 1.0, i.n_fed, i.n_done,
+          0, 0, 0, 0, 0, "", "1(CH_A)", "", "", 1, 0) for i in insp])
+    con.execute(
+        "INSERT INTO channel_runs(inner_id,alg_idx,channel,exec_no,feed_ts,"
+        "feed_text,roi_idx,pre_ms,infer_start_ts,infer_end_ts,infer_ms,"
+        "post_ms,model,status) VALUES('I003',1,'CH_A',1,103.0,'',0,5.0,"
+        "103.1,103.5,400.0,0,'M1','done')")
+    con.commit()
+    r = query_insp(con, flt="ng", sort="asc", offset=0, limit=3)
+    assert r["total"] == 5 and len(r["rows"]) == 3
+    assert r["rows"][0][0] == "I001" and r["rows"][0][9] == "NG"
+    d = query_detail(con, "I003")
+    assert d["status"] == "complete" and len(d["runs"]) == 1
+    assert d["runs"][0][0] == 1 and d["runs"][0][6] == "M1"
+    assert d["lostIdx"] == [1]
+    m = query_meta(con)
+    assert m["total"] == 10
+    con.close()

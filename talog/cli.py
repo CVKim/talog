@@ -472,6 +472,26 @@ def main(argv=None):
         return kb_main(argv[1:])
     if argv and argv[0] == "fleet":
         return fleet_main(argv[1:])
+    if argv and argv[0] == "view":
+        import argparse as _ap
+        vp = _ap.ArgumentParser(prog="talog view",
+                                description="SQLite 직접 서빙 뷰어 — 대용량 "
+                                            "로그를 페이지 쿼리로 조회")
+        vp.add_argument("target", help=".sqlite 파일 / talog_out / 일자 폴더")
+        vp.add_argument("--port", type=int, default=8777)
+        vp.add_argument("--no-open", action="store_true")
+        va = vp.parse_args(argv[1:])
+        from .viewer import serve
+        try:
+            serve(va.target, port=va.port, open_browser=not va.no_open)
+        except FileNotFoundError as e:
+            print(f"[talog view] {e}")
+            return 1
+        except OSError as e:
+            print(f"[talog view] 포트 {va.port} 사용 불가 — --port 로 변경 "
+                  f"({e})")
+            return 1
+        return 0
     ap = argparse.ArgumentParser(prog="talog", description="talos 로그 진단 분석기")
     ap.add_argument("--version", action="version",
                     version=f"talog {__version__}")
