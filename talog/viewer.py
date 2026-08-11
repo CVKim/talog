@@ -57,9 +57,19 @@ def _open_ro(db: str) -> sqlite3.Connection:
 
 def query_insp(con: sqlite3.Connection, flt: str = "all", q: str = "",
                sort: str = "desc", offset: int = 0,
-               limit: int = 400) -> dict:
-    """검사 페이지 쿼리 — 리포트 JS 의 SUMMARY 행 포맷으로 반환한다."""
+               limit: int = 400, t_from: str = "", t_to: str = "") -> dict:
+    """검사 페이지 쿼리 — 리포트 JS 의 SUMMARY 행 포맷으로 반환한다.
+
+    t_from/t_to: "HH:MM" — start_text("HH:MM:SS.fff") 문자열 비교로 시간대
+    범위를 거른다 (새벽 구간 조회 등).
+    """
     where, args = [], []
+    if t_from:
+        where.append("substr(start_text,1,5) >= ?")
+        args.append(t_from[:5])
+    if t_to:
+        where.append("substr(start_text,1,5) <= ?")
+        args.append(t_to[:5])
     if flt == "bad":
         where.append("status IN (%s)" % ",".join("?" * len(_BAD)))
         args += list(_BAD)
@@ -166,7 +176,8 @@ def serve(target: str, port: int = 8777, open_browser: bool = True) -> None:
                             con, qs.get("filter", "all"), qs.get("q", ""),
                             qs.get("sort", "desc"),
                             int(qs.get("offset", 0) or 0),
-                            min(1000, int(qs.get("limit", 400) or 400))))
+                            min(1000, int(qs.get("limit", 400) or 400)),
+                            qs.get("from", ""), qs.get("to", "")))
                 elif u.path == "/api/detail":
                     with lock:
                         d = query_detail(con, qs.get("inner", ""))

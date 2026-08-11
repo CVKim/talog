@@ -1520,12 +1520,20 @@ function renderRows(show, matched, extraNote) {
   bindLinks();
 }
 
+function timeRange() {
+  const f = (document.getElementById('t-from') || {}).value || '';
+  const t = (document.getElementById('t-to') || {}).value || '';
+  return [f, t];
+}
+
 function renderList() {
+  const [tf, tt] = timeRange();
   if (SERVER_MODE) {
     const q = encodeURIComponent(
       (document.getElementById('insp-search').value || '').trim());
     fetch(`/api/insp?filter=${STATUS_FILTER}&q=${q}` +
-          `&sort=${SORT_DESC ? 'desc' : 'asc'}&offset=${PAGE_OFF}&limit=400`)
+          `&sort=${SORT_DESC ? 'desc' : 'asc'}&offset=${PAGE_OFF}&limit=400` +
+          `&from=${tf}&to=${tt}`)
       .then(r => r.json())
       .then(d => renderRows(d.rows, d.total,
         `, ${PAGE_OFF + 1}~${PAGE_OFF + d.rows.length} · DB 직접 조회`))
@@ -1537,6 +1545,9 @@ function renderList() {
   // 제외한다 — 절단 건은 '절단' 필터 버튼으로 조회
   if (STATUS_FILTER === 'all')
     rows = rows.filter(r => r[4] !== 'in_progress_eof');
+  // 시간대 필터 (내장 모드): r[3] = "HH:MM:SS.fff"
+  if (tf) rows = rows.filter(r => r[3].slice(0, 5) >= tf);
+  if (tt) rows = rows.filter(r => r[3].slice(0, 5) <= tt);
   // 최신순: 꼬리 400건을 역순으로 / 과거순: 머리 400건을 그대로
   const show = SORT_DESC ? rows.slice(-400).reverse() : rows.slice(0, 400);
   const capNote = (typeof TOTAL_INSP !== 'undefined' && TOTAL_INSP > SUMMARY.length)
@@ -2066,6 +2077,10 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
    font-family: inherit; }}
  input[type=text]:focus {{ outline: 2px solid var(--blue-100);
    border-color: var(--blue); }}
+ input.tin {{ font-size: 12px; padding: 5px 8px; border: 1px solid var(--line);
+   border-radius: 8px; background: var(--surface); color: var(--ink);
+   font-family: inherit; color-scheme: dark; }}
+ [data-theme="light"] input.tin {{ color-scheme: light; }}
  details summary {{ cursor: pointer; color: var(--ink2); margin-top: 12px;
                     font-size: 12.5px; }}
  details.ctx summary {{ margin-top: 4px; font-size: 11.5px; color: var(--blue);
@@ -2130,6 +2145,10 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
  <section id="sec-insp">
   <h2>검사 조회</h2>
   <p><input type="text" id="insp-search" placeholder="inner id 또는 product id 검색">
+     <span style="color:var(--muted);font-size:12px;margin-left:10px">시간대</span>
+     <input type="time" id="t-from" class="tin" onchange="PAGE_OFF=0;renderList()">
+     <span style="color:var(--muted)">~</span>
+     <input type="time" id="t-to" class="tin" onchange="PAGE_OFF=0;renderList()">
      <button class="fbtn on" data-f="all" onclick="setFilter('all')">전체</button>
      <button class="fbtn" data-f="bad" onclick="setFilter('bad')">이상만</button>
      <button class="fbtn" data-f="ng" onclick="setFilter('ng')">NG</button>

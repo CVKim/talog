@@ -102,3 +102,26 @@ def test_viewer_queries(tmp_path):
     m = query_meta(con)
     assert m["total"] == 10
     con.close()
+
+
+def test_viewer_time_range_filter(tmp_path):
+    """talog view 의 시간대(from/to) 필터 — 새벽 구간 조회."""
+    from talog import store
+    from talog.viewer import query_insp
+    db = str(tmp_path / "t.sqlite")
+    con = store.open_db(db)
+    rows = [("A1", "01:20:00.000"), ("A2", "03:05:00.000"),
+            ("A3", "03:40:00.000"), ("A4", "13:50:00.000")]
+    con.executemany(
+        "INSERT INTO inspections(inner_id,product_id,start_ts,start_text,"
+        "wait_threads,ack_status,end_ts,end_text,end_result,status,duration_s,"
+        "n_fed,n_done,n_lost,n_nofeed,n_skipped,n_zones,n_zones_done,defects,"
+        "lost_channels,nofeed_channels,remain_list,gen_id,reject_zone) "
+        "VALUES(?,?,?,?,-1,'OK',0,'','OK','complete',1,0,0,0,0,0,0,0,'','','','',1,0)",
+        [(i, "P", 100.0 + k, t) for k, (i, t) in enumerate(rows)])
+    con.commit()
+    r = query_insp(con, sort="asc", t_from="03:00", t_to="04:00")
+    assert [x[0] for x in r["rows"]] == ["A2", "A3"]
+    r2 = query_insp(con, sort="asc", t_from="13:00")
+    assert [x[0] for x in r2["rows"]] == ["A4"]
+    con.close()
