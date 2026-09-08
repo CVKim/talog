@@ -390,3 +390,49 @@ def test_zone_partial_without_any_end_is_incomplete():
     assert len(out) == 1
     assert out[0].status == "incomplete"
     assert out[0].n_zones == 2 and out[0].n_zones_done == 0
+
+
+def test_reject_not_attributed_to_completed_inspection():
+    """거부 라인이 정상 완료된 검사에 붙어 '시작 거부'로 오분류되면 안 된다.
+
+    신형 사이트(2026_09) 실측: 거부당한 검사에는 INSP_START 가 남지 않고
+    수신 라인(INSP_RECV)만 남아, 직전 START 에 무조건 귀속하던 로직이
+    END OK + 채널 7/7 완료 검사를 '시작 거부'로 표시했다.
+    """
+    events = [
+        _ev("INSP_START", 100.0, inner_id="OKONE", product_id="P", value=1.0),
+        _ev("COMM_MSG", 100.1, inner_id="OKONE", name="V2M_INSPECT_START_ACK",
+            status="OK", value=1.0),
+        _ev("COMM_MSG", 102.7, inner_id="OKONE", name="V2M_INSPECT_END",
+            status="OK", value=1.0),
+        # 다음 검사는 수신만 되고 거부됨 (START 로그 없음)
+        _ev("INSP_RECV", 103.0, inner_id="REJONE", product_id="P", value=2.0),
+        _ev("INSP_REJECT", 103.1),
+    ]
+    runs = [ChannelRun(inner_id="OKONE", alg_idx=1, channel="ch1",
+                       status="done", feed_ts=100.5, feed_text=_tt(100.5),
+                       infer_start_ts=100.5, infer_end_ts=101.0,
+                       infer_ms=500.0)]
+    out = {i.inner_id: i for i in build_inspections(
+        events, runs=runs, dl_channels={1: "ch1"}, gens=[],
+        log_end_ts=10000.0, comm_end_ts=10000.0)}
+    assert out["OKONE"].status == "complete"
+    assert out["OKONE"].ack_status == "OK"
+    assert out["REJONE"].status == "rejected"
+    assert out["REJONE"].ack_status == "NoInspThread"
+    assert out["REJONE"].reject_zone == 2
+
+
+def test_reject_without_recv_does_not_taint_completed():
+    """수신 라인조차 없으면 거부를 어디에도 귀속하지 않는다 (완료 건 보호)."""
+    events = [
+        _ev("INSP_START", 100.0, inner_id="OKTWO", product_id="P", value=1.0),
+        _ev("COMM_MSG", 102.0, inner_id="OKTWO", name="V2M_INSPECT_END",
+            status="OK", value=1.0),
+        _ev("INSP_REJECT", 103.0),
+    ]
+    out = build_inspections(events, runs=[], dl_channels={}, gens=[],
+                            log_end_ts=10000.0, comm_end_ts=10000.0)
+    assert len(out) == 1
+    assert out[0].status == "complete"
+    assert out[0].ack_status != "NoInspThread"

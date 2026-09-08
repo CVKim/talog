@@ -19,6 +19,10 @@ from .events import Event
 _ATTACH_WINDOW = 10.0     # RESET -> 첫 인퍼런스 시작 귀속 허용 시간(초)
 _CHAIN_WINDOW = 5.0       # 1차 종료 -> 2차 시작 연쇄 귀속 허용 시간(초)
 
+# 설비가 검사 시작을 거절한 코드들 (InspStarter.cpp 검증)
+_REJECT_CODES = ("NoInspThread", "BusyCam", "NotModelLoaded",
+                 "SimulationModelLoaded")
+
 
 @dataclass(slots=True)
 class ChannelRun:
@@ -353,14 +357,23 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
         elif e.kind == "INSP_RECV":
             last_recv = e
         elif e.kind == "INSP_REJECT":
-            # comm.log 부재 시에도 거부를 식별한다 (직전 INSP_START 에 귀속)
-            if last_start is not None and not last_start.ack_status:
-                last_start.ack_status = "NoInspThread"
-            # 거부가 어느 존 투입 시점이었는지 (직전 수신 라인의 groupId)
-            if last_start is not None and last_recv is not None \
-                    and last_recv.inner_id == last_start.inner_id \
-                    and abs(e.ts - last_recv.ts) <= 2.0:
-                last_start.reject_zone = int(last_recv.value)
+            # 거부는 '거부당한 검사'에 귀속되어야 한다. 사이트에 따라 거부
+            # 직전에 INSP_START 가 남지 않고 수신 라인만 남는 빌드가 있어
+            # (2026_09 신형 사이트 실측), 직전 START 에 무조건 붙이면 이미
+            # 정상 완료된 검사가 '시작 거부'로 오분류된다.
+            target = None
+            if last_recv is not None and abs(e.ts - last_recv.ts) <= 2.0:
+                target = get(last_recv.inner_id)   # 수신 라인이 가리키는 검사
+                if not target.start_ts:
+                    target.start_ts = last_recv.ts
+                    target.start_text = last_recv.ts_text
+                    target.product_id = last_recv.product_id
+                if last_recv.value:
+                    target.reject_zone = int(last_recv.value)
+            elif last_start is not None and not last_start.end_ts:
+                target = last_start                # 기존 사이트 동작 유지
+            if target is not None and not (target.ack_status or target.end_ts):
+                target.ack_status = "NoInspThread"
         elif e.kind in ("REJECT_BUSYCAM", "REJECT_NOTREADY", "REJECT_SIM"):
             # 코드 검증된 추가 거부 경로 (InspStarter.cpp)
             if last_start is not None and not last_start.ack_status:
@@ -434,6 +447,12 @@ def build_inspections(events: list[Event], runs: list[ChannelRun],
         it.n_lost = len(lost)
         it.lost_idx = list(lost)
         it.lost_channels = [f"{a}({dl_channels.get(a, '?')})" for a in lost]
+
+        # 거부 오귀속 방어: END 를 받았거나 채널이 실제로 실행된 검사는
+        # '시작 거부'일 수 없다 (거부는 파이프라인 진입 자체가 막힌 상태).
+        if it.ack_status in _REJECT_CODES and (it.end_ts or it.n_done):
+            it.ack_status = "OK" if it.end_ts else ""
+            it.reject_zone = 0
         if it.ack_status == "OK" or (it.ack_status == "" and fed_alg):
             nofeed = set(dl_channels) - fed_alg
             # 종속성 그래프에서 비활성된 alg 는 '정상 스킵'으로 분리한다
