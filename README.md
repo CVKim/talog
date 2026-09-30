@@ -17,6 +17,7 @@
 | **사후 분석** | `talog <로그폴더>` | RCA 자동 진단 + 인터랙티브 HTML 리포트 + SQLite |
 | **대화형 질의** | `talog ask <out폴더>` | 한국어 질문 → 로컬 LLM이 DB를 조회해 근거와 답변 |
 | **예지보전** | `talog watch` | 설비 PC 상주 감시 → 이상 징후 실시간 경보 |
+| **감시 콘솔** | `talog watch --ui` | 추적 파일·경보 규칙·LLM·이메일 설정, 사건 분석(룰+Qwen 합의)·메일 확인 |
 
 ## Quick Start
 
@@ -49,6 +50,9 @@ talog.exe watch
   유사 사례 자동 첨부 (`talog kb`)
 - **저부하 상주 감시** — 증분 tail + 우선순위 강등 + GPU 미사용. GPU 온도
   감시(nvidia-smi) 포함. `talog watch --check` 로 설치 자가 점검
+- **사건 분석 에이전트 + 이메일** (v1.10) — NoInspThread·치명 결함명·사용자 패턴 경보를
+  사건으로 묶어 룰 진단과 로컬 LLM(Qwen, CPU/GPU/자동) 2차 의견을 교차 확인하고,
+  심각 등급은 즉시·주의 등급은 묶어서 담당 역할별로 메일 발송 (비밀번호 DPAPI 암호화)
 
 ## 검증
 

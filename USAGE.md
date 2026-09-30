@@ -143,14 +143,105 @@ talog.exe watch --replay <일자폴더>    ← 과거 사고 재생으로 룰 �
 프로세스 우선순위 자동 강등 · LLM은 선택 기능이며 **기본 CPU 모드**
 (`num_gpu=0`)라 검사용 GPU를 건드리지 않습니다.
 
-**감지 룰 5종** (watch.yaml 에서 임계 조정):
-동일 에러 반복 · NoInspThread(미검사 임박, 즉시) · 검사 정체(정상 소요
-중앙값의 2배) · 재시작 빈발 · 메모리 증가 추세(릭 의심)
+**감지 룰** (watch.yaml 또는 콘솔에서 임계 조정):
+동일 에러 반복 · NoInspThread(미검사 임박, 즉시 — InspStarter 거부 라인과 comm
+설비 회신 둘 다) · 검사 정체(정상 소요 중앙값의 2배) · 재시작 빈발 · 메모리 증가
+추세(릭 의심) · GPU 온도 · 타임아웃·그랩 실패·저장 공간·조명 · **결함명 감시**
+(치명 결함·빈발·연속 NG·NG 비율) · **사용자 정의 로그 패턴**
 
 **LLM 감시 지시문(스크립트) 모드**: `watch.yaml` 의 `llm.enabled: true` +
 `llm.script: watch_script_example.txt` 처럼 자연어 지시문 파일을 주면, 주기
 (기본 30분)마다 현재 상태 요약을 LLM(CPU/GPU 선택)에 넘겨 지시문 관점으로
 점검하고, 이상 판단 시 알림을 발송합니다.
+
+### 5-1. 웹 콘솔 (v1.10) — 설정·상태·테스트를 화면으로
+
+```
+run_console.bat                        ← 더블클릭 (감시 + 콘솔, http://127.0.0.1:8778)
+talog.exe watch --ui --config watch.yaml [--port 8778] [--no-open]
+```
+
+| 탭 | 하는 일 |
+|---|---|
+| 상태 | 오늘 심각/주의 경보·사건·메일 수, GPU(nvidia-smi), 최근 경보·사건, 테스트 경보 주입 |
+| 추적 파일 | **기본**(핵심 9종) / **선택**(파일·와일드카드 체크) / **자동**(일자 폴더 전체) |
+| 경보 규칙 | 기본 룰 켜기·등급·"N분 내 N회" · 치명 결함명(레시피 결함명 목록에서 선택) · 사용자 정의 로그 패턴(프리셋·줄 붙여넣기 시험) |
+| 분석·LLM | 사건 분석 켜기, Ollama 주소·모델, **CPU / GPU / 자동** 장치, 속도 시험 |
+| 이메일 | SMTP 프리셋(Gmail·Microsoft 365·네이버·사내 릴레이), 인증, 수신자·역할별 수신자, 등급별 정책, 접속 확인·테스트 메일 |
+| 사건 기록 | 룰 진단·LLM 의견·합의·메일 미리보기 (리플레이 사건 포함) |
+| 리플레이 | 과거 사고 폴더를 **현재 설정으로 재생** — 경보·메일을 미리 확인 (발송 없음) |
+
+콘솔은 이 PC(127.0.0.1)에서만 열리고, 저장 시 `watch.yaml` 을 `.bak` 으로 백업한 뒤
+주석을 붙여 다시 쓰고 감시를 새 설정으로 재시작합니다.
+
+### 5-2. 경보 규칙 — 결함명·패턴·등급
+
+- **치명 결함명** (`rules.defect_watch.critical`): comm.log 판정 NG 의 결함명이 목록에
+  있으면 **1건만 나와도 즉시 심각**. 와일드카드 `*` 허용. 빈발(`repeat_count`)·연속 NG
+  (`ng_streak`)·NG 비율(`ng_rate_window`)은 0 = 끔
+- **사용자 정의 패턴** (`rules.patterns`): 추적 중인 파일의 모든 줄을 검사
+  ```yaml
+  patterns:
+    - name: GPU 컨텍스트 치명 오류
+      match: enqueueV3 cudaGetLastError    # 문구 포함 / 정규식은 "re:..."
+      files: [DLInfer.log]                  # tracking 에 포함돼 있어야 함 (select/auto)
+      severity: crit                        # info | warn | crit
+      count: 1                              # window_min 안에 N회 → 경보 (1 = 즉시)
+      window_min: 10
+  ```
+- **기본 룰 조정** (`rules.overrides`): `{img_timeout: {count: 3, window_min: 10},
+  grab_fail: {severity: warn}, alg_timeout: {enabled: false}}`
+- **등급 → 메일**: 심각(`email.immediate`)은 10초 뒤 즉시(룰 판단), 주의는 묶음, 정보는 기록만
+
+### 5-3. 사건 분석 에이전트 — 룰 진단 + LLM 2차 의견
+
+`agent.enabled: true` 면 경보를 사건으로 묶어 근거(경보 순간의 진행 중 검사·소요·
+투입 간격·재시작·타임아웃·에러·NG 분포·GPU, 사건 시점 DLInfer.log 꼬리)를 모으고
+원인을 판단합니다. 원인·조치·담당 사전은 `talog/rules/runbook.yaml`
+(문구 교체: `agent.runbook`).
+
+| 판단 | 의미 | 메일 |
+|---|---|---|
+| 룰·LLM 판단 일치 | 규칙과 LLM 이 같은 원인 | 지목된 담당 역할에 권고 조치와 함께 |
+| 판단 불일치 — 담당자 확인 필요 | 두 의견이 다름 | 두 의견을 모두 적고 확인 요청 조치 추가 |
+| 오경보 의심 | 근거가 경보 기준에 못 미침 (예: 재시작 1회를 5회로 센 경보) | 주의로 강등 (기본 메일 제외) |
+
+LLM 이 쓴 알림 문구의 숫자·시각은 근거 데이터와 대조해, 근거에 없으면 룰 문구로
+바꿉니다. 기록: `alert_dir\incidents_YYYYMMDD.jsonl`.
+
+**LLM 장치** (`llm.device`): `cpu`(기본, 검사 GPU 미사용, `cpu_threads` 로 스레드 상한) /
+`gpu` / `auto`(요청마다 여유 VRAM `gpu_min_free_mb`·사용률 `gpu_max_util` 을 보고 선택).
+특정 GPU 만 쓰려면 그 GPU 로 고정한 전용 Ollama 서버를 띄우고 `llm.url` 을
+`http://127.0.0.1:11435` 로 바꿉니다 (bat 파일 예):
+```
+set CUDA_VISIBLE_DEVICES=1
+set OLLAMA_HOST=127.0.0.1:11435
+set OLLAMA_VULKAN=0
+ollama serve
+```
+(`OLLAMA_VULKAN=0` 이 없으면 Vulkan 백엔드가 다른 GPU 를 잡을 수 있습니다.)
+이 경우 `device: auto` 의 여유 VRAM 판정도 그 GPU 로 하도록 `llm.gpu_index` 를 같은 번호로
+맞추십시오. 모델이 이미 GPU 에 올라가 있으면(`/api/ps`) auto 는 그대로 GPU 를 씁니다.
+
+### 5-4. 이메일 — SMTP·인증
+
+```yaml
+email:
+  enabled: true
+  smtp_host: smtp.gmail.com     # 사내 릴레이면 security: none + username 비움
+  smtp_port: 587
+  security: starttls
+  username: sender@example.com
+  to: [line-leader@example.com]
+  roles: {vision_engineer: [vision@example.com], quality: [quality@example.com]}
+```
+- **비밀번호는 파일에 평문으로 쓰지 않습니다**: 콘솔에 입력하면 Windows DPAPI 로
+  암호화해 `password_dpapi` 에 저장(이 PC·이 사용자만 복호화), 또는 환경변수
+  `TALOG_SMTP_PASSWORD` (`setx TALOG_SMTP_PASSWORD "앱비밀번호"`)
+- Gmail 은 2단계 인증 후 **앱 비밀번호**, Microsoft 365 는 조직이 SMTP AUTH 를 막았으면
+  사내 릴레이를 사용
+- 확인: `talog.exe watch --check` (접속·인증만) → `talog.exe watch --test-email` (예시 메일 발송)
+- 처음 설치할 때는 `dry_run: true` 로 두면 SMTP 없이 `alert_dir\outbox\*.eml` 만 남습니다
 
 **검증 실적**: PC3 0727 사고 리플레이에서 — 새벽 00:27 모델 로드 실패 반복
 경보, **08:55 검사 정체 사전 경보(사고 33분 전)**, 09:28:03 NoInspThread

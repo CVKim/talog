@@ -22,9 +22,21 @@ _DEPLOY_MD = """# talog watch 현장 설치 안내 — {site}
 
 ## 구성 파일
 - `talog.exe`           : 분석기/감시기 단일 실행 파일 (Python 설치 불필요)
-- `run_watch.bat`       : 상주 감시 실행 (더블클릭)
+- `run_console.bat`     : **감시 + 웹 콘솔** 실행 (권장 — 설정·상태·테스트를 화면으로)
+- `run_watch.bat`       : 상주 감시만 실행 (콘솔 없이, 설정은 watch.yaml)
 - `watch.yaml`          : 감시 설정 (경로·룰 임계·알림)
 - `watch_script_example.txt` : LLM 감시 지시문 예시 (선택 기능)
+
+## 웹 콘솔 (run_console.bat)
+브라우저에 `http://127.0.0.1:8778` 이 열립니다 (이 PC 에서만 접속 가능).
+- 추적 파일: 기본(핵심 9종) / 선택한 파일만 / 자동(폴더 전체)
+- 경보 규칙: 기본 룰 켜기·등급·횟수, 치명 결함명(레시피 결함명 목록에서 선택),
+  사용자 정의 로그 패턴(1회 즉시 또는 N분 내 N회)
+- 분석·LLM: 룰 진단 + 로컬 LLM 2차 의견, CPU/GPU/자동 선택과 속도 시험
+- 이메일: SMTP·인증(비밀번호는 DPAPI 암호화 저장), 받는 사람·역할별 수신자,
+  심각 등급 즉시 발송·주의 등급 묶음 발송, 테스트 메일
+- 사건 기록·리플레이: 과거 사고 폴더를 현재 설정으로 재생해 경보·메일을 미리 확인
+콘솔 창(검은 창)을 닫으면 감시도 멈춥니다.
 
 ## 설치 (5분)
 1. 이 폴더를 설비 PC 의 `D:\\talog\\` 로 복사합니다.
@@ -59,6 +71,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--site", required=True, help='설비 이름 (예: "CMFB#1")')
     ap.add_argument("--webhook", default="", help="웹훅 URL (없으면 토스트/JSONL만)")
+    ap.add_argument("--email-to", default="",
+                    help="사건 메일 기본 수신자 (쉼표 구분, 예: lead@company.com)")
     ap.add_argument("--out", default=os.path.join(ROOT, "deploy"))
     args = ap.parse_args()
 
@@ -75,10 +89,14 @@ def main() -> int:
     shutil.copy2(exe, os.path.join(dst, "talog.exe"))
     shutil.copy2(os.path.join(ROOT, "watch_script_example.txt"), dst)
 
-    # run_watch.bat — ASCII 전용(인코딩 무결) + UNC 대응 pushd
+    # run_watch.bat / run_console.bat — ASCII 전용(인코딩 무결) + UNC 대응 pushd
     with open(os.path.join(dst, "run_watch.bat"), "w", encoding="ascii") as f:
         f.write('@echo off\npushd "%~dp0"\n'
                 '"%~dp0talog.exe" watch --config "%~dp0watch.yaml"\n'
+                'pause\npopd\n')
+    with open(os.path.join(dst, "run_console.bat"), "w", encoding="ascii") as f:
+        f.write('@echo off\npushd "%~dp0"\n'
+                '"%~dp0talog.exe" watch --ui --config "%~dp0watch.yaml"\n'
                 'pause\npopd\n')
 
     # watch.yaml — 사이트 프리셋
@@ -87,6 +105,11 @@ def main() -> int:
     y = y.replace('site: ""', f'site: "{args.site}"')
     if args.webhook:
         y = y.replace('webhook: ""', f'webhook: "{args.webhook}"')
+    if args.email_to:
+        to = ", ".join(a.strip() for a in args.email_to.split(",") if a.strip())
+        # 수신자만 채운다 — 발송 경로(SMTP/Graph)·인증은 현장에서 콘솔로 설정
+        y = y.replace("  to: []                         # 항상 받는 사람",
+                      f"  to: [{to}]   # 항상 받는 사람")
     with open(os.path.join(dst, "watch.yaml"), "w", encoding="utf-8") as f:
         f.write(y)
 

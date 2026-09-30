@@ -20,26 +20,28 @@ from __future__ import annotations
 
 import ctypes
 import datetime as dt
+import fnmatch
 import json
 import os
 import statistics
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
-from collections import deque
+from collections import Counter, OrderedDict, deque
 from dataclasses import dataclass, field
 
 import yaml
 
+from .assemble import _parse_ng_defects
 from .events import Event, Extractor
 from .fileclass import classify
-from .lineparser import _BATCH_RE, _TAG_RE, _TS_RE, LogRecord
+from .lineparser import _BATCH_RE, _TAG_RE, _TS_RE, LogRecord, _sniff_encoding
+from .tracker import DEFAULT_FILES, PatternEngine, resolve_targets
 
-# 감시 대상 파일 (소형·핵심만 — 저부하 원칙). seq_N.log 는 동적으로 추가된다.
-_WATCH_FILES = ("inspstarter.log", "comm.log", "workerthreadpoolmng.log",
-                "exception.log", "processusage.log", "batchrunlog.txt",
-                "seq_1.log", "seq_2.log", "seq_3.log")
+# 감시 대상 파일 (소형·핵심만 — 저부하 원칙). 추적 모드 default 의 목록이다.
+_WATCH_FILES = DEFAULT_FILES
 
 _DEFAULT_CFG = {
     "watch_root": r"D:\AIV_LOG\Talos",
@@ -47,18 +49,58 @@ _DEFAULT_CFG = {
     "alert_dir": r"D:\AIV_LOG\TalogWatch",
     "low_priority": True,
     "site": "",
+    # 추적 대상: default(핵심 9종) | select(files 지정) | auto(일자 폴더 전체)
+    "tracking": {"mode": "default", "files": [],
+                 "exclude": ["DebugImageSaveInfo.log", "InspCondRelationGraph*.log"],
+                 "include_alg": False, "max_initial_mb": 32},
     "rules": {
         "error_repeat": {"window_min": 10, "count": 5},
         "no_insp_thread": {"enabled": True},
-        "insp_stall": {"factor_x_median": 2.0, "min_seconds": 180},
+        "insp_stall": {"factor_x_median": 2.0, "min_seconds": 180, "cooldown_min": 10},
         "restart_burst": {"window_min": 60, "count": 3},
         "memory_trend": {"mb_per_hour": 100, "min_rise_mb": 500,
                          "min_hours": 2.0},
         "gpu_temp": {"enabled": True, "celsius": 85, "record_min": 5},
+        # 결함명 감시 (comm.log INSPECT_END NG/REWORK 페이로드). 기본은 모두 꺼짐 —
+        # 사이트마다 결함명·NG 수준이 달라 watch.yaml 에서 켠다
+        "defect_watch": {"enabled": True, "critical": [], "critical_cooldown_min": 10,
+                         "repeat_window_min": 30, "repeat_count": 0,
+                         "ng_streak": 0, "ng_rate_window": 0, "ng_rate_percent": 50},
+        # 사용자 정의 로그 패턴 (tracker.PatternEngine): name/match/files/level/
+        #   severity/count/window_min/cooldown_min — count 1 = 한 번만 나와도 경보
+        "patterns": [],
+        # 기본 룰 조정: {룰: {enabled, severity, count, window_min}} — count N 이면
+        #   window_min 안에 N번 발생해야 경보 (이벤트형 룰 기준)
+        "overrides": {},
     },
     "notify": {"toast": True, "webhook": "", "jsonl": True},
-    "llm": {"enabled": False, "device": "cpu", "model": "qwen2.5:7b",
+    "llm": {"enabled": False, "url": "http://127.0.0.1:11434", "device": "cpu",
+            "model": "qwen2.5:7b", "cpu_threads": 0, "gpu_index": -1,
+            "gpu_min_free_mb": 6000, "gpu_max_util": 40, "keep_alive": "",
+            "num_ctx": 8192, "timeout_s": 600, "think": None,
             "script": "", "interval_min": 30},
+    # 경보 사건 분석 (룰 진단 + LLM 2차 의견 + 합의 관문) — talog/agent.py
+    "agent": {"enabled": False, "use_llm": True, "min_severity": "crit",
+              "batch_seconds": 60, "reason_first": True, "runbook": "",
+              "gpu_log_tail_mb": 16, "casekb": True},
+    # 사건 메일 (SMTP) — talog/mailer.py. 비밀번호는 환경변수로만
+    "email": {"enabled": False,
+              # 발송 방식: smtp (STARTTLS/SSL/사내 릴레이/Direct Send) | graph (Microsoft 365
+              #   Graph API, OAuth2 — Exchange Online 은 SMTP 기본 인증을 폐지하는 중)
+              "transport": "smtp",
+              "graph": {"tenant_id": "", "client_id": "", "sender": "",
+                        "secret_env": "TALOG_GRAPH_SECRET", "client_secret_dpapi": ""},
+              "smtp_host": "", "smtp_port": 587,
+              "security": "starttls", "username": "",
+              "password_env": "TALOG_SMTP_PASSWORD", "password_dpapi": "",
+              "sender": "", "to": [],
+              "roles": {}, "min_severity": "crit", "min_interval_min": 5,
+              "max_per_hour": 10, "outbox": True, "dry_run": False,
+              "attach_json": True, "timeout_s": 20,
+              # 등급 정책: immediate 등급은 묶음을 기다리지 않고 immediate_seconds 뒤
+              #   룰 판단으로 바로 보낸다(메일 간격 제한 없음, 시간당 상한만).
+              #   LLM 2차 의견은 llm_followup 이면 같은 스레드의 후속 메일로 보낸다
+              "immediate": ["crit"], "immediate_seconds": 10, "llm_followup": True},
     "cooldown_min": 30,
 }
 
@@ -98,6 +140,7 @@ class Alert:
     evidence: str
     key: str = ""
     cooldown_min: float = 0.0     # 0 이면 전역 cooldown_min 사용
+    family: str = ""              # 사건 분석 계열 지정 (패턴 경보용, 빈 값 = 런북 매핑)
 
 
 class Notifier:
@@ -115,8 +158,33 @@ class Notifier:
             print(f"! 알림 폴더 생성 실패 — 폴백: {self.alert_dir}")
         self._last: dict[tuple, float] = {}      # (rule,key) -> 마지막 발송 ts
         self.sent: list[Alert] = []
+        self.listeners: list = []                # 경보 구독자 (사건 분석 에이전트)
+        self._occ: dict[str, deque] = {}         # 룰별 발생 시각 (overrides.count 용)
+
+    def _apply_override(self, a: Alert) -> bool:
+        """rules.overrides 로 룰을 끄거나 등급·발생 횟수 문턱을 바꾼다. False = 억제."""
+        ov = (self.cfg.get("rules", {}).get("overrides") or {}).get(a.rule)
+        if not isinstance(ov, dict):
+            return True
+        if ov.get("enabled") is False:
+            return False
+        if str(ov.get("severity", "")).lower() in ("info", "warn", "crit"):
+            a.severity = str(ov["severity"]).lower()
+        need = int(ov.get("count", 1) or 1)
+        if need > 1:
+            w = float(ov.get("window_min", 10) or 10) * 60
+            q = self._occ.setdefault(a.rule, deque())
+            q.append(a.ts)
+            while q and a.ts - q[0] > w:
+                q.popleft()
+            if len(q) < need:
+                return False                      # 아직 N회 미만 — 세기만 한다
+            a.evidence += f" (최근 {w / 60:.0f}분 {len(q)}회)"
+        return True
 
     def emit(self, a: Alert):
+        if not self._apply_override(a):
+            return
         cd = (a.cooldown_min or self.cfg.get("cooldown_min", 30)) * 60
         k = (a.rule, a.key)
         if k in self._last and a.ts - self._last[k] < cd:
@@ -140,6 +208,11 @@ class Notifier:
             except OSError as e:
                 # 디스크 풀/권한 상실이 알림 발송 자체를 막아선 안 된다
                 print(f"  ! 알림 기록 실패(계속): {e}")
+        for cb in self.listeners:
+            try:
+                cb(a)
+            except Exception as e:                # 구독자 오류가 경보를 막지 않는다
+                print(f"  ! 경보 구독자 오류(계속): {e}")
         if self.replay:
             return                                # 리플레이는 기록만
         if self.cfg["notify"].get("toast", True):
@@ -199,10 +272,115 @@ class RuleEngine:
         self.errors: deque = deque()              # (ts, key)
         self.restarts: deque = deque()            # ts (create 이벤트)
         self.pending: dict[str, float] = {}       # inner_id -> start ts
+        self._last_start = None                   # (inner, ts, 대기 스레드) — 거부 귀속용
         self.durations: deque = deque(maxlen=200)  # 완료 소요(초)
         self.mem: deque = deque()                 # (ts, MB)
+        # 사건 분석 근거용 상태 (agent.EvidenceBuilder 가 읽는다)
+        self.recent: deque = deque()              # 최근 90분 핵심 이벤트
+        self.done: deque = deque(maxlen=200)      # (END ts, inner, 소요 s)
+        # 결함명 감시 상태 (다존 설비는 inner 단위로 NG 스티키 집계)
+        self.dw = self.cfg.get("defect_watch", {})
+        self.results: OrderedDict = OrderedDict()  # inner -> {ts, result, defects}
+        self.defect_hist: deque = deque()         # (ts, 결함명, inner)
+        # 사용자 정의 로그 패턴 (TailReader 가 줄 단위로 넘긴다)
+        self.patterns = PatternEngine(self.cfg.get("patterns") or [], notifier, Alert)
+
+    # 근거 기록 대상 (comm 은 검사 라이프사이클·모델 로드·비상정지만)
+    _REC_KINDS = frozenset((
+        "INSP_START", "INSP_REJECT", "REJECT_BUSYCAM", "REJECT_NOTREADY",
+        "REJECT_SIM", "COMM_MSG", "IMG_TIMEOUT", "ALG_TIMEOUT", "GRAB_FAIL",
+        "STORAGE_LOW", "LIGHT_UNSTABLE", "POOL_CREATE", "POOL_DESTROY", "BATCH",
+        "CRASH", "EXC_SAFE", "ERROR", "EXC_REDIRECT", "MODEL_FAIL", "COMM_FAIL",
+        "RECIPE_FAIL"))
+    _REC_COMM = ("INSPECT_START_ACK", "INSPECT_END", "MODEL_LOAD", "EMERGENCY")
+
+    def _record(self, e: Event):
+        if e.kind not in self._REC_KINDS:
+            return
+        if e.kind == "COMM_MSG" and not any(k in e.name for k in self._REC_COMM):
+            return
+        self.recent.append(e)
+        while self.recent and e.ts - self.recent[0].ts > 5400:
+            self.recent.popleft()
+
+    def ng_streak_len(self) -> int:
+        n = 0
+        for v in reversed(self.results.values()):
+            if v["result"] not in ("NG", "REWORK"):
+                break
+            n += 1
+        return n
+
+    def _critical_pattern(self, name: str) -> str:
+        for p in self.dw.get("critical") or []:
+            if fnmatch.fnmatchcase(name.upper(), str(p).upper()):
+                return str(p)
+        return ""
+
+    def _on_inspect_end(self, e: Event):
+        """INSPECT_END 판정으로 치명 결함·동일 결함 빈발·연속 NG·NG 비율을 본다."""
+        dw = self.dw
+        if not dw.get("enabled", True):
+            return
+        res = e.status or "?"
+        defects = (_parse_ng_defects(e.extra, e.inner_id, res)
+                   if res in ("NG", "REWORK") else [])
+        cur = self.results.get(e.inner_id)
+        if cur is None:
+            cur = {"ts": e.ts, "result": res, "defects": []}
+            self.results[e.inner_id] = cur
+            if len(self.results) > 1000:
+                self.results.popitem(last=False)
+        elif cur["result"] not in ("NG", "REWORK"):
+            cur["result"] = res                   # 존 하나라도 NG 면 NG 유지
+        new = [d for d in defects if d not in cur["defects"]]
+        cur["defects"].extend(new)
+        win = dw.get("repeat_window_min", 30) * 60
+        for d in new:
+            self.defect_hist.append((e.ts, d, e.inner_id))
+        while self.defect_hist and e.ts - self.defect_hist[0][0] > win:
+            self.defect_hist.popleft()
+        for d in new:
+            if self._critical_pattern(d):
+                n = sum(1 for _t, x, _i in self.defect_hist if x == d)
+                self.notify.emit(Alert(
+                    e.ts, "defect_critical", "crit", f"치명 결함 검출: {d}",
+                    f"inner id {e.inner_id} · 판정 {res} {'/'.join(cur['defects'])} · "
+                    f"최근 {win / 60:.0f}분 {n}건 — 결함 이미지를 확인하고 제품을 "
+                    f"격리하십시오.", key=f"crit:{d}",
+                    cooldown_min=dw.get("critical_cooldown_min", 10)))
+        need = int(dw.get("repeat_count", 0) or 0)
+        if need:
+            for d in set(new):
+                n = sum(1 for _t, x, _i in self.defect_hist if x == d)
+                if n >= need:
+                    self.notify.emit(Alert(
+                        e.ts, "defect_repeat", "warn",
+                        f"동일 결함 빈발: {d} {win / 60:.0f}분 내 {n}건",
+                        f"마지막 inner id {e.inner_id} — 공정 이상 또는 과검출 여부를 "
+                        f"이미지로 확인하십시오.", key=f"rep:{d}"))
+        streak = self.ng_streak_len()
+        need = int(dw.get("ng_streak", 0) or 0)
+        if need and streak >= need:
+            top = Counter(d for v in list(self.results.values())[-streak:]
+                          for d in v["defects"]).most_common(3)
+            self.notify.emit(Alert(
+                e.ts, "ng_streak", "crit", f"연속 NG {streak}건"
+                + (f" ({'·'.join(f'{d} {n}' for d, n in top)})" if top else ""),
+                f"마지막 inner id {e.inner_id} — 촬상·조명·티칭 이상 또는 공정 이상 "
+                f"여부를 확인하십시오.", key="streak"))
+        n_win = int(dw.get("ng_rate_window", 0) or 0)
+        if n_win and len(self.results) >= n_win:
+            last = list(self.results.values())[-n_win:]
+            pct = 100.0 * sum(1 for v in last if v["result"] in ("NG", "REWORK")) / n_win
+            if pct >= float(dw.get("ng_rate_percent", 50)):
+                self.notify.emit(Alert(
+                    e.ts, "ng_rate", "warn", f"NG 비율 {pct:.0f}% (최근 {n_win}검사)",
+                    f"기준 {dw.get('ng_rate_percent', 50)}% 초과 — 결함 분포와 기종 교체 "
+                    f"여부를 확인하십시오.", key="ngrate"))
 
     def feed(self, e: Event):
+        self._record(e)
         if e.kind in ("ERROR", "EXC_REDIRECT", "MODEL_FAIL", "CRASH",
                       "COMM_FAIL", "RECIPE_FAIL"):
             key = e.model or (e.extra or e.name or e.kind)[:60]
@@ -214,7 +392,14 @@ class RuleEngine:
                                        key="crash"))
         elif e.kind == "INSP_START":
             self.pending[e.inner_id] = e.ts
+            self._last_start = (e.inner_id, e.ts, e.value)
         elif e.kind == "INSP_REJECT":
+            # 거부 라인은 같은 InspStarter 의 도착 라인(대기 스레드 0) 바로 뒤에 찍힌다 —
+            # 그 검사는 시작되지 않았으므로 진행 중에서 뺀다 (남기면 몇 분 뒤 거짓 '검사 정체').
+            # 도착 라인이 없는 신형 사이트는 직전 도착이 대기 스레드 1 이상이라 건드리지 않는다
+            ls = self._last_start
+            if ls and ls[2] == 0 and 0 <= e.ts - ls[1] <= 2:
+                self.pending.pop(ls[0], None)
             if self.cfg["no_insp_thread"].get("enabled", True):
                 self.notify.emit(Alert(
                     e.ts, "no_insp_thread", "crit",
@@ -257,11 +442,25 @@ class RuleEngine:
                 st = self.pending.pop(e.inner_id, None)
                 if st is not None:
                     self.durations.append(e.ts - st)
+                    self.done.append((e.ts, e.inner_id, e.ts - st))
+                self._on_inspect_end(e)
             elif "INSPECT_START_ACK" in e.name and e.status \
                     and e.status != "OK":
                 self.pending.pop(e.inner_id, None)
+                # 설비 회신(comm)으로도 NoInspThread 를 잡는다 — InspStarter 거부
+                # 라인과 같은 key 라 한 번만 발보된다
+                if e.status == "NoInspThread" and \
+                        self.cfg["no_insp_thread"].get("enabled", True):
+                    self.notify.emit(Alert(
+                        e.ts, "no_insp_thread", "crit",
+                        "검사 시작 거부(NoInspThread) — 미검사 임박",
+                        f"설비 회신 NoInspThread (inner id {e.inner_id}) — 가용 Seq "
+                        f"스레드 0. 병목/정체를 즉시 확인하십시오.", key="noinsp"))
         elif e.kind == "POOL_CREATE":
-            self.restarts.append(e.ts)
+            # 기동 1회에 풀 5종(eFunction/eDraw/eLongRunning/eSaver/eFovProc)이 함께
+            # 생성된다 — 30초 안의 흔적은 재시작 1회로 센다 (build_process_gens 와 같은 규칙)
+            if not self.restarts or e.ts - self.restarts[-1] > 30:
+                self.restarts.append(e.ts)
             self.pending.clear()                  # 재시작 시 진행분 소실
         elif e.kind == "USAGE":
             self.mem.append((e.ts, e.value))
@@ -287,14 +486,19 @@ class RuleEngine:
         limit = max(c["insp_stall"]["min_seconds"],
                     med * c["insp_stall"]["factor_x_median"]) if med else \
             c["insp_stall"]["min_seconds"] * 3
-        for inner, st in list(self.pending.items()):
-            age = now - st
-            if age > limit:
-                self.notify.emit(Alert(
-                    now, "insp_stall", "warn",
-                    f"검사 정체 {age:.0f}초 (정상 중앙값 {med:.0f}초)",
-                    f"inner id {inner} 가 완료 신호 없이 진행 중 — 소실 위험",
-                    key=inner))
+        # 정체 검사는 한 경보로 묶는다 — inner 마다 따로 내면 장애·로그 절단 때 진행 중
+        # 검사 수만큼 폭주한다 (Tenneco 0730 재생 402건)
+        stalled = sorted(((now - st, inner) for inner, st in self.pending.items()
+                          if now - st > limit), reverse=True)
+        if stalled:
+            age, inner = stalled[0]
+            more = f" 외 {len(stalled) - 1}건" if len(stalled) > 1 else ""
+            self.notify.emit(Alert(
+                now, "insp_stall", "warn",
+                f"검사 정체 {age:.0f}초 (정상 중앙값 {med:.0f}초){more}",
+                f"inner id {inner} 가 완료 신호 없이 진행 중 — 소실 위험"
+                + (f" (정체 {len(stalled)}건)" if more else ""),
+                key="stall", cooldown_min=c["insp_stall"].get("cooldown_min", 10)))
         # 3) 재시작 빈발
         w = c["restart_burst"]["window_min"] * 60
         while self.restarts and now - self.restarts[0] > w:
@@ -340,10 +544,15 @@ class RuleEngine:
 class TailReader:
     """파일별 오프셋을 기억하며 새로 쓰인 부분만 파싱한다."""
 
-    def __init__(self, state_path: str):
+    def __init__(self, state_path: str, max_initial_mb: float = 0):
         self.state_path = state_path
         self.offsets: dict[str, int] = {}
         self.partial: dict[str, str] = {}
+        self.enc: dict[str, str] = {}
+        self.meta: dict[str, dict] = {}          # 콘솔 표시용 (크기·마지막 기록 시각)
+        self.last_ts: dict[str, float] = {}      # 연속 줄(시각 없음)의 패턴 시각
+        # 처음 보는 파일이 이보다 크면 끝부분부터 읽는다 (0 = 처음부터, 기본 모드)
+        self.max_initial = int(float(max_initial_mb or 0) * 1048576)
         self.ex = Extractor()
         if os.path.exists(state_path):
             try:
@@ -359,45 +568,72 @@ class TailReader:
         except OSError:
             pass
 
-    def poll_file(self, path: str) -> list[Event]:
+    def poll_file(self, path: str, line_hook=None, keep_kinds=None) -> list[Event]:
+        """새로 쓰인 줄을 읽어 이벤트로 돌려준다.
+
+        line_hook(ts, 파일명, 레벨, 줄) 이 있으면 모든 줄을 넘긴다 (사용자 패턴 경보).
+        keep_kinds 가 있으면 그 종류의 이벤트만 남긴다 (auto 모드의 대용량 계측 제외).
+        """
         fi = classify(path)
         if fi is None:
             return []
         cat = fi.category
         rules = self.ex.rules.get(cat, [])
-        if not rules and cat != "batchrun":
+        if not rules and cat != "batchrun" and line_hook is None:
             return []
         try:
             size = os.path.getsize(path)
         except OSError:
             return []
-        off = self.offsets.get(path, 0)
+        skip_first = False
+        if path in self.offsets:
+            off = self.offsets[path]
+        else:
+            off = 0
+            if self.max_initial and size > self.max_initial:
+                off = size - min(size, 262144)     # 과거분은 건너뛰고 최근 256KB 부터
+                skip_first = True
         if size < off:                              # 파일 재생성(날짜 교체 등)
             off = 0
         if size == off:
             return []
         events: list[Event] = []
         try:
+            if path not in self.enc:
+                self.enc[path] = _sniff_encoding(path)
             with open(path, "rb") as f:
                 f.seek(off)
                 chunk = f.read(size - off)
             self.offsets[path] = size
         except OSError:
             return []
-        text = self.partial.get(path, "") + chunk.decode("utf-8",
-                                                         errors="replace")
+        enc = self.enc.get(path, "utf-8")
+        text = self.partial.get(path, "") + chunk.decode(
+            "utf-8" if enc == "utf-8-sig" and off else enc, errors="replace")
         lines = text.split("\n")
         self.partial[path] = lines.pop() if not text.endswith("\n") else ""
+        if skip_first and lines:
+            lines = lines[1:]                        # 중간에서 잘린 첫 줄
+        fname = os.path.basename(path)
+        meta = self.meta.setdefault(path, {"lines": 0, "last_ts": 0.0})
+        meta["size"] = size
+        meta["lines"] += len(lines)
         if cat == "batchrun":
             for ln in lines:
                 for ts, tt, script in iter_batchrun_line(ln):
                     events.append(Event(ts=ts, ts_text=tt, kind="BATCH",
                                         name=script))
+                    meta["last_ts"] = ts
+                    if line_hook is not None:
+                        line_hook(ts, fname, "", ln.strip())
             return events
         for ln in lines:
             ln = ln.rstrip("\r")
             m = _TS_RE.match(ln)
             if not m:
+                # 콜스택 등 연속 줄 — 패턴 검사만 (직전 레코드 시각 사용)
+                if line_hook is not None and ln.strip() and path in self.last_ts:
+                    line_hook(self.last_ts[path], fname, "", ln)
                 continue
             yy, mo, dd, hh, mi, ss, ms = m.groups()
             tm = _TAG_RE.match(ln[m.end():])
@@ -411,13 +647,19 @@ class TailReader:
                                  int(ss), int(ms) * 1000).timestamp()
             except (ValueError, OverflowError, OSError):
                 continue
+            self.last_ts[path] = ts
+            meta["last_ts"] = ts
+            if line_hook is not None:
+                line_hook(ts, fname, level, ln)
             rec = LogRecord(ts=ts, ts_text=f"{hh}:{mi}:{ss}.{ms}", level=level,
                             header=header, obj_id=obj, msg=msg, line_no=0)
-            ev = self.ex._match(rec, rules)
+            ev = self.ex._match(rec, rules) if rules else None
             if ev is None and rec.level == "Error":
                 ev = Event(ts=rec.ts, ts_text=rec.ts_text, kind="ERROR",
                            extra=rec.msg[:300])
             if ev is not None:
+                if keep_kinds is not None and ev.kind not in keep_kinds:
+                    continue
                 if cat == "comm" and ev.kind == "COMM_MSG":
                     Extractor._enrich_comm(ev)
                 events.append(ev)
@@ -476,6 +718,7 @@ class GpuMonitor:
             else False
         self._last_rec = 0.0
         self.last: list[dict] = []      # 상태 페이지용 최신 샘플
+        self.hist: deque = deque(maxlen=120)   # (ts, 샘플) — 사건 분석 근거용 약 40분
 
     def poll(self, now: float):
         if not self.available:
@@ -484,6 +727,7 @@ class GpuMonitor:
         if not gpus:
             return
         self.last = gpus
+        self.hist.append((now, gpus))
         limit = self.cfg.get("celsius", 85)
         for g in gpus:
             if g["temp"] >= limit:
@@ -524,8 +768,25 @@ def _lower_priority():
 
 
 # ---------------------------------------------------------------------------
+def _agent_status_html(agent) -> str:
+    """상태 페이지의 '최근 사건 분석' 표 (에이전트가 없으면 빈 문자열)."""
+    if agent is None:
+        return ""
+    import html as _html
+    esc = _html.escape
+    rows = "".join(
+        f"<tr><td>{esc(r['time'] or '')}</td><td>{esc(r['severity'])}</td>"
+        f"<td>{esc(r['title'])}</td><td>{esc(r['cause'])}</td><td>{esc(r['mode'])}</td>"
+        f"<td>{esc(r['email'])}</td></tr>"
+        for r in reversed(agent.status_rows()[-8:])) or \
+        "<tr><td colspan='6' style='color:#2e7d32'>분석한 사건 없음</td></tr>"
+    return ("<h3 style=\"font-size:15px\">최근 사건 분석 (최대 8건)</h3><table><thead><tr>"
+            "<th>시각</th><th>심각도</th><th>사건</th><th>원인(룰)</th><th>판단</th>"
+            f"<th>메일</th></tr></thead><tbody>{rows}</tbody></table>")
+
+
 def _write_status(cfg: dict, notifier: Notifier, gpu: "GpuMonitor",
-                  started: float):
+                  started: float, agent=None):
     """현장 모니터용 상태 페이지(status.html)를 갱신한다 (30초 자동 새로고침)."""
     now = dt.datetime.now()
     site = cfg.get("site") or "(사이트 미지정)"
@@ -552,6 +813,7 @@ th{{background:#f0f4fa}} .meta{{color:#555;font-size:13px;margin:6px 0}}</style>
 <h3 style="font-size:15px">최근 경보 (최대 15건)</h3>
 <table><thead><tr><th>시각</th><th>심각도</th><th>제목</th><th>내용</th></tr></thead>
 <tbody>{rows}</tbody></table>
+{_agent_status_html(agent)}
 <div class="meta">기록: {notifier.alert_dir}\\alerts_*.jsonl · 이 페이지는
 talog watch 가 자동 갱신합니다</div></body></html>"""
     try:
@@ -585,17 +847,13 @@ def _llm_review(cfg: dict, engine: RuleEngine, notifier: Notifier):
               f'{{"alert": true|false, "severity": "info|warn|crit", '
               f'"summary": "<한국어 한 문장>"}}\n\n'
               f"[감시 지시문]\n{script}\n\n[현재 상태]\n{ctx}")
-    options = {"temperature": 0.1}
-    if llm.get("device", "cpu") == "cpu":
-        options["num_gpu"] = 0                    # 검사 GPU 를 쓰지 않음
     try:
-        from .ask import _http_json, _OLLAMA
-        r = _http_json(f"{_OLLAMA}/api/chat",
-                       {"model": llm.get("model", "qwen2.5:7b"),
-                        "stream": False, "options": options,
-                        "messages": [{"role": "user", "content": prompt}]},
-                       {}, timeout=300)
-        text = r.get("message", {}).get("content", "")
+        # 주소·장치(cpu/gpu/auto)·스레드 상한은 사건 분석과 같은 llm 설정을 쓴다
+        from .llm import OllamaClient
+        r = OllamaClient(llm).chat([{"role": "user", "content": prompt}])
+        if r["error"]:
+            raise RuntimeError(r["error"])
+        text = r["content"]
         import re as _re
         m = _re.search(r"\{.*\}", text, _re.S)
         if m:
@@ -614,59 +872,189 @@ def _llm_review(cfg: dict, engine: RuleEngine, notifier: Notifier):
 
 
 # ---------------------------------------------------------------------------
+def _make_agent(cfg: dict, engine: RuleEngine, notifier: Notifier, gpu=None,
+                replay: bool = False, day_dir: str = ""):
+    """agent.enabled 또는 email.enabled 이면 사건 분석/메일 에이전트를 붙인다."""
+    if not (cfg.get("agent", {}).get("enabled") or cfg.get("email", {}).get("enabled")):
+        return None
+    from .agent import IncidentAgent
+    from .mailer import Mailer
+    mailer = Mailer(cfg, notifier.alert_dir, replay=replay)
+    if replay:
+        def day_fn():
+            return day_dir
+    else:
+        def day_fn():
+            return _today_dir(cfg["watch_root"])
+    agent = IncidentAgent(cfg, engine, notifier.alert_dir, day_fn, gpu=gpu,
+                          mailer=mailer, replay=replay)
+    notifier.listeners.append(agent.submit)
+    a, llm, e = cfg["agent"], cfg["llm"], cfg["email"]
+    parts = []
+    if a.get("enabled"):
+        parts.append("사건 분석 " + (f"룰+LLM({llm.get('model')}, {llm.get('device')}, "
+                                     f"{llm.get('url')})" if a.get("use_llm", True)
+                                     else "룰만"))
+    if e.get("enabled"):
+        parts.append("메일 " + ("outbox 만(리플레이/dry_run)" if mailer.dry_run else
+                               f"{e.get('smtp_host')}:{e.get('smtp_port')} → "
+                               f"{len(mailer.recipients(list((e.get('roles') or {}).keys())))}명"))
+    print(f"[talog watch] 에이전트: {' / '.join(parts)} — 기준 심각도 "
+          f"{a.get('min_severity', 'crit')}, 묶음 {a.get('batch_seconds', 60)}초")
+    return agent
+
+
+# select/auto 모드에서 룰 엔진으로 넘길 이벤트 종류 (대용량 계측 이벤트 제외)
+_ENGINE_KINDS = frozenset((
+    "ERROR", "EXC_REDIRECT", "MODEL_FAIL", "CRASH", "COMM_FAIL", "RECIPE_FAIL",
+    "INSP_START", "INSP_REJECT", "REJECT_BUSYCAM", "REJECT_NOTREADY", "REJECT_SIM",
+    "GRAB_FAIL", "IMG_TIMEOUT", "ALG_TIMEOUT", "STORAGE_LOW", "LIGHT_UNSTABLE",
+    "COMM_MSG", "POOL_CREATE", "POOL_DESTROY", "USAGE", "BATCH", "EXC_SAFE"))
+
+
+class LiveWatch:
+    """실시간 감시 1개 인스턴스 — CLI 상주 루프와 콘솔(UI) 작업 스레드가 같이 쓴다."""
+
+    def __init__(self, cfg: dict, stop_event: threading.Event | None = None):
+        self.cfg = cfg
+        self.stop = stop_event or threading.Event()
+        if cfg.get("low_priority", True):
+            _lower_priority()
+        self.notifier = Notifier(cfg)         # alert_dir 생성/폴백은 Notifier 가 담당
+        self.engine = RuleEngine(cfg, self.notifier)
+        tc = cfg.get("tracking") or {}
+        self.mode = str(tc.get("mode", "default") or "default").lower()
+        self.tail = TailReader(
+            os.path.join(self.notifier.alert_dir, "watch_state.json"),
+            max_initial_mb=tc.get("max_initial_mb", 32) if self.mode != "default" else 0)
+        self.keep = None if self.mode == "default" else _ENGINE_KINDS
+        self.gpu = GpuMonitor(cfg, self.notifier)
+        self.gpu.alert_dir = self.notifier.alert_dir   # 폴백 경로 일원화
+        self.llm_every = cfg["llm"].get("interval_min", 30) * 60
+        self.last_llm = 0.0
+        self.started = time.time()
+        self.last_status = 0.0
+        self.fail_streak = 0
+        self.day_dir = ""
+        self.targets: list[str] = []
+        print(f"[talog watch] 감시 시작: {cfg['watch_root']} "
+              f"(주기 {cfg['poll_seconds']}s, 추적 {self.mode}, 알림 → "
+              f"{self.notifier.alert_dir}, GPU 온도 감시 "
+              f"{'ON' if self.gpu.available else 'OFF(nvidia-smi 없음)'})")
+        if self.engine.patterns.active:
+            print(f"[talog watch] 사용자 패턴 {len(self.engine.patterns.rules)}개: "
+                  + ", ".join(r.name for r in self.engine.patterns.rules))
+        self.agent = _make_agent(cfg, self.engine, self.notifier, gpu=self.gpu)
+
+    def step(self):
+        cfg, engine = self.cfg, self.engine
+        self.day_dir = _today_dir(cfg["watch_root"])
+        if os.path.isdir(self.day_dir):
+            self.targets = resolve_targets(self.day_dir, cfg.get("tracking"))
+            hook = engine.patterns.feed if engine.patterns.active else None
+            for p in self.targets:
+                for e in self.tail.poll_file(p, line_hook=hook, keep_kinds=self.keep):
+                    engine.feed(e)
+            engine.evaluate(time.time())
+            self.tail.save()
+        else:
+            self.targets = []
+        self.gpu.poll(time.time())
+        if self.agent is not None:
+            self.agent.tick(time.time())      # 묶음 마감 → 작업 스레드가 분석·발송
+        if time.time() - self.last_status >= 30:
+            self.last_status = time.time()
+            _write_status(cfg, self.notifier, self.gpu, self.started, self.agent)
+        if cfg["llm"].get("enabled") and time.time() - self.last_llm > self.llm_every:
+            self.last_llm = time.time()
+            _llm_review(cfg, engine, self.notifier)
+
+    def run(self, once: bool = False) -> int:
+        while not self.stop.is_set():
+            try:
+                self.step()
+                self.fail_streak = 0
+            except Exception as e:
+                # 상주 감시는 단발 예외로 죽어선 안 된다 — 다음 주기에 재시도
+                self.fail_streak += 1
+                print(f"! 감시 주기 오류(계속, {self.fail_streak}회): {e}")
+                if self.fail_streak >= 30:
+                    print("! 오류가 30주기 연속 — 환경 문제로 판단하고 종료합니다. "
+                          "talog watch --check 로 점검하십시오.")
+                    return 1
+            if once:
+                if self.agent is not None:
+                    # 1회 스캔 모드: 묶음을 바로 마감하고 분석·발송이 끝날 때까지 기다린다
+                    self.agent.flush(
+                        time.time(),
+                        wait=float(self.cfg["llm"].get("timeout_s", 600)) * 3 + 60)
+                    _write_status(self.cfg, self.notifier, self.gpu, self.started,
+                                  self.agent)
+                break
+            self.stop.wait(self.cfg["poll_seconds"])
+        if self.agent is not None and self.stop.is_set():
+            self.agent.close()                    # 콘솔 재시작 시 작업 스레드 정리
+        return 0
+
+    def snapshot(self) -> dict:
+        """콘솔 표시용 현재 상태 (추적 파일·최근 경보·GPU·사건)."""
+        files = []
+        for p in list(self.targets):
+            m = self.tail.meta.get(p, {})
+            try:
+                size = os.path.getsize(p)
+            except OSError:
+                size = 0
+            fi = classify(p)
+            files.append({"name": os.path.relpath(p, self.day_dir) if self.day_dir else p,
+                          "size": size, "offset": self.tail.offsets.get(p, 0),
+                          "last": (dt.datetime.fromtimestamp(m["last_ts"]).strftime("%H:%M:%S")
+                                   if m.get("last_ts") else None),
+                          "lines": m.get("lines", 0),
+                          "category": fi.category if fi else ""})
+        alerts = [{"time": dt.datetime.fromtimestamp(a.ts).strftime("%m/%d %H:%M:%S"),
+                   "severity": a.severity, "rule": a.rule, "title": a.title,
+                   "evidence": a.evidence} for a in self.notifier.sent[-60:]]
+        return {"running": not self.stop.is_set(), "started": self.started,
+                "day_dir": self.day_dir, "mode": self.mode, "files": files,
+                "alerts": alerts[::-1], "gpu": list(self.gpu.last),
+                "incidents": self.agent.status_rows()[::-1] if self.agent else [],
+                "pattern_errors": list(self.engine.patterns.errors),
+                "alert_dir": self.notifier.alert_dir}
+
+
 def run_live(cfg: dict, once: bool = False) -> int:
-    if cfg.get("low_priority", True):
-        _lower_priority()
-    notifier = Notifier(cfg)                  # alert_dir 생성/폴백은 Notifier 가 담당
-    engine = RuleEngine(cfg, notifier)
-    tail = TailReader(os.path.join(notifier.alert_dir, "watch_state.json"))
-    gpu = GpuMonitor(cfg, notifier)
-    gpu.alert_dir = notifier.alert_dir        # 폴백 경로 일원화
-    llm_every = cfg["llm"].get("interval_min", 30) * 60
-    last_llm = 0.0
-    print(f"[talog watch] 감시 시작: {cfg['watch_root']} "
-          f"(주기 {cfg['poll_seconds']}s, 알림 → {notifier.alert_dir}, "
-          f"GPU 온도 감시 {'ON' if gpu.available else 'OFF(nvidia-smi 없음)'})")
-    fail_streak = 0
-    started = time.time()
-    last_status = 0.0
-    while True:
-        try:
-            day_dir = _today_dir(cfg["watch_root"])
-            if os.path.isdir(day_dir):
-                for name in _WATCH_FILES:
-                    p = os.path.join(day_dir, name)
-                    # 대소문자 변형(Comm.log 등) 대응
-                    if not os.path.exists(p):
-                        for cand in os.listdir(day_dir):
-                            if cand.lower() == name:
-                                p = os.path.join(day_dir, cand)
-                                break
-                    if os.path.exists(p):
-                        for e in tail.poll_file(p):
-                            engine.feed(e)
-                engine.evaluate(time.time())
-                tail.save()
-            gpu.poll(time.time())
-            if time.time() - last_status >= 30:
-                last_status = time.time()
-                _write_status(cfg, notifier, gpu, started)
-            if cfg["llm"].get("enabled") and time.time() - last_llm > llm_every:
-                last_llm = time.time()
-                _llm_review(cfg, engine, notifier)
-            fail_streak = 0
-        except Exception as e:
-            # 상주 감시는 단발 예외로 죽어선 안 된다 — 다음 주기에 재시도
-            fail_streak += 1
-            print(f"! 감시 주기 오류(계속, {fail_streak}회): {e}")
-            if fail_streak >= 30:
-                print("! 오류가 30주기 연속 — 환경 문제로 판단하고 종료합니다. "
-                      "talog watch --check 로 점검하십시오.")
-                return 1
-        if once:
-            break
-        time.sleep(cfg["poll_seconds"])
-    return 0
+    return LiveWatch(cfg).run(once=once)
+
+
+def _replay_file(fi, ex: Extractor, pat, keep) -> list[Event]:
+    """리플레이용 1회 읽기: 룰 이벤트 + 사용자 패턴에 걸린 줄(kind=LINE)."""
+    from .lineparser import iter_batchrun, iter_records
+    fname = os.path.basename(fi.path)
+    out: list[Event] = []
+    if fi.category == "batchrun":
+        for ts, tt, script in iter_batchrun(fi.path):
+            out.append(Event(ts=ts, ts_text=tt, kind="BATCH", name=script))
+            if pat.active and pat.prefilter(fname, "", script):
+                out.append(Event(ts=ts, ts_text=tt, kind="LINE", name=fname,
+                                 extra=script))
+        return out
+    rules = ex.rules.get(fi.category, [])
+    for rec in iter_records(fi.path):
+        if pat.active:
+            line = f"{rec.ts_text}\t[{rec.level}][{rec.header}][{rec.obj_id}]\t{rec.msg}"
+            if pat.prefilter(fname, rec.level, line):
+                out.append(Event(ts=rec.ts, ts_text=rec.ts_text, kind="LINE",
+                                 name=fname, level=rec.level, extra=line[:600]))
+        ev = ex._match(rec, rules) if rules else None
+        if ev is None and rec.level == "Error":
+            ev = Event(ts=rec.ts, ts_text=rec.ts_text, kind="ERROR", extra=rec.msg[:500])
+        if ev is None or (keep is not None and ev.kind not in keep):
+            continue
+        if fi.category == "comm" and ev.kind == "COMM_MSG":
+            Extractor._enrich_comm(ev)
+        out.append(ev)
+    return out
 
 
 def run_replay(cfg: dict, day_dir: str) -> int:
@@ -679,30 +1067,52 @@ def run_replay(cfg: dict, day_dir: str) -> int:
     engine = RuleEngine(cfg, notifier)
     ex = Extractor()
     events: list[Event] = []
-    for name in os.listdir(day_dir):
-        if name.lower() not in _WATCH_FILES:
-            continue
-        fi = classify(os.path.join(day_dir, name))
+    tc = cfg.get("tracking") or {}
+    mode = str(tc.get("mode", "default") or "default").lower()
+    pat = engine.patterns
+    # 같은 시각 이벤트의 순서를 예전(폴더 나열 순)과 같게 둔다
+    for path in sorted(resolve_targets(day_dir, tc),
+                       key=lambda p: os.path.basename(p).upper()):
+        fi = classify(path)
         if fi is None:
             continue
         try:
-            evs, _n = ex.extract_file(fi, 0)
+            if mode == "default" and not pat.active:
+                evs, _n = ex.extract_file(fi, 0)       # 기존 경로 그대로
+            else:
+                evs = _replay_file(fi, ex, pat, None if mode == "default"
+                                   else _ENGINE_KINDS)
             events.extend(evs)
-        except OSError:
+        except (OSError, ValueError, UnicodeError):
             continue
     events.sort(key=lambda e: e.ts)
     if not events:
         print("이벤트 없음")
         return 1
+    # 사건 분석·메일도 이벤트 시각 기준으로 재생한다 (메일은 SMTP 없이 outbox_replay 에만)
+    agent = _make_agent(cfg, engine, notifier, replay=True, day_dir=day_dir)
     next_eval = events[0].ts
     for e in events:
-        engine.feed(e)
+        if agent is not None:
+            # 묶음 마감 시각이 지났으면 그 시각의 상태로 마감한다 (다음 이벤트가
+            # 한참 뒤여도 '미래' 로그가 근거에 섞이지 않게)
+            due = agent.due()
+            if due is not None and due <= e.ts:
+                agent.tick(due)
+        if e.kind == "LINE":                      # 사용자 패턴에 걸린 원문 줄
+            pat.feed(e.ts, e.name, e.level, e.extra)
+        else:
+            engine.feed(e)
         if e.ts >= next_eval:                     # 20초 간격 판정 시뮬레이션
             engine.evaluate(e.ts)
             next_eval = e.ts + 20
     engine.evaluate(events[-1].ts)
+    if agent is not None:
+        agent.flush(agent.due() or events[-1].ts)
     print(f"[talog watch] 리플레이 완료 — 이벤트 {len(events):,}개, "
-          f"경보 {len(notifier.sent)}건")
+          f"경보 {len(notifier.sent)}건"
+          + (f", 사건 분석 {agent.processed}건 → {notifier.alert_dir}\\"
+             f"incidents_*_replay.jsonl" if agent is not None else ""))
     return 0
 
 
@@ -720,17 +1130,21 @@ def run_check(cfg: dict) -> int:
     day = _today_dir(root)
     if os.path.isdir(day):
         print(f"[2] 오늘 날짜 폴더: {day} → 존재")
+        tc = cfg.get("tracking") or {}
+        mode = str(tc.get("mode", "default")).lower()
         found = []
-        for name in _WATCH_FILES:
-            for cand in os.listdir(day):
-                if cand.lower() == name:
-                    sz = os.path.getsize(os.path.join(day, cand))
-                    found.append(f"{cand} ({sz / 1024:.0f}KB)")
-        print(f"[3] 감시 대상 파일 {len(found)}/{len(_WATCH_FILES)}종 발견:")
-        for f in found:
+        for p in resolve_targets(day, tc):
+            sz = os.path.getsize(p)
+            found.append(f"{os.path.relpath(p, day)} ({sz / 1024:.0f}KB)")
+        want = (f"/{len(_WATCH_FILES)}종" if mode == "default" else "개")
+        print(f"[3] 추적 모드 {mode} — 대상 파일 {len(found)}{want} 발견:")
+        for f in found[:30]:
             print(f"     - {f}")
+        if len(found) > 30:
+            print(f"     … 외 {len(found) - 30}개")
         if not found:
-            print("     ! 감시 대상 파일이 없습니다 — talos 가동 여부를 확인하십시오")
+            print("     ! 감시 대상 파일이 없습니다 — talos 가동 여부나 tracking.files 를 "
+                  "확인하십시오")
     else:
         print(f"[2] 오늘 날짜 폴더 없음: {day}")
         print("     ! talos 가 오늘 아직 기동되지 않았거나 경로 설정이 다릅니다")
@@ -755,16 +1169,54 @@ def run_check(cfg: dict) -> int:
     print(f"[6] 사이트: '{cfg.get('site') or '(미설정 — watch.yaml 에서 지정 권장)'}'"
           f" / 웹훅: {'설정됨' if cfg['notify'].get('webhook') else '없음(토스트/JSONL만)'}")
 
-    if cfg["llm"].get("enabled"):
-        alive = False
-        try:
-            with urllib.request.urlopen(f"{_OLLAMA_TAGS}", timeout=3):
-                alive = True
-        except OSError:
-            pass
-        print(f"[7] LLM 점검 모드: 활성 / Ollama {'가동 중' if alive else '미가동!'}")
+    llm_cfg, a_cfg, e_cfg = cfg["llm"], cfg["agent"], cfg["email"]
+    need_llm = llm_cfg.get("enabled") or (a_cfg.get("enabled") and a_cfg.get("use_llm", True))
+    if need_llm:
+        from .llm import OllamaClient, resolve_device
+        cli = OllamaClient(llm_cfg)
+        alive = cli.alive()
+        has = cli.model in cli.models() if alive else False
+        dev, why = resolve_device(llm_cfg)
+        print(f"[7] LLM: {cli.url} {'가동 중' if alive else '미가동!'} · 모델 {cli.model} "
+              f"{'설치됨' if has else '없음!(ollama pull 필요)'} · 장치 설정 "
+              f"{llm_cfg.get('device')} → 지금은 {dev} ({why})"
+              + (f" · 주기 점검 {llm_cfg.get('interval_min')}분" if llm_cfg.get("enabled")
+                 else ""))
+        ok &= alive and has
     else:
-        print("[7] LLM 점검 모드: 비활성 (기본)")
+        print("[7] LLM: 비활성 (기본)")
+    dw = cfg["rules"].get("defect_watch", {})
+    print(f"[7b] 결함명 감시: 치명 {len(dw.get('critical') or [])}종"
+          f"{' ' + str(dw.get('critical')) if dw.get('critical') else ''} · 빈발 "
+          f"{dw.get('repeat_count') or '끔'}"
+          f"{'건/' + str(dw.get('repeat_window_min')) + '분' if dw.get('repeat_count') else ''}"
+          f" · 연속 NG {dw.get('ng_streak') or '끔'} · NG 비율 "
+          f"{str(dw.get('ng_rate_percent')) + '%/' + str(dw.get('ng_rate_window')) + '검사' if dw.get('ng_rate_window') else '끔'}")
+    print(f"[7c] 사건 분석 에이전트: {'활성' if a_cfg.get('enabled') else '비활성'}"
+          + (f" (기준 {a_cfg.get('min_severity')}, 묶음 {a_cfg.get('batch_seconds')}초, "
+             f"{'룰+LLM' if a_cfg.get('use_llm', True) else '룰만'})"
+             if a_cfg.get("enabled") else ""))
+    if e_cfg.get("enabled"):
+        from .mailer import Mailer
+        m = Mailer(cfg, cfg["alert_dir"])
+        to_all = m.recipients(list((e_cfg.get("roles") or {}).keys()))
+        if m.dry_run:
+            print(f"[7d] 이메일: dry_run — SMTP 없이 {m.outbox} 에 .eml 만 저장 "
+                  f"(수신자 {len(to_all)}명 설정)")
+        else:
+            env = e_cfg.get("password_env") or "TALOG_SMTP_PASSWORD"
+            pw = ("설정됨" if os.environ.get(env) else "없음!") if e_cfg.get("username") \
+                else "인증 없음(사내 릴레이)"
+            good, detail = m.check()
+            print(f"[7d] 이메일: {e_cfg.get('smtp_host')}:{e_cfg.get('smtp_port')} "
+                  f"{e_cfg.get('security')} · 비밀번호 환경변수 {env} {pw} · 수신자 "
+                  f"{len(to_all)}명 · 접속 {'OK' if good else '실패'} ({detail})")
+            ok &= good and bool(to_all)
+            if not to_all:
+                print("     ! email.to / email.roles 에 받는 사람을 적으십시오")
+        print("     실제 발송 확인: talog watch --test-email --config <watch.yaml>")
+    else:
+        print("[7d] 이메일: 비활성 (기본)")
 
     gpus = _query_gpu()
     if gpus:
@@ -784,7 +1236,25 @@ def run_check(cfg: dict) -> int:
     return 0 if ok else 1
 
 
-_OLLAMA_TAGS = "http://localhost:11434/api/tags"
+def run_test_email(cfg: dict) -> int:
+    """예시 사건 메일 1통을 설정된 경로로 보낸다 (dry_run 이면 outbox 에만)."""
+    from .mailer import Mailer, sample_incident
+    if not cfg["email"].get("enabled"):
+        print("email.enabled 가 false 입니다 — watch.yaml 의 email 항목을 먼저 설정하십시오.")
+        return 2
+    notifier = Notifier(cfg, replay=True)            # alert_dir 폴백만 빌려 쓴다
+    m = Mailer(cfg, notifier.alert_dir)
+    inc = sample_incident(cfg.get("site") or "설비")
+    inc["verdict"]["notify"] = list((cfg["email"].get("roles") or {}).keys())
+    res = m.send_incident(inc)
+    print(f"[talog watch] 테스트 메일: 수신 {res['to'] or '(없음)'} · 제목 {res['subject']}")
+    if res["eml"]:
+        print(f"  보관: {res['eml']}")
+    if res["dry_run"]:
+        print("  dry_run — SMTP 로 보내지 않았습니다 (email.dry_run: false 로 실제 발송)")
+        return 0
+    print("  → 발송 " + ("성공" if res["sent"] else f"실패: {res['error']}"))
+    return 0 if res["sent"] else 1
 
 
 def main(argv=None) -> int:
@@ -798,15 +1268,30 @@ def main(argv=None) -> int:
     ap.add_argument("--replay", default="", help="과거 일자 폴더 재생 검증")
     ap.add_argument("--check", action="store_true",
                     help="설치 자가 점검 (경로·파일·알림 테스트)")
+    ap.add_argument("--test-email", action="store_true",
+                    help="예시 사건 메일 1통 발송 (email 설정 확인)")
+    ap.add_argument("--ui", action="store_true",
+                    help="로컬 웹 콘솔로 감시 (설정·상태·테스트, http://127.0.0.1:8778)")
+    ap.add_argument("--port", type=int, default=8778, help="콘솔 포트 (--ui)")
+    ap.add_argument("--no-open", action="store_true", help="콘솔 브라우저 자동 열기 끔")
     args = ap.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(errors="replace")
         except Exception:
             pass
+    if args.ui:
+        from .console import serve
+        try:
+            return serve(args.config, port=args.port, open_browser=not args.no_open)
+        except OSError as e:
+            print(f"[talog 콘솔] 포트 {args.port} 사용 불가 — --port 로 바꾸십시오 ({e})")
+            return 1
     cfg = load_config(args.config)
     if args.check:
         return run_check(cfg)
+    if args.test_email:
+        return run_test_email(cfg)
     if args.replay:
         return run_replay(cfg, args.replay)
     return run_live(cfg, once=args.once)

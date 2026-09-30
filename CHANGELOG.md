@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.10.0 (2026-09-29) — watch 사건 분석 에이전트 · 이메일 · 웹 콘솔
+
+- **경보 사건 분석 에이전트** (`talog/agent.py`, 런북 `talog/rules/runbook.yaml`):
+  경보를 사건으로 묶고 근거(경보 순간의 진행 중 검사·소요·투입 간격·재시작·
+  타임아웃·에러·NG 분포·nvidia-smi, 사건 시점에만 DLInfer.log 꼬리 조사)를 모아
+  ① 룰 진단(원인 id 결정적 판정) ② 로컬 LLM(Ollama, Qwen) 2차 의견(런북 문단을
+  읽고 닫힌 어휘로 서술→JSON 2단계)을 낸 뒤 **합의 관문**으로 판단 일치/불일치를
+  가른다. LLM 알림 문구의 숫자·시각은 근거와 기계 대조, 한자 누출은 1회 재요청
+  (Robot_Sim 운영 에이전트 벤치 결론 이식: 규칙이 LLM 보다 정확, LLM 단독은
+  해로운 조치 36% → 교차 확인 뒤에만 사용)
+- **원인 판정 실검증**: PC3 0727 09:28 NoInspThread = 처리량 포화(경보 순간 슬롯
+  2개 점유), Tenneco 0730 11:21 = GPU 컨텍스트 치명 오류(enqueueV3 38건·SEH 24건),
+  기존 `restart_burst` 가 재시작 1회를 풀 생성 로그 5줄로 5회 세는 오경보는
+  "오경보 의심"으로 강등해 메일 차단
+- **결함명 감시** (`rules.defect_watch`): 치명 결함명(와일드카드) 1건 즉시 심각,
+  동일 결함 빈발(N건/분), 연속 NG, NG 비율 — 다존 설비는 inner 단위 NG 스티키.
+  NoInspThread 를 comm.log 설비 회신(INSPECT_START_ACK)으로도 감지(중복 발보 없음)
+- **추적 모드** (`tracking.mode`): default(기존 핵심 9종) / select(파일·와일드카드,
+  alg\ 하위 지정 가능) / auto(일자 폴더 전체, 제외 목록). 처음 보는 큰 파일은
+  끝부분부터 읽음, 파일 인코딩 자동 판별
+- **사용자 정의 로그 패턴** (`rules.patterns`): 문구/정규식(`re:`)·파일·레벨·등급·
+  "N분 내 N회"(1 = 즉시)·재경보 간격·분석 계열. 리플레이에도 적용
+- **기본 룰 조정** (`rules.overrides`): 룰별 켜기·등급 변경·발생 횟수 문턱
+- **이메일** (`talog/mailer.py`): SMTP(STARTTLS/SSL/사내 릴레이), 역할별 수신자
+  라우팅, **심각 등급 즉시 발송(룰 판단) + LLM 2차 의견 후속 메일(같은 스레드)**,
+  주의 등급 묶음 발송·최소 간격·시간당 상한, .eml outbox 보관, dry_run, 근거 JSON
+  첨부. 비밀번호는 환경변수 또는 Windows DPAPI 암호문(`talog/secret.py`)으로만
+- **LLM 장치 선택** (`talog/llm.py`): cpu(num_gpu=0·스레드 상한) / gpu / auto(요청마다
+  nvidia-smi 여유 VRAM·사용률로 선택), 서버 주소·keep_alive·think 설정.
+  기존 LLM 주기 점검도 같은 설정 사용
+- **웹 콘솔** `talog watch --ui` (`talog/console.py`, `console.html`, `run_console.bat`):
+  상태·추적 파일 선택·경보 규칙·LLM(속도 시험)·이메일(프리셋·인증 확인·테스트
+  메일)·사건 기록(메일 미리보기)·리플레이·실행 로그. 127.0.0.1 전용, POST 는 세션
+  토큰·Host 확인, 저장 시 watch.yaml 백업(.bak) 후 주석 포함 재작성·감시 재시작
+- `--test-email`(예시 사건 메일 발송), `--check` 에 LLM·결함명·에이전트·SMTP 점검 추가,
+  상태 페이지(status.html)에 최근 사건 분석 표
+- **수정: restart_burst 과대 계수** — 기동 1회에 생성되는 WorkerThreadPool 5종 로그를 재시작
+  5회로 세던 문제. 30초 안의 흔적은 1회로 병합(build_process_gens 와 같은 규칙).
+  재생 비교: PC3 0727 8→5건(남은 5건은 실제 재시작 3~4회), c1xx 0729 2→0건, Tenneco 0730 23→9건
+- **수정: insp_stall 경보 폭주** — 진행 중 inner 마다 따로 내던 정체 경보를 한 경보(가장 오래된
+  inner + 정체 건수)로 묶고 `insp_stall.cooldown_min`(기본 10분) 적용. Tenneco 0730 재생 402→1건
+- **수정: 거부된 검사의 진행 중 잔류** — NoInspThread 거부 라인 직전의 대기 스레드 0 도착 검사를
+  진행 중 목록에서 제거(남으면 몇 분 뒤 거짓 정체 경보). 도착 라인이 없는 신형 사이트는 영향 없음
+- 테스트 27개 추가 (로컬 SMTP 수신기·가짜 Ollama·가짜 Graph 서버·콘솔 HTTP 포함)
+
+
 ## 1.9.3 (2026-09-08)
 
 - **수정: 정상 완료 검사가 '시작 거부'로 오분류**되던 문제 — 거부 라인

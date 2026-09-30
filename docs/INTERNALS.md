@@ -68,7 +68,36 @@ talog/
   store.py         SQLite 스키마
   report.py        단일 파일 HTML 리포트
   cli.py           CLI
+  watch.py         상주 감시 (LiveWatch: tail → RuleEngine → Notifier → 에이전트)
+  tracker.py       추적 대상 선택(default/select/auto) + 사용자 정의 패턴 엔진
+  agent.py         사건 분석: 근거 수집 → 룰 진단 → LLM 2차 의견 → 합의 관문 → 숫자 대조
+  rules/runbook.yaml  원인·조치·담당 런북 (LLM 이 읽는 원인 설명 포함)
+  llm.py           Ollama 클라이언트 (cpu/gpu/auto 장치 선택, keep_alive, think)
+  mailer.py        SMTP 발송 (즉시/묶음 정책, 역할 라우팅, 후속 메일 스레드, outbox)
+  secret.py        SMTP 비밀번호 DPAPI 암호화
+  console.py       로컬 웹 콘솔 서버 (console.html) — 127.0.0.1, 토큰·Host 확인
 ```
+
+## watch 사건 분석 흐름 (v1.10)
+
+```
+TailReader(추적 모드) ─줄→ PatternEngine ─┐
+             └─이벤트→ RuleEngine(기본 룰·결함명) ─→ Notifier(overrides·쿨다운)
+                                                  ├→ 토스트/웹훅/JSONL
+                                                  └→ IncidentAgent.submit
+IncidentAgent: 묶음(심각=즉시 10초 / 그 밖=batch_seconds·메일 간격)
+  → 경보 순간 검사 상태 사본 + 근거 스냅샷(메인 스레드)
+  → 작업 스레드: GpuLogProbe(DLInfer 꼬리) → RuleDiagnoser → [즉시면 룰 판단 메일]
+     → LLMAnalyst(서술→JSON 스키마, 한자 재요청) → gate(일치/불일치/오경보) → 후속 메일
+  → incidents_YYYYMMDD.jsonl
+```
+
+- 원인 id 는 런북과 코드(RuleDiagnoser)가 짝이다. 새 원인은 런북 문단 + 판정 코드를
+  같이 추가한다(LLM 만 쓰는 원인은 문단만으로도 동작하지만 합의 관문에서 늘 불일치가 된다).
+- 근거의 검사 상태(진행 중·완료 소요)는 **경보 순간** 사본을 쓴다. 마감 전에 재시작이
+  끼면 RuleEngine.pending 이 비워지기 때문이다(PC3 0727 09:28 → 09:28:46 kill).
+- 리플레이는 같은 경로를 이벤트 시각으로 동기 실행하고, 묶음 마감 시각이 지나면 그 시각의
+  상태로 마감한다(다음 이벤트가 한참 뒤여도 '미래' 로그가 근거에 섞이지 않음).
 
 ## 파싱 명세 (요약)
 
