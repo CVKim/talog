@@ -138,13 +138,16 @@ def _http_json(url: str, payload: dict, headers: dict, timeout: int = 600) -> di
 class OllamaBackend:
     """Ollama /api/chat (tool calling 지원 모델: qwen2.5 등)."""
 
-    def __init__(self, model: str):
+    def __init__(self, model: str, url: str = _OLLAMA, options: dict | None = None):
         self.model = model
+        self.url = (url or _OLLAMA).rstrip("/")
+        self.options = options or {}          # 콘솔: 장치(cpu=num_gpu 0) 등 llm 설정
+        self.trace: list = []                 # (도구, 인자, 결과) — 콘솔이 근거·숫자 대조에 쓴다
 
     @staticmethod
-    def alive() -> bool:
+    def alive(url: str = _OLLAMA) -> bool:
         try:
-            with urllib.request.urlopen(f"{_OLLAMA}/api/tags", timeout=3):
+            with urllib.request.urlopen(f"{url.rstrip('/')}/api/tags", timeout=3):
                 return True
         except OSError:
             return False
@@ -159,10 +162,11 @@ class OllamaBackend:
                                       "parameters": t["input_schema"]}}
                         for t in _TOOLS_SPEC]
         for rnd in range(_MAX_ROUNDS):
-            r = _http_json(f"{_OLLAMA}/api/chat",
+            r = _http_json(f"{self.url}/api/chat",
                            {"model": self.model, "messages": msgs,
                             "tools": ollama_tools, "stream": False,
-                            "options": {"temperature": 0.1, "num_ctx": 16384}}, {})
+                            "options": {"temperature": 0.1, "num_ctx": 16384,
+                                        **self.options}}, {})
             msg = r.get("message", {})
             calls = msg.get("tool_calls") or []
             if not calls:
@@ -174,6 +178,7 @@ class OllamaBackend:
                     if verbose:
                         print(f"   [자동실행] {sql[:120]}")
                     result = tools.run("sql", {"query": sql})
+                    self.trace.append(("sql", {"query": sql}, result))
                     msgs.append({"role": "assistant", "content": content})
                     msgs.append({"role": "user",
                                  "content": f"[sql 실행 결과]\n{result}\n\n"
@@ -194,6 +199,7 @@ class OllamaBackend:
                 if verbose:
                     print(f"   [도구] {name} {json.dumps(args, ensure_ascii=False)[:140]}")
                 result = tools.run(name, args)
+                self.trace.append((name, args, result))
                 msgs.append({"role": "tool", "content": result, "name": name})
         return "(도구 호출 한도 초과 — 질문을 더 좁혀 주십시오)"
 
@@ -247,8 +253,29 @@ def _pick_db(target: str) -> str:
     return dbs[int(sel) - 1] if sel.isdigit() and 1 <= int(sel) <= len(dbs) else dbs[-1]
 
 
+def _schema_text(db_path: str) -> str:
+    """실제 DB 의 테이블·열 이름 (모델이 열 이름을 지어내지 않게 그대로 보여 준다)."""
+    try:
+        from urllib.request import pathname2url
+        con = sqlite3.connect(f"file:{pathname2url(os.path.abspath(db_path))}?mode=ro",
+                              uri=True)
+        try:
+            tabs = [r[0] for r in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+            lines = [f"- {t}({', '.join(r[1] for r in con.execute(f'PRAGMA table_info({t})'))})"
+                     for t in tabs]
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return ""
+    return ("\n## 이 DB 의 실제 열 이름 (이 이름만 쓸 것)\n" + "\n".join(lines) +
+            "\n- *_ts 는 epoch 초, 사람이 읽는 시각은 *_text 열(HH:MM:SS.mmm)을 그대로 인용한다."
+            "\n- 답의 숫자·시각·ID 는 sql 결과에 나온 값만 쓴다. 결과가 없거나 오류면 추측하지 말고 "
+            "다시 조회하거나 모른다고 답한다.\n")
+
+
 def _build_system(db_path: str) -> str:
-    parts = [AI_GUIDE]
+    parts = [AI_GUIDE, _schema_text(db_path)]
     diag = os.path.splitext(db_path)[0] + "_diagnosis.md"
     try:
         if os.path.exists(diag):

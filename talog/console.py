@@ -1,14 +1,19 @@
-"""talog watch 콘솔 — 로컬 웹 UI (상태·추적 파일·경보 규칙·LLM·이메일·사건·리플레이).
+"""talog 콘솔 — AI 비전 로그 운영 플랫폼의 로컬 웹 화면.
 
-사용:
-    talog watch --ui [--config watch.yaml] [--port 8778] [--no-open]
+    talog [--config talog.yaml] [--port 8778] [--no-open]
 
-- 실시간 감시(LiveWatch)를 작업 스레드로 돌린다. 설정을 저장하면 watch.yaml 을
-  .bak 으로 백업한 뒤 다시 쓰고, 감시를 새 설정으로 재시작한다.
+화면 4개가 에이전트 흐름을 그대로 따른다:
+  운영 현황  수집 → 탐지 → 판단 → 알림 상태와 오늘의 사건·경보
+  사건       사건별 근거·룰 진단·LLM 의견·메일, 사건에 대한 질문
+  분석       로그 폴더 진단 리포트·경보 재현(리플레이)·리포트에 대한 자연어 질문
+  설정       수집·탐지(경보 규칙 한 표)·판단(AI)·알림(메일) — talog.yaml 로 저장
+
+- 실시간 감시(LiveWatch)는 작업 스레드로 돈다. 설정을 저장하면 파일을 .bak 으로
+  백업한 뒤 다시 쓰고 감시를 새 설정으로 재시작한다.
 - 127.0.0.1 에서만 연다. POST 는 페이지에 심은 세션 토큰(X-Talog-Token)이 있어야
-  받고, Host 헤더도 확인한다(다른 사이트의 위조 요청·DNS 리바인딩 차단).
-- SMTP 비밀번호는 평문으로 저장하지 않는다: 입력하면 Windows DPAPI 로 암호화해
-  email.password_dpapi 에 넣고, 화면·API 로 다시 내보내지 않는다.
+  받고 Host 헤더도 확인한다(다른 사이트의 위조 요청·DNS 리바인딩 차단).
+- 메일 비밀번호·클라이언트 암호는 평문으로 저장하지 않는다: 입력하면 Windows DPAPI
+  로 암호화해 mail.secret 에 넣고, 화면·API 로 다시 내보내지 않는다.
 """
 
 from __future__ import annotations
@@ -22,127 +27,38 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 import sys
 import threading
 import time
 import webbrowser
 from collections import Counter, deque
+from fnmatch import fnmatchcase
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
-import yaml
-
-from . import __version__
+from . import __version__, settings
 from .fileclass import classify
 from .tracker import PRESETS, compile_patterns, resolve_targets
 
 _PAGE = os.path.join(os.path.dirname(__file__), "console.html")
-
-# 기본 감지 룰 (콘솔 표 — 기본 등급은 watch.py 의 발보 코드와 같다)
-BUILTIN_RULES = [
-    ("no_insp_thread", "검사 시작 거부 (NoInspThread)", "crit", "event"),
-    ("crash", "프로세스 크래시", "crit", "event"),
-    ("img_timeout", "검사 타임아웃 — 판정 미송신", "crit", "event"),
-    ("grab_fail", "그랩 실패 (카메라/트리거)", "crit", "event"),
-    ("storage_low", "이미지 저장 공간 부족", "crit", "event"),
-    ("light_unstable", "조명 컨트롤러 불안정", "crit", "event"),
-    ("reject_busycam", "시작 거부 — 카메라 점유", "crit", "event"),
-    ("reject_notready", "시작 거부 — 모델 미로드", "crit", "event"),
-    ("reject_sim", "시작 거부 — 시뮬레이션 모드", "crit", "event"),
-    ("alg_timeout", "알고리즘 타임아웃 (TIME_OUT NG)", "warn", "event"),
-    ("error_repeat", "동일 에러 반복", "warn", "error_repeat"),
-    ("insp_stall", "검사 정체", "warn", "insp_stall"),
-    ("restart_burst", "재시작 빈발", "crit", "restart_burst"),
-    ("memory_trend", "메모리 증가 추세 (릭 의심)", "crit", "memory_trend"),
-    ("gpu_temp", "GPU 과열", "crit", "gpu_temp"),
-    ("defect_critical", "치명 결함 검출", "crit", "event"),
-    ("defect_repeat", "동일 결함 빈발", "warn", "event"),
-    ("ng_streak", "연속 NG", "crit", "event"),
-    ("ng_rate", "NG 비율 급증", "warn", "event"),
-    ("pattern", "사용자 정의 패턴 (전체)", "-", "event"),
-]
-
-# 저장하는 watch.yaml 에 붙일 설명 주석 (키 경로 → 설명)
-_DESC = {
-    "watch_root": "talos 로그 루트 (YYYY_MM\\DD 자동 추적)",
-    "poll_seconds": "폴링 주기(초) — 새로 쓰인 바이트만 읽음",
-    "alert_dir": "경보·사건·상태 기록 폴더",
-    "low_priority": "프로세스 우선순위 강등 (검사 SW 보호)",
-    "site": "설비 이름 (메일 제목·기록에 표시)",
-    "cooldown_min": "같은 경보 재발송 억제(분)",
-    "tracking": "추적 대상",
-    "tracking.mode": "default(핵심 9종) | select(files 지정) | auto(일자 폴더 전체)",
-    "tracking.files": "select 모드: 파일명·와일드카드 (alg\\*.log 가능)",
-    "tracking.exclude": "auto 모드 제외 목록",
-    "tracking.include_alg": "auto 모드에서 alg\\ 하위 포함",
-    "tracking.max_initial_mb": "처음 보는 파일이 이보다 크면 끝부분부터 읽음",
-    "rules": "감지 룰",
-    "rules.defect_watch": "결함명 감시 (comm.log INSPECT_END NG 결함명)",
-    "rules.defect_watch.critical": "1건만 나와도 즉시 심각 경보 (와일드카드 * 허용)",
-    "rules.defect_watch.repeat_count": "같은 결함명 repeat_window_min 분 안에 N건 (0 = 끔)",
-    "rules.defect_watch.ng_streak": "연속 NG N건 (0 = 끔)",
-    "rules.defect_watch.ng_rate_window": "최근 N검사 NG 비율 감시 (0 = 끔)",
-    "rules.patterns": "사용자 정의 로그 패턴 (count 1 = 한 번만 나와도 경보)",
-    "rules.overrides": "기본 룰 조정 {룰: {enabled, severity, count, window_min}}",
-    "notify": "기본 알림 채널 (토스트·웹훅·JSONL)",
-    "llm": "로컬 LLM (Ollama) — 사건 분석·주기 점검 공용",
-    "llm.url": "Ollama 주소 (전용 GPU 서버·사내 분석 PC 가능)",
-    "llm.device": "cpu(검사 GPU 미사용) | gpu | auto(여유 VRAM 보고 선택)",
-    "llm.cpu_threads": "CPU 모드 스레드 상한 (0 = Ollama 기본)",
-    "llm.gpu_min_free_mb": "auto: 이 이상 여유 VRAM 이 있을 때만 GPU",
-    "llm.gpu_max_util": "auto: 그 GPU 사용률(%)이 이 이하일 때만",
-    "llm.keep_alive": "모델 상주 시간 (빈 값 = 서버 기본, 0 = 바로 내림)",
-    "llm.enabled": "주기 점검 모드 (지시문 script 기반)",
-    "agent": "경보 사건 분석 (룰 진단 + LLM 2차 의견 + 합의 관문)",
-    "agent.min_severity": "이 등급 이상 경보만 분석",
-    "agent.batch_seconds": "첫 경보 후 이 시간 동안의 경보를 한 사건으로 묶음",
-    "email": "사건 메일 (SMTP)",
-    "email.security": "starttls | ssl | none",
-    "email.password_env": "비밀번호 환경변수 이름 (있으면 우선)",
-    "email.password_dpapi": "콘솔에서 입력한 비밀번호의 암호문 — 이 PC·이 사용자만 복호화",
-    "email.roles": "분석이 지목한 담당 역할별 추가 수신자",
-    "email.immediate": "이 등급은 묶음 없이 즉시 발송 (룰 판단, LLM 은 후속 메일)",
-    "email.min_severity": "이 등급 이상만 메일",
-    "email.min_interval_min": "묶음 메일 사이 최소 간격(분)",
-    "email.max_per_hour": "시간당 상한 (즉시 메일 포함)",
-    "email.dry_run": "true = SMTP 없이 outbox 에 .eml 만 저장",
-}
-
-
-def dump_config(cfg: dict) -> str:
-    """설명 주석을 붙여 YAML 로 쓴다 (yaml.safe_dump 는 주석을 잃으므로 줄마다 덧붙임)."""
-    body = yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False,
-                          default_flow_style=False, width=120)
-    out, stack = [], []
-    key_re = re.compile(r"^(\s*)([A-Za-z_][\w]*):(.*)$")
-    for line in body.splitlines():
-        m = key_re.match(line)
-        if m and not line.lstrip().startswith("-"):
-            ind = len(m.group(1))
-            while stack and stack[-1][0] >= ind:
-                stack.pop()
-            stack.append((ind, m.group(2)))
-            path = ".".join(k for _i, k in stack)
-            if path in _DESC and "#" not in m.group(3):
-                line = f"{line}  # {_DESC[path]}"
-        out.append(line)
-    head = (f"# talog watch 설정 — talog 콘솔({__version__})에서 저장 "
-            f"{dt.datetime.now():%Y-%m-%d %H:%M}\n"
-            "# 직접 고쳐도 됩니다. 콘솔로 다시 저장하면 이전 파일은 .bak 으로 남습니다.\n")
-    return head + "\n".join(out) + "\n"
+_TAG_RE = re.compile(r"^[\w.#\- ()가-힣]{1,120}$")
 
 
 def _latest_day_dir(root: str) -> str:
-    """watch_root 아래 가장 최근 YYYY_MM\\DD 폴더 (오늘 폴더가 없을 때 미리보기용)."""
-    best = ""
-    for p in glob.glob(os.path.join(root, "[0-9][0-9][0-9][0-9]_[0-9][0-9]", "[0-9][0-9]")):
-        if os.path.isdir(p) and p > best:
-            best = p
-    return best
+    days = recent_days(root, 1)
+    return days[0] if days else ""
+
+
+def recent_days(root: str, n: int = 14) -> list[str]:
+    """log_root 아래 최근 YYYY_MM\\DD 폴더 (새것부터)."""
+    got = [p for p in glob.glob(os.path.join(root, "[0-9][0-9][0-9][0-9]_[0-9][0-9]",
+                                             "[0-9][0-9]")) if os.path.isdir(p)]
+    return sorted(got, reverse=True)[:n]
 
 
 def _recipe_defects(day_dir: str) -> tuple[list[str], list[list]]:
-    """comm.log 에서 (레시피 결함명 목록, 오늘 NG 결함 빈도)를 뽑는다 (꼬리 8MB)."""
+    """comm.log 에서 (레시피 결함명 목록, 그날 NG 결함 빈도)를 뽑는다 (꼬리 8MB)."""
     path = ""
     try:
         for n in os.listdir(day_dir):
@@ -182,8 +98,16 @@ def _recipe_defects(day_dir: str) -> tuple[list[str], list[list]]:
     return names, [[k, v] for k, v in cnt.most_common(30)]
 
 
+def _report_tag(day_dir: str) -> str:
+    """리포트 이름: ...\\2026_09\\28 → 2026_09_28, 그 밖은 마지막 두 폴더 이름."""
+    parts = [p for p in os.path.normpath(day_dir).split(os.sep) if p]
+    tail = parts[-2:] if len(parts) >= 2 else parts
+    tag = "_".join(tail)
+    return re.sub(r"[^\w.\-가-힣]+", "_", tag).strip("_") or "report"
+
+
 class _Tee(io.TextIOBase):
-    """콘솔 창 출력은 그대로 두고 최근 줄을 UI 로그 화면용으로 보관한다."""
+    """콘솔 창 출력은 그대로 두고 최근 줄을 화면의 실행 로그용으로 보관한다."""
 
     def __init__(self, stream, buf: deque):
         self.stream = stream
@@ -211,17 +135,20 @@ class _Tee(io.TextIOBase):
 # ---------------------------------------------------------------------------
 class Console:
     def __init__(self, config_path: str, port: int = 8778):
-        from .watch import load_config
         self.config_path = os.path.abspath(config_path)
         self.port = port
-        self.cfg = load_config(self.config_path)
+        self.settings, self.legacy = settings.load(self.config_path)
+        self.cfg = settings.compile(self.settings)
         self.token = secrets.token_urlsafe(24)
         self.log: deque = deque(maxlen=400)
         self.watch = None
         self._stop = None
         self._thread = None
         self._lock = threading.RLock()
-        self.replay_job: dict = {"state": "idle"}
+        self.job: dict = {"state": "idle"}
+        self._dbs: dict[str, sqlite3.Connection] = {}
+        self._db_lock = threading.Lock()
+        self._llm_alive = (0.0, False)
 
     # ── 감시 수명 ───────────────────────────────────────────────
     def start_watch(self):
@@ -246,82 +173,63 @@ class Console:
     def running(self) -> bool:
         return bool(self._thread and self._thread.is_alive())
 
+    @property
+    def data_dir(self) -> str:
+        return self.watch.notifier.alert_dir if self.watch else self.cfg["alert_dir"]
+
     # ── 설정 ───────────────────────────────────────────────────
-    def public_cfg(self) -> dict:
-        c = copy.deepcopy(self.cfg)
-        e = c.get("email", {})
-        e["has_password"] = bool(e.get("password_dpapi")) or bool(
-            os.environ.get(e.get("password_env") or "TALOG_SMTP_PASSWORD"))
-        e["password_dpapi"] = ""
-        g = e.setdefault("graph", {})
-        g["has_secret"] = bool(g.get("client_secret_dpapi")) or bool(
-            os.environ.get(g.get("secret_env") or "TALOG_GRAPH_SECRET"))
-        g["client_secret_dpapi"] = ""
-        return c
+    def public_settings(self) -> dict:
+        s = copy.deepcopy(self.settings)
+        m = s["mail"]
+        m["has_secret"] = bool(m.get("secret"))
+        m["secret"] = ""
+        return s
+
+    def meta(self) -> dict:
+        from .mailer import Mailer
+        try:
+            from .agent import Runbook
+            roles = Runbook().roles
+        except Exception:
+            roles = {}
+        env = ""
+        try:
+            env = Mailer(self.cfg, self.data_dir, replay=True).password_source()
+        except Exception:
+            pass
+        return {"builtin": [{"name": b[0], "label": b[1], "severity": b[2], "kind": b[3],
+                             "default": b[4]} for b in settings.BUILTIN],
+                "presets": PRESETS, "providers": settings.PROVIDERS, "roles": roles,
+                "version": __version__, "config": self.config_path,
+                "legacy": self.legacy, "secret_env": env if env.startswith("환경") else ""}
 
     @staticmethod
     def _protect(text: str) -> str:
         from .secret import available, protect
         if not available():
-            raise ValueError("이 OS 에서는 비밀 암호화 저장을 지원하지 않습니다 — 환경변수를 "
-                             "쓰십시오")
+            raise ValueError("이 OS 에서는 비밀 암호화 저장을 지원하지 않습니다 — 환경변수 "
+                             "TALOG_SMTP_PASSWORD / TALOG_GRAPH_SECRET 를 쓰십시오")
         return protect(text)
 
-    def _merge_user_cfg(self, new: dict, password: str = "", clear: bool = False,
-                        graph_secret: str = "", clear_graph: bool = False) -> dict:
-        from .watch import _DEFAULT_CFG, _deep_merge
-        cfg = json.loads(json.dumps(_DEFAULT_CFG))
-        new = copy.deepcopy(new or {})
-        e = new.get("email") or {}
-        e.pop("has_password", None)
-        old_e = self.cfg.get("email", {})
-        e["password_dpapi"] = "" if clear else old_e.get("password_dpapi", "")
-        if password:
-            e["password_dpapi"] = self._protect(password)
-        g = e.get("graph") or {}
-        g.pop("has_secret", None)
-        g["client_secret_dpapi"] = "" if clear_graph else \
-            (old_e.get("graph") or {}).get("client_secret_dpapi", "")
-        if graph_secret:
-            g["client_secret_dpapi"] = self._protect(graph_secret)
-        e["graph"] = g
-        new["email"] = e
-        # 기본값 위에 화면 값 전체를 얹는다 (목록은 통째로 교체, dict 만 재귀 병합)
-        _deep_merge(cfg, new)
-        return cfg
+    def _with_secret(self, new: dict, secret: str = "", clear: bool = False) -> dict:
+        """화면 값 + 비밀. 발송 방식이 바뀌면 옛 비밀은 버린다 (다른 계정의 비밀이므로)."""
+        s = settings.normalize(copy.deepcopy(new or {}))
+        s["mail"].pop("has_secret", None)
+        old = self.settings["mail"]
+        same = (s["mail"].get("provider") == old.get("provider")
+                and s["mail"].get("account") == old.get("account"))
+        s["mail"]["secret"] = "" if clear or not same else old.get("secret", "")
+        if secret:
+            s["mail"]["secret"] = self._protect(secret)
+        return s
 
-    def validate(self, cfg: dict) -> list[str]:
-        errs = []
-        _r, perr = compile_patterns((cfg.get("rules") or {}).get("patterns") or [])
-        errs += perr
-        mode = str((cfg.get("tracking") or {}).get("mode", "default"))
-        if mode not in ("default", "select", "auto"):
-            errs.append(f"tracking.mode 값 오류: {mode}")
-        if mode == "select" and not (cfg.get("tracking") or {}).get("files"):
-            errs.append("select 모드인데 tracking.files 가 비어 있음")
-        dev = str((cfg.get("llm") or {}).get("device", "cpu"))
-        if dev not in ("cpu", "gpu", "auto"):
-            errs.append(f"llm.device 값 오류: {dev}")
-        em = cfg.get("email") or {}
-        if em.get("enabled") and not em.get("dry_run"):
-            if str(em.get("transport", "smtp")) == "graph":
-                g = em.get("graph") or {}
-                if not (g.get("tenant_id") and g.get("client_id") and g.get("sender")):
-                    errs.append("Graph 발송에는 테넌트 ID·앱(클라이언트) ID·보낼 사서함이 필요합니다")
-            elif not em.get("smtp_host"):
-                errs.append("이메일을 켜려면 SMTP 서버 주소가 필요합니다 (또는 dry_run)")
-        for k in ("poll_seconds",):
-            if not isinstance(cfg.get(k), (int, float)) or cfg[k] < 2:
-                errs.append(f"{k} 는 2 이상의 숫자여야 합니다")
-        return errs
-
-    def save(self, new: dict, password: str = "", clear: bool = False,
-             graph_secret: str = "", clear_graph: bool = False) -> list[str]:
-        cfg = self._merge_user_cfg(new, password, clear, graph_secret, clear_graph)
-        errs = self.validate(cfg)
+    def save(self, new: dict, secret: str = "", clear: bool = False) -> list[str]:
+        s = self._with_secret(new, secret, clear)
+        errs = settings.validate(s)
         if errs:
             return errs
-        text = dump_config(cfg)
+        text = settings.dump(s)
+        import yaml
         yaml.safe_load(text)                      # 쓰기 전에 다시 읽혀야 한다
         if os.path.exists(self.config_path):
             try:
@@ -331,71 +239,107 @@ class Console:
                     f.write(old)
             except OSError as e:
                 return [f"백업 실패: {e}"]
+        os.makedirs(os.path.dirname(self.config_path) or ".", exist_ok=True)
         with open(self.config_path, "w", encoding="utf-8") as f:
             f.write(text)
         was = self.running()
         self.stop_watch()
-        self.cfg = cfg
+        self.settings, self.legacy = s, False
+        self.cfg = settings.compile(s)
         if was:
             self.start_watch()
-        print(f"[콘솔] 설정 저장: {self.config_path} (백업 .bak) — 감시 "
+        print(f"[콘솔] 설정 저장: {self.config_path} (이전 파일 .bak) — 감시 "
               f"{'재시작' if was else '정지 상태 유지'}")
         return []
 
-    # ── 조회 ───────────────────────────────────────────────────
+    # ── 운영 현황 ───────────────────────────────────────────────
+    def _llm_up(self) -> bool:
+        t, up = self._llm_alive
+        if time.time() - t > 30:
+            from .llm import OllamaClient
+            cli = OllamaClient(self.cfg["llm"])
+            up = cli.alive() and cli.model in cli.models()
+            self._llm_alive = (time.time(), up)
+        return up
+
+    def status(self) -> dict:
+        from .llm import query_gpu_free, resolve_device
+        snap = self.watch.snapshot() if self.watch else {}
+        day = dt.datetime.now().strftime("%Y%m%d")
+        sev = Counter()
+        last_alert = None
+        try:
+            with open(os.path.join(self.data_dir, f"alerts_{day}.jsonl"),
+                      encoding="utf-8") as f:
+                for ln in f:
+                    try:
+                        a = json.loads(ln)
+                    except ValueError:
+                        continue
+                    sev[a.get("severity", "")] += 1
+                    last_alert = a
+        except OSError:
+            pass
+        incs = self.incidents(days=1, replay=False, limit=500)
+        s = self.settings
+        files = snap.get("files", [])
+        last_read = max((f["last"] for f in files if f.get("last")), default=None)
+        gfree = query_gpu_free()
+        ai = s["ai"]
+        dev, why = resolve_device(self.cfg["llm"], gfree)
+        m = s["mail"]
+        prov = m.get("provider", "off")
+        tr = s["tracking"]
+        return {
+            "running": self.running(), "version": __version__, "site": s.get("site", ""),
+            "config": self.config_path, "data_dir": self.data_dir,
+            "uptime_s": (time.time() - snap["started"]) if snap.get("started") else 0,
+            "collect": {"day_dir": snap.get("day_dir") or self._day_dir(),
+                        "exists": bool(self._day_dir()),
+                        "tracking": ("직접 선택" if isinstance(tr, list) else
+                                     "폴더 전체" if tr == "all" else "핵심 로그"),
+                        "files": len(files), "last_read": last_read},
+            "detect": {"crit": sev.get("crit", 0), "warn": sev.get("warn", 0),
+                       "info": sev.get("info", 0),
+                       "rules": len(settings.BUILTIN) + len(s["rules"]["custom"]),
+                       "last": last_alert,
+                       "pattern_errors": snap.get("pattern_errors", [])},
+            "judge": {"llm": bool(ai.get("llm")), "model": ai.get("model"),
+                      "url": ai.get("url"), "device": ai.get("device"),
+                      "resolved": dev, "reason": why,
+                      "alive": self._llm_up() if ai.get("llm") else None,
+                      "incidents": len(incs),
+                      "agree": sum(1 for i in incs if "일치" in (i.get("mode") or "")),
+                      "last": incs[0] if incs else None},
+            "notify": {"provider": prov,
+                       "label": settings.PROVIDERS.get(prov, {}).get("label", prov),
+                       "to": len(m.get("to") or []), "digest": bool(m.get("digest")),
+                       "has_secret": bool(m.get("secret")),
+                       "sent": sum(1 for i in incs if i.get("mail") == "발송"),
+                       "failed": sum(1 for i in incs if i.get("mail") == "실패"),
+                       "toast": bool(s["notify"].get("toast"))},
+            "alerts": snap.get("alerts", [])[:40],
+            "incidents": incs[:20],
+            "files": files, "gpu": snap.get("gpu", []), "gpu_free": gfree,
+            "job": {k: v for k, v in self.job.items() if k != "log"}}
+
     def _day_dir(self) -> str:
         from .watch import _today_dir
         d = _today_dir(self.cfg["watch_root"])
         return d if os.path.isdir(d) else ""
 
-    def status(self) -> dict:
-        from .llm import query_gpu_free, resolve_device
-        snap = self.watch.snapshot() if self.watch else {}
-        alert_dir = snap.get("alert_dir") or self.cfg["alert_dir"]
-        day = dt.datetime.now().strftime("%Y%m%d")
-        sev = Counter()
-        try:
-            with open(os.path.join(alert_dir, f"alerts_{day}.jsonl"), encoding="utf-8") as f:
-                for ln in f:
-                    try:
-                        sev[json.loads(ln).get("severity", "")] += 1
-                    except ValueError:
-                        continue
-        except OSError:
-            pass
-        incs = self.incidents(days=1, replay=False, limit=500)
-        gfree = query_gpu_free()
-        dev, why = resolve_device(self.cfg.get("llm", {}), gfree)
-        e = self.cfg.get("email", {})
-        return {"running": self.running(), "version": __version__,
-                "site": self.cfg.get("site", ""), "config": self.config_path,
-                "watch_root": self.cfg.get("watch_root"), "alert_dir": alert_dir,
-                "day_dir": snap.get("day_dir") or self._day_dir(),
-                "mode": (self.cfg.get("tracking") or {}).get("mode", "default"),
-                "files": snap.get("files", []), "alerts": snap.get("alerts", []),
-                "live_incidents": snap.get("incidents", []),
-                "pattern_errors": snap.get("pattern_errors", []),
-                "gpu": snap.get("gpu", []), "gpu_free": gfree,
-                "llm": {"url": self.cfg["llm"].get("url"), "model": self.cfg["llm"].get("model"),
-                        "device": self.cfg["llm"].get("device"), "resolved": dev,
-                        "reason": why, "agent": bool(self.cfg["agent"].get("enabled")),
-                        "use_llm": bool(self.cfg["agent"].get("use_llm", True))},
-                "email": {"enabled": bool(e.get("enabled")), "dry_run": bool(e.get("dry_run")),
-                          "host": e.get("smtp_host"), "to": len(e.get("to") or []),
-                          "immediate": e.get("immediate")},
-                "counts": {"crit": sev.get("crit", 0), "warn": sev.get("warn", 0),
-                           "info": sev.get("info", 0), "incidents": len(incs),
-                           "mail_sent": sum(1 for i in incs if i.get("mail") == "발송"),
-                           "mail_failed": sum(1 for i in incs if i.get("mail") == "실패")},
-                "uptime_s": (time.time() - snap["started"]) if snap.get("started") else 0,
-                "replay": {k: v for k, v in self.replay_job.items() if k != "log"}}
-
-    def files(self, folder: str = "") -> dict:
-        folder = folder or self._day_dir() or _latest_day_dir(self.cfg["watch_root"])
+    def folder(self, folder: str = "", tracking=None) -> dict:
+        """폴더 파일 목록(추적 여부)·레시피 결함명·그날 NG 결함, 최근 일자 폴더."""
+        root = self.cfg["watch_root"]
+        folder = folder or self._day_dir() or _latest_day_dir(root)
         rows = []
-        tracked = set()
+        tcfg = self.cfg.get("tracking")
+        if tracking is not None:
+            tmp = copy.deepcopy(self.settings)
+            tmp["tracking"] = tracking
+            tcfg = settings.compile(tmp).get("tracking")
         if folder and os.path.isdir(folder):
-            tracked = set(resolve_targets(folder, self.cfg.get("tracking")))
+            tracked = set(resolve_targets(folder, tcfg))
             for n in sorted(os.listdir(folder), key=str.lower):
                 p = os.path.join(folder, n)
                 if not os.path.isfile(p):
@@ -407,23 +351,15 @@ class Console:
                                  "%m/%d %H:%M"),
                              "category": fi.category if fi else "",
                              "tracked": p in tracked})
-            alg = os.path.join(folder, "alg")
-            n_alg = len(os.listdir(alg)) if os.path.isdir(alg) else 0
-        else:
-            n_alg = 0
         names, seen = _recipe_defects(folder) if folder else ([], [])
-        return {"folder": folder, "today": self._day_dir(), "files": rows, "alg_files": n_alg,
+        return {"folder": folder, "today": self._day_dir(), "files": rows,
                 "recipe_defects": names, "seen_defects": seen,
-                "defaults": ["InspStarter.log", "Comm.log", "WorkerThreadPoolMng.log",
-                             "exception.log", "ProcessUsage.log", "BatchRunLog.txt",
-                             "seq_1.log", "seq_2.log", "seq_3.log"]}
+                "days": recent_days(root)}
 
+    # ── 사건 ───────────────────────────────────────────────────
     def incidents(self, days: int = 3, replay: bool = True, limit: int = 200) -> list[dict]:
-        alert_dir = self.cfg["alert_dir"]
-        if self.watch is not None:
-            alert_dir = self.watch.notifier.alert_dir
-        pats = [os.path.join(alert_dir, "incidents_*.jsonl")]
-        files = sorted(glob.glob(pats[0]), reverse=True)
+        files = sorted(glob.glob(os.path.join(self.data_dir, "incidents_*.jsonl")),
+                       reverse=True)
         cutoff = (dt.datetime.now() - dt.timedelta(days=days - 1)).strftime("%Y%m%d")
         rows = []
         for p in files:
@@ -448,28 +384,33 @@ class Console:
                 llm = d.get("llm") or {}
                 em = d.get("email") or {}
                 rows.append({
-                    "id": d.get("id"), "replay": is_rep, "day": m.group(1) if m else "",
+                    "id": d.get("id"), "replay": is_rep,
+                    "day": (d.get("id") or "")[:8] or (m.group(1) if m else ""),
                     "time": d.get("opened"), "site": d.get("site"),
                     "title": (d.get("alerts") or [{}])[0].get("title", ""),
+                    "n_alerts": len(d.get("alerts") or []),
                     "severity": v.get("severity"), "cause": v.get("cause_name"),
                     "llm": (llm.get("root_cause") if llm.get("ok") else
-                            ("실패" if llm else "-")),
-                    "llm_device": llm.get("device"), "llm_s": llm.get("wall_s"),
-                    "mode": v.get("label"),
+                            ("실패" if llm else "")),
+                    "mode": v.get("label"), "gate": v.get("mode"),
                     "mail": ("발송" if em.get("sent") else "보관" if em.get("eml") else
                              ("실패" if em.get("error") else "-"))})
         rows.sort(key=lambda r: (r["day"], r["time"] or ""), reverse=True)
         return rows[:limit]
 
     def incident(self, iid: str, replay: bool) -> dict | None:
-        alert_dir = self.watch.notifier.alert_dir if self.watch else self.cfg["alert_dir"]
         pat = "incidents_*_replay.jsonl" if replay else "incidents_[0-9]*[0-9].jsonl"
-        for p in sorted(glob.glob(os.path.join(alert_dir, pat)), reverse=True):
+        for p in sorted(glob.glob(os.path.join(self.data_dir, pat)), reverse=True):
             try:
                 with open(p, encoding="utf-8") as f:
                     for ln in f:
                         if f'"id": "{iid}"' in ln:
-                            return json.loads(ln)
+                            d = json.loads(ln)
+                            day = (d.get("id") or "")[:8]
+                            if not replay and day.isdigit():
+                                d["day_dir"] = os.path.join(
+                                    self.cfg["watch_root"], f"{day[:4]}_{day[4:6]}", day[6:])
+                            return d
             except (OSError, ValueError):
                 continue
         return None
@@ -493,15 +434,204 @@ class Console:
                 return (f"<div style='font:12px sans-serif;color:#555;margin-bottom:8px'>"
                         f"<b>제목</b> {subj}<br><b>받는 사람</b> {to}</div>"
                         + part.get_content())
-        m = Mailer(self.cfg, self.cfg["alert_dir"], replay=True)
-        return m.body_html(inc)
+        return Mailer(self.cfg, self.data_dir, replay=True).body_html(inc)
 
-    # ── 테스트 ──────────────────────────────────────────────────
+    def ask_incident(self, iid: str, replay: bool, question: str) -> dict:
+        """사건 기록 안의 사실만으로 LLM 이 답한다 (도구 없음, 근거 밖은 모른다고)."""
+        from .llm import OllamaClient
+        inc = self.incident(iid, replay)
+        if inc is None:
+            return {"ok": False, "error": "사건을 찾을 수 없습니다"}
+        question = (question or "").strip()[:500]
+        if not question:
+            return {"ok": False, "error": "질문이 비어 있습니다"}
+        ev = inc.get("evidence") or {}
+        ctx = {"사건": inc.get("id"), "설비": inc.get("site"), "시각": inc.get("opened"),
+               "계열": inc.get("family_title") or inc.get("family"),
+               "판단": inc.get("verdict"), "룰 진단": inc.get("rule"),
+               "LLM 2차 의견": {k: (inc.get("llm") or {}).get(k) for k in
+                             ("root_cause", "evidence", "analysis") if inc.get("llm")},
+               "경보": inc.get("alerts"), "핵심 사실": ev.get("key_facts"),
+               "근거 로그": (ev.get("log_lines") or [])[-40:]}
+        text = json.dumps(ctx, ensure_ascii=False, default=str)[:14000]
+        msgs = [{"role": "system", "content":
+                 "너는 비전 검사 설비의 사건 분석 보조다. 아래 사건 기록에 있는 사실만으로 "
+                 "한국어로 짧게 답한다. 기록에 없는 수치·원인은 지어내지 말고 '기록에 없음'"
+                 "이라고 답한다. 조치를 물으면 기록의 권고 조치를 우선한다."},
+                {"role": "user", "content": f"[사건 기록]\n{text}\n\n[질문]\n{question}"}]
+        r = OllamaClient(self.cfg["llm"]).chat(msgs, num_predict=600)
+        if r["error"]:
+            return {"ok": False, "error": r["error"], "device": r["device"]}
+        return {"ok": True, "answer": r["content"].strip(), "device": r["device"],
+                "wall_s": r["wall_s"], "model": self.cfg["llm"].get("model")}
+
+    # ── 분석 (리포트·리플레이·질문) ─────────────────────────────
+    @property
+    def report_dir(self) -> str:
+        return os.path.join(self.data_dir, "reports")
+
+    def start_job(self, kind: str, target: str, recipe: str = "") -> dict:
+        if self.job.get("state") == "running":
+            return {"ok": False, "error": "이미 작업이 진행 중입니다"}
+        target = (target or "").strip().strip('"')
+        if not os.path.isdir(target):
+            return {"ok": False, "error": f"폴더가 없습니다: {target}"}
+        if kind not in ("report", "replay"):
+            return {"ok": False, "error": f"알 수 없는 작업: {kind}"}
+        cfg = copy.deepcopy(self.cfg)
+        out = self.report_dir
+        job = {"state": "running", "kind": kind, "target": target, "started": time.time(),
+               "log": deque(maxlen=400), "reports": []}
+        self.job = job
+
+        def work():
+            buf = job["log"]
+            try:
+                if kind == "replay":
+                    from .watch import run_replay
+                    rc = _run_captured(run_replay, (cfg, target), buf)
+                else:
+                    rc = _run_captured(self._report_work, (target, recipe, out, job), buf)
+                job["state"] = "done" if rc == 0 else "error"
+            except Exception as e:
+                buf.append(f"오류: {type(e).__name__}: {e}")
+                job["state"] = "error"
+            finally:
+                job["elapsed_s"] = round(time.time() - job["started"], 1)
+
+        threading.Thread(target=work, name=f"talog-{kind}", daemon=True).start()
+        return {"ok": True}
+
+    @staticmethod
+    def _report_work(target: str, recipe_dir: str, out: str, job: dict) -> int:
+        from .cli import _collect_day_folders, scan_day
+        from .recipe import load_recipe
+        recipe = None
+        if recipe_dir:
+            try:
+                recipe = load_recipe(recipe_dir.strip().strip('"'), "")
+                print(f"레시피: {recipe.root} [{recipe.version}]")
+            except (FileNotFoundError, OSError) as e:
+                print(f"레시피를 열 수 없어 레시피 없이 진행합니다 — {e}")
+        days = _collect_day_folders(os.path.abspath(target))
+        if not days:
+            print("분석할 로그 폴더가 아닙니다 (alg\\ 또는 InspStarter.log 가 있는 일자 "
+                  "폴더, 또는 그 상위 설비 폴더를 고르십시오)")
+            return 1
+        os.makedirs(out, exist_ok=True)
+        for d in days:
+            tag = _report_tag(d)
+            try:
+                scan_day(d, recipe, out, tag, fast=True)
+                job["reports"].append(tag)
+            except Exception as e:                # 일자 하나의 실패가 전체를 막지 않는다
+                print(f"오류: {d} — {type(e).__name__}: {e}")
+        print(f"리포트 {len(job['reports'])}건 완료")
+        return 0 if job["reports"] else 1
+
+    def reports(self) -> list[dict]:
+        out = []
+        for p in glob.glob(os.path.join(self.report_dir, "*.html")):
+            tag = os.path.splitext(os.path.basename(p))[0]
+            db = os.path.join(self.report_dir, tag + ".sqlite")
+            diag = os.path.join(self.report_dir, tag + "_diagnosis.md")
+            findings = []
+            try:
+                with open(diag, encoding="utf-8") as f:
+                    findings = [ln[3:].strip() for ln in f if ln.startswith("## ")]
+            except OSError:
+                pass
+            st = os.stat(p)
+            out.append({"tag": tag, "mtime": dt.datetime.fromtimestamp(st.st_mtime)
+                        .strftime("%m/%d %H:%M"), "ts": st.st_mtime, "size": st.st_size,
+                        "db": os.path.exists(db), "findings": findings[:6],
+                        "n_findings": len(findings)})
+        out.sort(key=lambda r: r["ts"], reverse=True)
+        return out
+
+    def _report_paths(self, tag: str) -> tuple[str, str]:
+        if not _TAG_RE.match(tag or ""):
+            raise FileNotFoundError(tag)
+        base = os.path.join(self.report_dir, tag)
+        if os.path.dirname(os.path.abspath(base)) != os.path.abspath(self.report_dir):
+            raise FileNotFoundError(tag)
+        return base + ".html", base + ".sqlite"
+
+    def _db(self, tag: str) -> sqlite3.Connection:
+        from .viewer import _open_ro
+        with self._db_lock:
+            con = self._dbs.get(tag)
+            if con is None:
+                _h, db = self._report_paths(tag)
+                if not os.path.exists(db):
+                    raise FileNotFoundError(db)
+                con = self._dbs[tag] = _open_ro(db)
+            return con
+
+    def report_page(self, tag: str) -> str:
+        page, _db = self._report_paths(tag)
+        with open(page, encoding="utf-8") as f:
+            text = f.read()
+        inject = f"<script>window.TALOG_API={json.dumps('/r/' + tag)};</script>"
+        return text.replace("<head>", "<head>" + inject, 1) if "<head>" in text \
+            else inject + text
+
+    def report_api(self, tag: str, what: str, q: dict):
+        from .viewer import query_detail, query_insp, query_meta
+        con = self._db(tag)
+        with self._db_lock:
+            if what == "insp":
+                return query_insp(con, q.get("filter", "all"), q.get("q", ""),
+                                  q.get("sort", "desc"), int(q.get("offset", 0) or 0),
+                                  min(1000, int(q.get("limit", 400) or 400)),
+                                  q.get("from", ""), q.get("to", ""))
+            if what == "detail":
+                d = query_detail(con, q.get("inner", ""))
+                return d if d is not None else {"error": "not found"}
+            return query_meta(con)
+
+    def ask_report(self, tag: str, question: str) -> dict:
+        """리포트 DB 를 LLM 이 SQL 로 조회해 답한다 (talog ask 와 같은 도구 루프)."""
+        from .ask import OllamaBackend, ToolBox, _build_system
+        from .llm import OllamaClient, resolve_device
+        question = (question or "").strip()[:500]
+        if not question:
+            return {"ok": False, "error": "질문이 비어 있습니다"}
+        _h, db = self._report_paths(tag)
+        if not os.path.exists(db):
+            return {"ok": False, "error": "이 리포트에는 DB(.sqlite)가 없습니다"}
+        lc = self.cfg["llm"]
+        cli = OllamaClient(lc)
+        if not cli.alive():
+            return {"ok": False, "error": f"LLM 서버 응답 없음: {cli.url} — 설정 → 판단 에서 "
+                                          f"주소를 확인하십시오"}
+        dev, _why = resolve_device(lc)
+        opts = {k: v for k, v in cli.options(dev).items() if k not in ("temperature",)}
+        be = OllamaBackend(cli.model, cli.url, opts)
+        t0 = time.time()
+        try:
+            ans = be.chat(_build_system(db), question, ToolBox(db), verbose=False)
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        # 답에 적힌 숫자·시각·ID 가 실제 조회 결과에 있는지 대조한다 (7B 모델은 값을 지어낸다)
+        from .agent import fact_check
+        results = [str(r) for _n, _a, r in be.trace]
+        # 결과 행 수(개수 답)와 끝자리 0 을 뗀 값도 근거로 본다 (1785113123.97 = .970)
+        rows = [max(0, len([ln for ln in r.splitlines() if " | " in ln]) - 1) for r in results]
+        norm = re.sub(r"(\d+\.\d*?[1-9])0+\b|(\d+)\.0+\b", lambda m: m.group(1) or m.group(2),
+                      ans)
+        fc = fact_check(norm, results, extra=(question, rows, sum(rows)))
+        return {"ok": True, "answer": ans, "device": dev, "model": cli.model,
+                "wall_s": round(time.time() - t0, 1), "fact": fc,
+                "trace": [{"tool": n, "args": a, "result": str(r)[:1500]}
+                          for n, a, r in be.trace][:12]}
+
+    # ── 시험 ────────────────────────────────────────────────────
     def test_llm(self, body: dict) -> dict:
         from .llm import OllamaClient
         lc = copy.deepcopy(self.cfg["llm"])
-        for k in ("url", "model", "cpu_threads", "keep_alive", "think"):
-            if k in body and body[k] not in (None, ""):
+        for k in ("url", "model"):
+            if body.get(k):
                 lc[k] = body[k]
         lc["timeout_s"] = 300
         cli = OllamaClient(lc)
@@ -512,14 +642,13 @@ class Console:
         msgs = [{"role": "system", "content": "한국어로만 답한다."},
                 {"role": "user", "content": "검사 설비에서 NoInspThread 거부가 났다. 담당자에게 보낼 "
                                             "한 문장 알림을 써라."}]
-        dev = body.get("device") or None
+        dev = body.get("device")
         r = cli.chat(msgs, num_predict=80, device=dev if dev in ("cpu", "gpu") else None)
         if r["error"]:
             return {"ok": False, "error": r["error"], "device": r["device"]}
         gen_s = max(0.01, r["wall_s"] - r["load_s"])
         return {"ok": True, "device": r["device"], "reason": r["device_reason"],
                 "wall_s": r["wall_s"], "load_s": r["load_s"],
-                "prompt_tokens": r["prompt_tokens"], "gen_tokens": r["gen_tokens"],
                 "tok_s": round(r["gen_tokens"] / gen_s, 1), "reply": r["content"][:300],
                 "model": cli.model}
 
@@ -531,53 +660,60 @@ class Console:
 
     def _mailer_for(self, body: dict):
         from .mailer import Mailer
-        cfg = copy.deepcopy(self.cfg)
-        e = cfg["email"]
-        for k, v in (body.get("email") or {}).items():
-            if k == "graph" and isinstance(v, dict):
-                g = e.setdefault("graph", {})
-                for gk, gv in v.items():
-                    if gk not in ("client_secret_dpapi", "has_secret"):
-                        g[gk] = gv
-            elif k not in ("password_dpapi", "has_password"):
-                e[k] = v
-        e["enabled"] = True
-        m = Mailer(cfg, self.watch.notifier.alert_dir if self.watch else cfg["alert_dir"])
-        pw = body.get("password") or ""
-        if pw:
-            m.password = lambda: pw               # 저장 전 입력값으로 시험 (저장·출력 안 함)
-        gs = body.get("graph_secret") or ""
-        if gs:
-            m.graph_secret = lambda: gs
-        return m
+        s = self._with_secret(body.get("settings") or self.settings)
+        cfg = settings.compile(s)
+        m = Mailer(cfg, self.data_dir)
+        typed = body.get("secret") or ""
+        if typed:                                 # 저장 전 입력값으로 시험 (저장·출력 안 함)
+            m.password = lambda: typed
+            m.graph_secret = lambda: typed
+        return m, s, bool(typed)
 
-    def test_smtp(self, body: dict) -> dict:
-        m = self._mailer_for(body)
+    def test_mail_check(self, body: dict) -> dict:
+        m, s, typed = self._mailer_for(body)
+        if s["mail"]["provider"] == "off":
+            return {"ok": False, "detail": "발송 방식이 '보내지 않음' 입니다"}
         ok, detail = m.check()
-        typed = body.get("graph_secret") if m.transport == "graph" else body.get("password")
         return {"ok": ok, "detail": detail, "transport": m.transport,
-                "password_source": ("입력값" if typed else m.password_source() or "없음")}
+                "secret_source": "입력값" if typed else (m.password_source() or "없음")}
 
-    def test_email(self, body: dict) -> dict:
+    def test_mail(self, body: dict) -> dict:
         from .mailer import sample_incident
-        m = self._mailer_for(body)
-        inc = sample_incident(self.cfg.get("site") or "설비")
+        m, s, _typed = self._mailer_for(body)
+        if s["mail"]["provider"] == "off":
+            return {"ok": False, "error": "발송 방식이 '보내지 않음' 입니다"}
+        errs = settings.validate(s)
+        if errs:
+            return {"ok": False, "error": " / ".join(errs)}
+        inc = sample_incident(s.get("site") or "설비")
         inc["verdict"]["notify"] = list((m.e.get("roles") or {}).keys())
         res = m.send_incident(inc)
         res["ok"] = bool(res.get("sent") or res.get("dry_run"))
         return res
 
-    def test_pattern(self, body: dict) -> dict:
-        rules, errs = compile_patterns([body.get("pattern") or {}])
-        if errs or not rules:
-            return {"ok": False, "error": "; ".join(errs) or "패턴이 비어 있음"}
-        r = rules[0]
-        line = str(body.get("line") or "")
+    def test_rule(self, body: dict) -> dict:
+        """경보 규칙 시험: 로그 한 줄(log 형) 또는 결함명(defect 형)이 걸리는가."""
+        text = str(body.get("text") or "")
         fname = str(body.get("file") or "")
-        m = r.rx.search(line)
-        return {"ok": True, "match": bool(m) and (not fname or r.applies(fname)),
-                "span": list(m.span()) if m else None,
-                "file_ok": (not fname) or r.applies(fname)}
+        out = []
+        for i, it in enumerate(body.get("rules") or []):
+            if not isinstance(it, dict):
+                continue
+            name = it.get("name") or f"규칙{i + 1}"
+            if it.get("type") == "defect":
+                pats = settings._as_list(it.get("match"))
+                hit = any(fnmatchcase(text.strip().upper(), p.upper()) for p in pats)
+                out.append({"name": name, "ok": True, "match": hit, "file_ok": True})
+                continue
+            rules, errs = compile_patterns([{k: v for k, v in it.items() if k != "type"}])
+            if errs or not rules:
+                out.append({"name": name, "ok": False, "error": "; ".join(errs) or "비어 있음"})
+                continue
+            r = rules[0]
+            file_ok = (not fname) or r.applies(fname)
+            out.append({"name": name, "ok": True, "match": bool(r.rx.search(text)) and file_ok,
+                        "file_ok": file_ok})
+        return {"ok": True, "results": out}
 
     def inject(self, kind: str) -> dict:
         if self.watch is None or not self.running():
@@ -586,54 +722,28 @@ class Console:
         now = time.time()
         samples = {
             "noinsp": Alert(now, "no_insp_thread", "crit",
-                            "[테스트] 검사 시작 거부(NoInspThread) — 미검사 임박",
-                            "콘솔에서 주입한 테스트 경보입니다.", key="test-noinsp",
+                            "[시험] 검사 시작 거부(NoInspThread) — 미검사 임박",
+                            "콘솔에서 넣은 시험 경보입니다.", key="test-noinsp",
                             cooldown_min=0.05),
-            "defect": Alert(now, "defect_critical", "crit", "[테스트] 치명 결함 검출: TEST_DEFECT",
-                            "콘솔에서 주입한 테스트 경보입니다.", key="test-defect",
+            "defect": Alert(now, "defect_critical", "crit", "[시험] 치명 결함 검출: TEST_DEFECT",
+                            "콘솔에서 넣은 시험 경보입니다.", key="test-defect",
                             cooldown_min=0.05),
-            "warn": Alert(now, "pattern", "warn", "[테스트] 로그 패턴 '테스트' 3회",
-                          "콘솔에서 주입한 주의 등급 테스트 경보입니다.", key="test-warn",
+            "warn": Alert(now, "pattern", "warn", "[시험] 로그 문구 '시험' 3회",
+                          "콘솔에서 넣은 주의 등급 시험 경보입니다.", key="test-warn",
                           cooldown_min=0.05),
         }
         a = samples.get(kind)
         if a is None:
             return {"ok": False, "error": f"알 수 없는 종류: {kind}"}
         self.watch.notifier.emit(a)
-        return {"ok": True, "message": f"{a.title} 주입 — 사건 분석·메일 정책대로 처리됩니다"}
-
-    def start_replay(self, day_dir: str) -> dict:
-        if self.replay_job.get("state") == "running":
-            return {"ok": False, "error": "이미 리플레이가 진행 중입니다"}
-        if not os.path.isdir(day_dir):
-            return {"ok": False, "error": f"폴더가 없습니다: {day_dir}"}
-        cfg = copy.deepcopy(self.cfg)
-        job = {"state": "running", "day_dir": day_dir, "started": time.time(), "log": []}
-        self.replay_job = job
-
-        def work():
-            from .watch import run_replay
-            buf = deque(maxlen=300)
-            try:
-                # 리플레이 출력은 작업 기록에만 남긴다 (실시간 로그와 섞이지 않게)
-                job["log"] = buf
-                rc = _run_captured(run_replay, (cfg, day_dir), buf)
-                job["state"] = "done" if rc == 0 else "error"
-            except Exception as e:
-                buf.append(f"오류: {type(e).__name__}: {e}")
-                job["state"] = "error"
-            finally:
-                job["elapsed_s"] = round(time.time() - job["started"], 1)
-
-        threading.Thread(target=work, name="talog-replay", daemon=True).start()
-        return {"ok": True}
+        return {"ok": True, "message": f"{a.title} — 실제 경보와 같은 경로로 처리됩니다"}
 
 
 _capture_local = threading.local()
 
 
 def _run_captured(fn, args, buf: deque) -> int:
-    """리플레이 스레드의 print 를 buf 로 모은다 (다른 스레드 출력은 그대로)."""
+    """작업 스레드의 print 를 buf 로 모은다 (다른 스레드 출력은 그대로)."""
     _capture_local.buf = buf
     try:
         return fn(*args)
@@ -642,7 +752,7 @@ def _run_captured(fn, args, buf: deque) -> int:
 
 
 class _ThreadRouter(io.TextIOBase):
-    """스레드별 출력 분기: 리플레이 스레드는 작업 기록으로, 나머지는 콘솔 창+UI 로그로."""
+    """스레드별 출력 분기: 분석 작업 스레드는 작업 기록으로, 나머지는 콘솔 창+화면 로그로."""
 
     def __init__(self, default):
         self.default = default
@@ -694,14 +804,24 @@ def _handler_factory(con: Console):
                     with open(_PAGE, encoding="utf-8") as f:
                         page = f.read().replace("__TALOG_TOKEN__", con.token)
                     return self._send(200, page, "text/html; charset=utf-8")
+                if u.path.startswith("/r/"):          # 리포트 (뷰어 API 포함)
+                    rest = unquote(u.path[3:])
+                    tag, _, sub = rest.partition("/")
+                    if sub in ("", "index.html"):
+                        return self._send(200, con.report_page(tag),
+                                          "text/html; charset=utf-8")
+                    if sub in ("api/insp", "api/detail", "api/meta"):
+                        return self._send(200, con.report_api(tag, sub[4:], q))
+                    return self._send(404, {"error": "not found"})
                 if u.path == "/api/status":
                     return self._send(200, con.status())
-                if u.path == "/api/config":
-                    return self._send(200, {"cfg": con.public_cfg(), "rules": BUILTIN_RULES,
-                                            "presets": PRESETS, "smtp": _smtp_presets(),
-                                            "roles": _roles()})
-                if u.path == "/api/files":
-                    return self._send(200, con.files(q.get("dir", "")))
+                if u.path == "/api/settings":
+                    return self._send(200, {"settings": con.public_settings(),
+                                            "meta": con.meta()})
+                if u.path == "/api/folder":
+                    tr = q.get("tracking")
+                    trv = json.loads(tr) if tr else None
+                    return self._send(200, con.folder(q.get("dir", ""), trv))
                 if u.path == "/api/incidents":
                     return self._send(200, {"rows": con.incidents(
                         int(q.get("days", 3)), q.get("replay", "1") == "1")})
@@ -714,16 +834,16 @@ def _handler_factory(con: Console):
                                       "text/html; charset=utf-8")
                 if u.path == "/api/llm/models":
                     return self._send(200, con.llm_models(q.get("url", "")))
-                if u.path == "/api/mx":
-                    from .mailer import mx_hosts
-                    return self._send(200, {"domain": q.get("domain", ""),
-                                            "hosts": mx_hosts(q.get("domain", ""))})
                 if u.path == "/api/log":
                     return self._send(200, {"lines": list(con.log)[-300:]})
-                if u.path == "/api/replay":
-                    j = dict(con.replay_job)
-                    j["log"] = list(j.get("log") or [])[-200:]
+                if u.path == "/api/job":
+                    j = {k: v for k, v in con.job.items() if k != "log"}
+                    j["log"] = list(con.job.get("log") or [])[-250:]
                     return self._send(200, j)
+                if u.path == "/api/reports":
+                    return self._send(200, {"rows": con.reports()})
+            except FileNotFoundError as e:
+                return self._send(404, {"error": f"없음: {e}"})
             except Exception as e:
                 return self._send(500, {"error": f"{type(e).__name__}: {e}"})
             return self._send(404, {"error": "not found"})
@@ -738,14 +858,12 @@ def _handler_factory(con: Console):
                 return self._send(400, {"error": "JSON 형식 오류"})
             u = urlparse(self.path).path
             try:
-                if u == "/api/config":
-                    errs = con.save(body.get("cfg") or {}, body.get("password") or "",
-                                    bool(body.get("clear_password")),
-                                    body.get("graph_secret") or "",
-                                    bool(body.get("clear_graph_secret")))
+                if u == "/api/settings":
+                    errs = con.save(body.get("settings") or {}, body.get("secret") or "",
+                                    bool(body.get("clear_secret")))
                     return self._send(200 if not errs else 400,
                                       {"ok": not errs, "errors": errs,
-                                       "cfg": con.public_cfg()})
+                                       "settings": con.public_settings()})
                 if u == "/api/control":
                     act = body.get("action")
                     if act == "start":
@@ -755,34 +873,32 @@ def _handler_factory(con: Console):
                     return self._send(200, {"ok": True, "running": con.running()})
                 if u == "/api/test/llm":
                     return self._send(200, con.test_llm(body))
-                if u == "/api/test/smtp":
-                    return self._send(200, con.test_smtp(body))
-                if u == "/api/test/email":
-                    return self._send(200, con.test_email(body))
-                if u == "/api/test/pattern":
-                    return self._send(200, con.test_pattern(body))
+                if u == "/api/test/mail-check":
+                    return self._send(200, con.test_mail_check(body))
+                if u == "/api/test/mail":
+                    return self._send(200, con.test_mail(body))
+                if u == "/api/test/rule":
+                    return self._send(200, con.test_rule(body))
                 if u == "/api/test/alert":
                     return self._send(200, con.inject(body.get("kind", "")))
-                if u == "/api/replay":
-                    return self._send(200, con.start_replay(body.get("day_dir", "")))
+                if u == "/api/job":
+                    return self._send(200, con.start_job(body.get("kind", ""),
+                                                         body.get("dir", ""),
+                                                         body.get("recipe", "")))
+                if u == "/api/ask/incident":
+                    return self._send(200, con.ask_incident(body.get("id", ""),
+                                                            bool(body.get("replay")),
+                                                            body.get("q", "")))
+                if u == "/api/ask/report":
+                    return self._send(200, con.ask_report(body.get("tag", ""),
+                                                          body.get("q", "")))
+            except FileNotFoundError as e:
+                return self._send(404, {"ok": False, "error": f"없음: {e}"})
             except Exception as e:
                 return self._send(500, {"ok": False, "error": f"{type(e).__name__}: {e}"})
             return self._send(404, {"error": "not found"})
 
     return H
-
-
-def _smtp_presets() -> dict:
-    from .mailer import SMTP_PRESETS
-    return SMTP_PRESETS
-
-
-def _roles() -> dict:
-    try:
-        from .agent import Runbook
-        return Runbook().roles
-    except Exception:
-        return {}
 
 
 def serve(config_path: str, port: int = 8778, open_browser: bool = True,
@@ -792,7 +908,11 @@ def serve(config_path: str, port: int = 8778, open_browser: bool = True,
     sys.stdout = router
     srv = ThreadingHTTPServer(("127.0.0.1", port), _handler_factory(con))
     url = f"http://127.0.0.1:{port}/"
-    print(f"[talog 콘솔] {url}  (설정 {con.config_path}) — 이 창을 닫으면 감시도 멈춥니다")
+    print(f"[talog] AI 비전 로그 운영 플랫폼 {__version__} — {url}")
+    print(f"        설정 {con.config_path}"
+          + (" (옛 watch.yaml 형식 — 콘솔에서 저장하면 새 형식으로 바뀝니다)"
+             if con.legacy else "")
+          + " · 이 창을 닫으면 감시도 멈춥니다")
     if autostart:
         con.start_watch()
     if open_browser:

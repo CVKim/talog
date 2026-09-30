@@ -11,9 +11,10 @@
   - 감시 대상은 소형 플랫폼 로그 6종만 (alg/relgraph 등 대용량 제외)
   - LLM 은 선택 기능이며 기본 CPU 모드(num_gpu=0)로 검사 GPU 를 건드리지 않음
 
-사용:
-  python -m talog watch [--config watch.yaml] [--once]
-  python -m talog watch --replay <일자 폴더> [--config watch.yaml]   # 사고 재현 검증
+사용 (콘솔 없이):
+  talog run [--config talog.yaml] [--once]
+  talog run --replay <일자 폴더>      # 사고 재현 검증
+  talog run --check                  # 설치 자가 점검
 """
 
 from __future__ import annotations
@@ -62,7 +63,7 @@ _DEFAULT_CFG = {
                          "min_hours": 2.0},
         "gpu_temp": {"enabled": True, "celsius": 85, "record_min": 5},
         # 결함명 감시 (comm.log INSPECT_END NG/REWORK 페이로드). 기본은 모두 꺼짐 —
-        # 사이트마다 결함명·NG 수준이 달라 watch.yaml 에서 켠다
+        # 사이트마다 결함명·NG 수준이 달라 설정에서 켠다
         "defect_watch": {"enabled": True, "critical": [], "critical_cooldown_min": 10,
                          "repeat_window_min": 30, "repeat_count": 0,
                          "ng_streak": 0, "ng_rate_window": 0, "ng_rate_percent": 50},
@@ -74,11 +75,10 @@ _DEFAULT_CFG = {
         "overrides": {},
     },
     "notify": {"toast": True, "webhook": "", "jsonl": True},
-    "llm": {"enabled": False, "url": "http://127.0.0.1:11434", "device": "cpu",
+    "llm": {"url": "http://127.0.0.1:11434", "device": "cpu",
             "model": "qwen2.5:7b", "cpu_threads": 0, "gpu_index": -1,
             "gpu_min_free_mb": 6000, "gpu_max_util": 40, "keep_alive": "",
-            "num_ctx": 8192, "timeout_s": 600, "think": None,
-            "script": "", "interval_min": 30},
+            "num_ctx": 8192, "timeout_s": 600, "think": None},
     # 경보 사건 분석 (룰 진단 + LLM 2차 의견 + 합의 관문) — talog/agent.py
     "agent": {"enabled": False, "use_llm": True, "min_severity": "crit",
               "batch_seconds": 60, "reason_first": True, "runbook": "",
@@ -115,17 +115,22 @@ def _deep_merge(base: dict, over: dict):
 
 
 def load_config(path: str) -> dict:
+    """엔진 설정. talog.yaml(사용자 설정)은 settings.compile 로 펼치고, 옛 watch.yaml
+    (엔진 형식)은 기본값에 그대로 병합한다. 파일이 없으면 엔진 기본값."""
     cfg = json.loads(json.dumps(_DEFAULT_CFG))  # deep copy
     if path and os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 user = yaml.safe_load(f) or {}
         except (OSError, yaml.YAMLError) as e:
-            print(f"! watch.yaml 읽기 실패 — 기본값으로 진행: {e}")
+            print(f"! 설정 읽기 실패 — 기본값으로 진행: {e}")
             user = {}
         if not isinstance(user, dict):
-            print("! watch.yaml 최상위가 딕셔너리가 아닙니다 — 기본값으로 진행")
+            print("! 설정 파일 최상위가 딕셔너리가 아닙니다 — 기본값으로 진행")
             user = {}
+        from . import settings
+        if user and not settings.is_legacy(user):
+            return settings.compile(user)
         _deep_merge(cfg, user)
     return cfg
 
@@ -263,6 +268,39 @@ class Notifier:
 
 
 # ---------------------------------------------------------------------------
+def _defect_rules(dw: dict) -> list[dict]:
+    """결함 규칙 목록 (rules.defect_watch.rules). 옛 키 critical(1건 즉시 심각)·
+    repeat_count(같은 결함 N건 주의)도 같은 형태의 규칙으로 옮긴다."""
+    win = float(dw.get("repeat_window_min", 30) or 30)
+    items = []
+    if dw.get("critical"):
+        items.append(({"match": dw["critical"], "severity": "crit", "count": 1,
+                       "window_min": win,
+                       "cooldown_min": dw.get("critical_cooldown_min", 10)}, "crit"))
+    if int(dw.get("repeat_count", 0) or 0):
+        items.append(({"match": ["*"], "severity": "warn",
+                       "count": int(dw["repeat_count"]), "window_min": win}, "rep"))
+    for i, it in enumerate(dw.get("rules") or []):
+        if isinstance(it, dict) and it.get("enabled", True) is not False:
+            items.append((it, f"d{i}"))
+    out = []
+    for it, key in items:
+        m = it.get("match") or []
+        pats = [m] if isinstance(m, str) else list(m)
+        pats = [str(p).strip().upper() for x in pats for p in str(x).split(",") if str(p).strip()]
+        if not pats:
+            continue
+        sev = str(it.get("severity", "crit")).lower()
+        n = max(1, int(it.get("count", 1) or 1))
+        cd = it.get("cooldown_min")
+        out.append({"name": str(it.get("name") or ""), "match": pats, "key": key,
+                    "severity": sev if sev in ("info", "warn", "crit") else "crit",
+                    "count": n, "window_s": float(it.get("window_min", 10) or 10) * 60,
+                    "cooldown_min": float(cd) if cd not in (None, "") else
+                    (10.0 if n == 1 else None), "hits": deque()})
+    return out
+
+
 class RuleEngine:
     """슬라이딩 윈도우 기반 이상 판정 (실시간/리플레이 공용)."""
 
@@ -282,6 +320,7 @@ class RuleEngine:
         self.dw = self.cfg.get("defect_watch", {})
         self.results: OrderedDict = OrderedDict()  # inner -> {ts, result, defects}
         self.defect_hist: deque = deque()         # (ts, 결함명, inner)
+        self.defect_rules = _defect_rules(self.dw)
         # 사용자 정의 로그 패턴 (TailReader 가 줄 단위로 넘긴다)
         self.patterns = PatternEngine(self.cfg.get("patterns") or [], notifier, Alert)
 
@@ -311,11 +350,6 @@ class RuleEngine:
             n += 1
         return n
 
-    def _critical_pattern(self, name: str) -> str:
-        for p in self.dw.get("critical") or []:
-            if fnmatch.fnmatchcase(name.upper(), str(p).upper()):
-                return str(p)
-        return ""
 
     def _on_inspect_end(self, e: Event):
         """INSPECT_END 판정으로 치명 결함·동일 결함 빈발·연속 NG·NG 비율을 본다."""
@@ -340,25 +374,30 @@ class RuleEngine:
             self.defect_hist.append((e.ts, d, e.inner_id))
         while self.defect_hist and e.ts - self.defect_hist[0][0] > win:
             self.defect_hist.popleft()
-        for d in new:
-            if self._critical_pattern(d):
-                n = sum(1 for _t, x, _i in self.defect_hist if x == d)
+        # 결함 규칙: 결함명(와일드카드)이 window 분 안에 count 건 — 같은 결함명끼리 센다
+        for r in self.defect_rules:
+            for d in dict.fromkeys(new):
+                if not any(fnmatch.fnmatchcase(d.upper(), p) for p in r["match"]):
+                    continue
+                r["hits"].append((e.ts, d))
+                while r["hits"] and e.ts - r["hits"][0][0] > r["window_s"]:
+                    r["hits"].popleft()
+                n = sum(1 for _t, x in r["hits"] if x == d)
+                if n < r["count"]:
+                    continue
+                crit = r["severity"] == "crit"
+                if r["count"] == 1:
+                    title = f"{'치명 결함' if crit else '결함'} 검출: {d}"
+                    ev = (f"inner id {e.inner_id} · 판정 {res} {'/'.join(cur['defects'])} · "
+                          f"최근 {r['window_s'] / 60:.0f}분 {n}건 — 결함 이미지를 확인하고 "
+                          f"제품을 격리하십시오.")
+                else:
+                    title = f"동일 결함 빈발: {d} {r['window_s'] / 60:.0f}분 내 {n}건"
+                    ev = (f"마지막 inner id {e.inner_id} — 공정 이상 또는 과검출 여부를 "
+                          f"이미지로 확인하십시오.")
                 self.notify.emit(Alert(
-                    e.ts, "defect_critical", "crit", f"치명 결함 검출: {d}",
-                    f"inner id {e.inner_id} · 판정 {res} {'/'.join(cur['defects'])} · "
-                    f"최근 {win / 60:.0f}분 {n}건 — 결함 이미지를 확인하고 제품을 "
-                    f"격리하십시오.", key=f"crit:{d}",
-                    cooldown_min=dw.get("critical_cooldown_min", 10)))
-        need = int(dw.get("repeat_count", 0) or 0)
-        if need:
-            for d in set(new):
-                n = sum(1 for _t, x, _i in self.defect_hist if x == d)
-                if n >= need:
-                    self.notify.emit(Alert(
-                        e.ts, "defect_repeat", "warn",
-                        f"동일 결함 빈발: {d} {win / 60:.0f}분 내 {n}건",
-                        f"마지막 inner id {e.inner_id} — 공정 이상 또는 과검출 여부를 "
-                        f"이미지로 확인하십시오.", key=f"rep:{d}"))
+                    e.ts, "defect_critical" if crit else "defect_repeat", r["severity"],
+                    title, ev, key=f"{r['key']}:{d}", cooldown_min=r["cooldown_min"] or 0))
         streak = self.ng_streak_len()
         need = int(dw.get("ng_streak", 0) or 0)
         if need and streak >= need:
@@ -824,53 +863,6 @@ talog watch 가 자동 갱신합니다</div></body></html>"""
         pass
 
 
-def _llm_review(cfg: dict, engine: RuleEngine, notifier: Notifier):
-    """사용자 지시문(스크립트) 기반 LLM 점검. 기본 CPU 모드로 검사 GPU 보호."""
-    llm = cfg["llm"]
-    script = ""
-    if llm.get("script") and os.path.exists(llm["script"]):
-        with open(llm["script"], "r", encoding="utf-8") as f:
-            script = f.read()
-    if not script:
-        script = ("최근 상태에서 설비 이상 징후가 있는지 판단하라. 반복 에러, "
-                  "검사 정체, 메모리 추세를 중심으로 본다.")
-    recent_alerts = "\n".join(
-        f"- [{a.severity}] {a.title}: {a.evidence}" for a in notifier.sent[-10:]) \
-        or "- (최근 알림 없음)"
-    mem_tail = ", ".join(f"{mb:.0f}MB" for _t, mb in list(engine.mem)[-6:])
-    med_line = (f"[진행 중 검사] {len(engine.pending)}건, 완료 소요 중앙값 "
-                f"{statistics.median(engine.durations):.1f}초\n"
-                if engine.durations else "")
-    ctx = f"[최근 알림]\n{recent_alerts}\n\n{med_line}[최근 RAM] {mem_tail}\n"
-    prompt = (f"당신은 검사 설비 감시자다. 아래 감시 지시문과 현재 상태를 보고 "
-              f"JSON 한 개로만 답하라: "
-              f'{{"alert": true|false, "severity": "info|warn|crit", '
-              f'"summary": "<한국어 한 문장>"}}\n\n'
-              f"[감시 지시문]\n{script}\n\n[현재 상태]\n{ctx}")
-    try:
-        # 주소·장치(cpu/gpu/auto)·스레드 상한은 사건 분석과 같은 llm 설정을 쓴다
-        from .llm import OllamaClient
-        r = OllamaClient(llm).chat([{"role": "user", "content": prompt}])
-        if r["error"]:
-            raise RuntimeError(r["error"])
-        text = r["content"]
-        import re as _re
-        m = _re.search(r"\{.*\}", text, _re.S)
-        if m:
-            j = json.loads(m.group(0))
-            if j.get("alert"):
-                notifier.emit(Alert(time.time(), "llm_review",
-                                    j.get("severity", "info"),
-                                    "LLM 점검 소견",
-                                    str(j.get("summary", ""))[:300],
-                                    key="llm"))
-            else:
-                print(f"  [LLM 점검] 이상 없음: {j.get('summary', '')[:120]}")
-    except Exception as e:
-        # LLM 점검은 부가 기능 — 어떤 실패(JSON 이탈 포함)도 감시를 죽이지 않는다
-        print(f"  ! LLM 점검 실패(무시): {e}")
-
-
 # ---------------------------------------------------------------------------
 def _make_agent(cfg: dict, engine: RuleEngine, notifier: Notifier, gpu=None,
                 replay: bool = False, day_dir: str = ""):
@@ -930,8 +922,6 @@ class LiveWatch:
         self.keep = None if self.mode == "default" else _ENGINE_KINDS
         self.gpu = GpuMonitor(cfg, self.notifier)
         self.gpu.alert_dir = self.notifier.alert_dir   # 폴백 경로 일원화
-        self.llm_every = cfg["llm"].get("interval_min", 30) * 60
-        self.last_llm = 0.0
         self.started = time.time()
         self.last_status = 0.0
         self.fail_streak = 0
@@ -965,9 +955,6 @@ class LiveWatch:
         if time.time() - self.last_status >= 30:
             self.last_status = time.time()
             _write_status(cfg, self.notifier, self.gpu, self.started, self.agent)
-        if cfg["llm"].get("enabled") and time.time() - self.last_llm > self.llm_every:
-            self.last_llm = time.time()
-            _llm_review(cfg, engine, self.notifier)
 
     def run(self, once: bool = False) -> int:
         while not self.stop.is_set():
@@ -1119,7 +1106,7 @@ def run_replay(cfg: dict, day_dir: str) -> int:
 def run_check(cfg: dict) -> int:
     """현장 설치 자가 점검: 경로/파일/알림 채널을 확인하고 테스트 토스트를 쏜다."""
     print("=" * 56)
-    print(" talog watch 설치 자가 점검")
+    print(" talog 설치 자가 점검")
     print("=" * 56)
     ok = True
 
@@ -1166,11 +1153,11 @@ def run_check(cfg: dict) -> int:
           f"정체 {r['insp_stall']['factor_x_median']}×중앙값 · "
           f"재시작 {r['restart_burst']['count']}회/{r['restart_burst']['window_min']}분 · "
           f"메모리 +{r['memory_trend']['mb_per_hour']}MB/h")
-    print(f"[6] 사이트: '{cfg.get('site') or '(미설정 — watch.yaml 에서 지정 권장)'}'"
+    print(f"[6] 사이트: '{cfg.get('site') or '(미설정 — 콘솔 설정에서 지정 권장)'}'"
           f" / 웹훅: {'설정됨' if cfg['notify'].get('webhook') else '없음(토스트/JSONL만)'}")
 
     llm_cfg, a_cfg, e_cfg = cfg["llm"], cfg["agent"], cfg["email"]
-    need_llm = llm_cfg.get("enabled") or (a_cfg.get("enabled") and a_cfg.get("use_llm", True))
+    need_llm = a_cfg.get("enabled") and a_cfg.get("use_llm", True)
     if need_llm:
         from .llm import OllamaClient, resolve_device
         cli = OllamaClient(llm_cfg)
@@ -1179,18 +1166,16 @@ def run_check(cfg: dict) -> int:
         dev, why = resolve_device(llm_cfg)
         print(f"[7] LLM: {cli.url} {'가동 중' if alive else '미가동!'} · 모델 {cli.model} "
               f"{'설치됨' if has else '없음!(ollama pull 필요)'} · 장치 설정 "
-              f"{llm_cfg.get('device')} → 지금은 {dev} ({why})"
-              + (f" · 주기 점검 {llm_cfg.get('interval_min')}분" if llm_cfg.get("enabled")
-                 else ""))
+              f"{llm_cfg.get('device')} → 지금은 {dev} ({why})")
         ok &= alive and has
     else:
-        print("[7] LLM: 비활성 (기본)")
+        print("[7] LLM: 비활성 (룰 진단만)")
     dw = cfg["rules"].get("defect_watch", {})
-    print(f"[7b] 결함명 감시: 치명 {len(dw.get('critical') or [])}종"
-          f"{' ' + str(dw.get('critical')) if dw.get('critical') else ''} · 빈발 "
-          f"{dw.get('repeat_count') or '끔'}"
-          f"{'건/' + str(dw.get('repeat_window_min')) + '분' if dw.get('repeat_count') else ''}"
-          f" · 연속 NG {dw.get('ng_streak') or '끔'} · NG 비율 "
+    drs = _defect_rules(dw)
+    print(f"[7b] 결함 규칙 {len(drs)}개"
+          + "".join(f" · {'/'.join(r['match'])} {r['severity']} {r['count']}건"
+                    for r in drs[:6])
+          + f" · 연속 NG {dw.get('ng_streak') or '끔'} · NG 비율 "
           f"{str(dw.get('ng_rate_percent')) + '%/' + str(dw.get('ng_rate_window')) + '검사' if dw.get('ng_rate_window') else '끔'}")
     print(f"[7c] 사건 분석 에이전트: {'활성' if a_cfg.get('enabled') else '비활성'}"
           + (f" (기준 {a_cfg.get('min_severity')}, 묶음 {a_cfg.get('batch_seconds')}초, "
@@ -1204,17 +1189,17 @@ def run_check(cfg: dict) -> int:
             print(f"[7d] 이메일: dry_run — SMTP 없이 {m.outbox} 에 .eml 만 저장 "
                   f"(수신자 {len(to_all)}명 설정)")
         else:
-            env = e_cfg.get("password_env") or "TALOG_SMTP_PASSWORD"
-            pw = ("설정됨" if os.environ.get(env) else "없음!") if e_cfg.get("username") \
-                else "인증 없음(사내 릴레이)"
+            src = m.password_source() or "없음"
             good, detail = m.check()
-            print(f"[7d] 이메일: {e_cfg.get('smtp_host')}:{e_cfg.get('smtp_port')} "
-                  f"{e_cfg.get('security')} · 비밀번호 환경변수 {env} {pw} · 수신자 "
+            where = ("Microsoft 365 Graph" if m.transport == "graph" else
+                     f"{e_cfg.get('smtp_host')}:{e_cfg.get('smtp_port')} "
+                     f"{e_cfg.get('security')}")
+            print(f"[7d] 이메일: {where} · 비밀 {src} · 수신자 "
                   f"{len(to_all)}명 · 접속 {'OK' if good else '실패'} ({detail})")
             ok &= good and bool(to_all)
             if not to_all:
                 print("     ! email.to / email.roles 에 받는 사람을 적으십시오")
-        print("     실제 발송 확인: talog watch --test-email --config <watch.yaml>")
+        print("     실제 발송 확인: talog run --test-email (또는 콘솔 설정 → 테스트 메일)")
     else:
         print("[7d] 이메일: 비활성 (기본)")
 
@@ -1231,8 +1216,8 @@ def run_check(cfg: dict) -> int:
         Notifier._toast("[talog] 설치 점검", "테스트 알림입니다 - 이 팝업이 보이면 정상")
         print("[9] 테스트 토스트 발사 — 화면 우하단 팝업을 확인하십시오")
     print("=" * 56)
-    print(" 점검 " + ("통과 — run_watch.bat 로 상주 감시를 시작하십시오"
-                     if ok else "실패 항목 있음 — watch.yaml 경로를 확인하십시오"))
+    print(" 점검 " + ("통과 — run_talog.bat(콘솔) 또는 talog run 으로 시작하십시오"
+                     if ok else "실패 항목 있음 — 설정(talog.yaml)의 경로를 확인하십시오"))
     return 0 if ok else 1
 
 
@@ -1240,7 +1225,7 @@ def run_test_email(cfg: dict) -> int:
     """예시 사건 메일 1통을 설정된 경로로 보낸다 (dry_run 이면 outbox 에만)."""
     from .mailer import Mailer, sample_incident
     if not cfg["email"].get("enabled"):
-        print("email.enabled 가 false 입니다 — watch.yaml 의 email 항목을 먼저 설정하십시오.")
+        print("메일이 꺼져 있습니다 — 콘솔 설정의 '알림' 에서 발송 방식을 먼저 고르십시오.")
         return 2
     notifier = Notifier(cfg, replay=True)            # alert_dir 폴백만 빌려 쓴다
     m = Mailer(cfg, notifier.alert_dir)
@@ -1257,23 +1242,21 @@ def run_test_email(cfg: dict) -> int:
     return 0 if res["sent"] else 1
 
 
-def main(argv=None) -> int:
+def main(argv=None, prog: str = "talog watch") -> int:
     import argparse
-    ap = argparse.ArgumentParser(prog="talog watch",
-                                 description="예지보전 상주 감시")
-    ap.add_argument("--config", default=os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "watch.yaml"))
+    from .settings import default_path
+    ap = argparse.ArgumentParser(prog=prog, description="상주 감시 (화면 없이)")
+    ap.add_argument("--config", default=default_path())
     ap.add_argument("--once", action="store_true", help="1회 스캔 후 종료")
     ap.add_argument("--replay", default="", help="과거 일자 폴더 재생 검증")
     ap.add_argument("--check", action="store_true",
                     help="설치 자가 점검 (경로·파일·알림 테스트)")
     ap.add_argument("--test-email", action="store_true",
-                    help="예시 사건 메일 1통 발송 (email 설정 확인)")
-    ap.add_argument("--ui", action="store_true",
-                    help="로컬 웹 콘솔로 감시 (설정·상태·테스트, http://127.0.0.1:8778)")
-    ap.add_argument("--port", type=int, default=8778, help="콘솔 포트 (--ui)")
-    ap.add_argument("--no-open", action="store_true", help="콘솔 브라우저 자동 열기 끔")
+                    help="예시 사건 메일 1통 발송 (메일 설정 확인)")
+    # 옛 `talog watch --ui` 호환 (콘솔은 이제 `talog` 로 연다)
+    ap.add_argument("--ui", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--port", type=int, default=8778, help=argparse.SUPPRESS)
+    ap.add_argument("--no-open", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
         try:

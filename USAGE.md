@@ -1,63 +1,154 @@
 # talog 사용 설명서
 
-talos 계열 검사 설비(타이어·볼조인트·부싱·미러 등) 로그를 자동 분석하여
-**인터랙티브 HTML 리포트 + 자동 진단 소견 + 조회용 DB**를 생성하고,
-로컬 LLM으로 자연어 질의까지 지원하는 로그 분석기입니다.
+talog 는 talos 계열 검사 설비(타이어·볼조인트·부싱·미러 등) PC 에 상주하는
+**AI 비전 로그 운영 플랫폼**입니다. 하나의 에이전트가 아래 흐름을 한 번에 처리합니다.
 
-- 저장소: https://github.com/CVKim/talog (버전은 `talog.exe --version`)
-- 검증 사이트: 한국타이어 PC3, CTR 4설비(c1xx·cmfb#1·f150·v710), Tenneco
-  부싱, MR 미러 (일 4.3만 검사·300만 라인급까지 검증)
+```
+수집 ──▶ 탐지 ──▶ 판단 ──────────────────▶ 알림        조사
+오늘 로그   경보 규칙   룰 진단 + LLM 교차 확인   메일·토스트   리포트·자연어 질문
+```
+
+- 룰이 원인을 **결정**하고, 로컬 LLM(Qwen)은 같은 근거로 독립 판단해 **교차 확인**만 합니다.
+  둘이 같을 때만 "판단 일치", 다르면 두 의견을 붙여 담당자 확인을 요청합니다.
+  (Robot_Sim 벤치: 규칙이 9B LLM 보다 정확하고 LLM 단독 조치는 해로운 비율이 높음)
+- 저장소: https://github.com/CVKim/talog (버전: `talog.exe --version`)
+- 검증: 한국타이어 PC3, CTR 4설비(c1xx·cmfb#1·f150·v710), Tenneco 부싱, MR 미러
 - **설치 불필요** — `talog.exe` 는 Python 없이 Windows 에서 바로 실행됩니다.
 
 ---
 
-## 1. 가장 간단한 사용법
+## 1. 시작하기
 
-### 방법 A — 드래그&드롭
-`run_talog.bat` 위에 **로그 폴더를 끌어다 놓기** → 레시피 경로 입력(없으면 Enter)
-→ 완료되면 리포트가 자동으로 열립니다.
-
-### 방법 B — 명령줄 (exe, Python 불필요)
-```
-dist\talog.exe "H:\...\log\cmfb#1" --recipe "D:\AIV\MODEL\CMFB - V2" --open
-```
-
-- 로그 폴더는 **설비-일자 폴더**(`...\29`) 또는 **설비 폴더**(`...\cmfb#1`,
-  날짜별 일괄 생성) 모두 가능
-- 결과: `<출력폴더>\<태그>.html`(리포트), `.sqlite`(DB), `_diagnosis.md`(소견)
-- 출력 폴더 기본값은 `<로그폴더>\talog_out`, `--out` 으로 지정 가능
-
-### 주요 옵션
-| 옵션 | 설명 |
+| 하고 싶은 것 | 방법 |
 |---|---|
-| `--recipe <폴더>` | 레시피 조인 (alg번호→결함명 번역, GPU 배치, 스킵 판정) |
-| `--open` | 완료 후 리포트 자동 열기 |
-| `--llm` | 로컬 LLM(Ollama) **AI 종합 소견**을 리포트 상단에 추가 |
-| `--fast` | 대용량 종속성 그래프 로그 생략 (속도 우선) |
-| `--detail N` | 간트 상세 내장 검사 수 (기본 60) |
+| 콘솔 열기 (감시·사건·분석·설정) | `run_talog.bat` **더블클릭** → 브라우저에 http://127.0.0.1:8778 |
+| 로그 폴더 하나를 리포트로 | 로그 폴더를 `run_talog.bat` 위에 **끌어다 놓기** (또는 콘솔 → 분석) |
+| 화면 없이 상주 (자동 시작용) | `run_service.bat` |
 
-여러 설비 폴더를 한 번에 돌리고 통합 인덱스까지 만들려면:
-```
-talog.exe fleet <설비 폴더들이 있는 루트>   → 설비별 리포트 + index.html
-```
+명령줄은 세 개뿐입니다.
 
-**설비 여러 대를 한 번에 (fleet 모드)**:
 ```
-talog.exe fleet "H:\...\log"        → 루트 아래 설비 폴더 전체 분석
-                                      + 통합 인덱스 자동 생성·열기
+talog.exe                         콘솔 (--config talog.yaml  --port 8778  --no-open)
+talog.exe run                     화면 없이 상주 감시
+                                  --check(설치 점검)  --replay <일자 폴더>  --test-email  --once
+talog.exe analyze <로그 폴더>      진단 리포트 — 일자 폴더 / 설비 폴더 / 여러 설비 루트 자동 판별
+                                  --recipe <레시피>  --open  --llm  --fast  --out <폴더>
 ```
 
-**리포트 안에서**: 검사 조회 탭에 상태 필터(전체/이상만/NG/완료/절단)와
-**⬇ CSV 내보내기** 버튼이 있어 필터된 목록을 Excel 로 바로 가져갈 수 있습니다.
-종합 탭의 **NG 판정 분포**에서 결함명별 발생 건수를 확인할 수 있습니다.
-
-**watch 상태 페이지**: 감시 가동 중 `D:\AIV_LOG\TalogWatch\status.html` 이
-30초마다 자동 갱신됩니다 — 현장 모니터/브라우저에 띄워두면 가동 상태·최근
-경보·GPU 온도가 실시간으로 보입니다.
+- 설정 파일은 실행 파일 옆 `talog.yaml` 하나입니다. 보통은 콘솔의 **설정** 화면에서 고칩니다.
+- 옛 `watch.yaml` 도 그대로 읽습니다. 콘솔에서 한 번 저장하면 값 그대로 새 형식으로 바뀝니다
+  (옮길 자리가 없는 세부값은 `advanced` 에 남아 동작이 바뀌지 않습니다).
+- 옛 명령(`talog <폴더>`, `watch`, `ask`, `view`, `fleet`, `kb`)도 계속 동작합니다.
 
 ---
 
-## 2. 리포트 읽는 법 (탭 2개)
+## 2. 콘솔 화면 4개
+
+| 화면 | 하는 일 |
+|---|---|
+| **운영 현황** | 수집·탐지·판단·알림 네 단계의 지금 상태(누르면 해당 설정으로), 오늘 사건·최근 경보, GPU, 시험 경보 넣기, 실행 로그 |
+| **사건** | 사건 목록과 상세 — 판단(룰·LLM 일치 여부)·권고 조치·담당·핵심 사실·룰 근거·LLM 의견·경보·근거 로그·보낸 메일(즉시/후속). **이 사건에 질문**(사건 기록만으로 LLM 이 답함), **이 날 로그 분석** |
+| **분석** | 로그 폴더 → **진단 리포트 만들기** / **경보 재현**(현재 규칙으로 그날을 시간순 재생, 메일 발송 없음). 만든 리포트 열기, **리포트에 질문**(LLM 이 DB 를 SQL 로 조회해 답하고, 답의 숫자·시각이 조회 결과에 있는지 대조해 없는 값은 경고) |
+| **설정** | 1 수집 · 2 탐지 · 3 판단 · 4 알림을 한 화면에서. 저장하면 `talog.yaml` 을 `.bak` 으로 백업하고 감시를 새 설정으로 다시 시작 |
+
+콘솔은 이 PC(127.0.0.1)에서만 열립니다. 콘솔 창(검은 창)을 닫으면 감시도 멈춥니다.
+
+---
+
+## 3. 설정 (talog.yaml)
+
+### 1 수집
+| 키 | 뜻 |
+|---|---|
+| `site` | 설비 이름 (메일 제목·기록에 표시) |
+| `log_root` | talos 로그 루트 — 오늘 `YYYY_MM\DD` 폴더를 자동으로 따라감 |
+| `data_dir` | 경보·사건·리포트 저장 폴더 |
+| `tracking` | `core`(핵심 로그 9종, 저부하·권장) / `all`(일자 폴더 전체) / `[파일 목록]`(와일드카드·`alg\*.log` 가능) |
+
+로그 문구 규칙이 핵심 로그 밖 파일(예: DLInfer.log)을 가리키면 `core` 에서도 그 파일을 같이 읽습니다.
+
+### 2 탐지 — 경보 규칙 한 표
+등급이 알림을 정합니다: **심각** = 즉시 메일, **주의** = 묶음 메일(알림에서 켤 때), **정보** = 기록만.
+조건 "1회"는 한 번만 나와도 경보, "N회 / M분"은 M분 안에 N번이면 경보입니다.
+
+- **기본 규칙** 17개 (플랫폼 소스와 대조 검증): NoInspThread(InspStarter 거부·설비 회신 모두) ·
+  크래시 · 검사 타임아웃 · 그랩 실패 · 저장 공간 · 조명 · 시작 거부 3종 · 알고리즘 타임아웃 ·
+  재시작 빈발(기동 1회의 풀 5종 로그는 1회로 셈) · 동일 에러 반복 · 검사 정체(한 경보로 묶음) ·
+  메모리 증가 추세 · GPU 과열 · 연속 NG · NG 비율. 켜기·등급·조건만 조정합니다.
+  ```yaml
+  rules:
+    builtin: {grab_fail: {severity: warn}, img_timeout: {count: 3, window_min: 10},
+              ng_streak: {enabled: true, count: 10}}
+  ```
+- **사용자 규칙**: 결함명 또는 로그 문구
+  ```yaml
+    custom:
+      - {type: defect, name: 치명 결함, match: [BOOT_DAMAGED, "*CRACK*"], severity: crit, count: 1}
+      - {type: defect, name: 크랙 반복, match: ["*CRACK*"], severity: warn, count: 3, window_min: 10}
+      - {type: log, name: GPU 컨텍스트 치명 오류, match: enqueueV3 cudaGetLastError,
+         files: [DLInfer.log], severity: crit, count: 1}
+  ```
+  결함명은 Comm.log `INSPECT_END` 판정의 NG 결함명(와일드카드 `*`)이고 같은 결함명끼리 셉니다.
+  로그 문구의 정규식은 `re:` 로 시작합니다. 콘솔에서는 **레시피 결함명·오늘 나온 NG 결함**을 눌러
+  추가하고, **규칙 시험**에 로그 한 줄이나 결함명을 넣어 어느 규칙에 걸리는지 봅니다.
+
+### 3 판단
+| 키 | 뜻 |
+|---|---|
+| `ai.llm` | `false` = 룰 진단만 / `true` = 룰 + LLM 교차 확인 |
+| `ai.url` · `ai.model` | Ollama 주소·모델 (`qwen3.5:9b` 가 더 정확, `qwen2.5:7b` 는 가벼움) |
+| `ai.device` | `cpu`(기본, 검사 GPU 미사용, 사건당 1~2분) / `gpu`(3~6초) / `auto`(요청마다 여유 VRAM 6GB↑·사용률 40%↓ 일 때만 GPU, 모델이 이미 GPU 에 있으면 GPU) |
+
+특정 GPU 만 쓰려면 그 GPU 로 고정한 전용 Ollama 서버를 띄우고 `ai.url` 을 바꿉니다.
+```
+set CUDA_VISIBLE_DEVICES=1
+set OLLAMA_HOST=127.0.0.1:11435
+set OLLAMA_VULKAN=0
+ollama serve
+```
+(`OLLAMA_VULKAN=0` 이 없으면 Vulkan 백엔드가 다른 GPU 를 잡을 수 있습니다. 이때 `advanced:
+{llm: {gpu_index: 1}}` 로 auto 판정 GPU 도 맞춥니다.)
+
+### 4 알림
+| 발송 방식 (`mail.provider`) | 넣을 값 | 비고 |
+|---|---|---|
+| `m365` Microsoft 365 (권장) | 테넌트 ID·앱 ID·보낼 사서함·클라이언트 암호 | IT 가 Entra 앱 등록 + 보낼 사서함 1개에 Mail.Send 1회 설정. HTTPS 발송이라 정크함 문제 없음 |
+| `gmail` | Gmail 주소·**앱 비밀번호**(16자리) | 2단계 인증 필요. 현장 데이터가 회사 밖으로 나가므로 시험·개발 PC 에만 |
+| `smtp` | 서버·포트·보안·계정(선택)·비밀번호 | 사내 릴레이는 계정을 비움 |
+| `off` | — | 화면 토스트·기록만 |
+
+- 받는 사람 `mail.to`, 역할별 추가 수신자 `mail.roles`(분석이 지목한 담당에게만), 주의 등급 묶음 메일 `mail.digest`
+- **심각은 10초 안에 룰 판단으로 바로 보내고, LLM 2차 의견은 같은 스레드의 후속 메일**로 보냅니다. 시간당 10통 상한
+- **비밀번호·암호는 파일에 평문으로 쓰지 않습니다.** 콘솔에 입력하면 Windows DPAPI 로 암호화한
+  `mail.secret` 만 저장합니다(이 PC·이 사용자만 복호화). 환경변수 `TALOG_SMTP_PASSWORD` /
+  `TALOG_GRAPH_SECRET` 가 있으면 그 값을 먼저 씁니다. 발송 방식이나 계정을 바꾸면 저장된 값은 지워집니다
+- 확인: 설정 → 알림의 **연결 확인** · **테스트 메일** (또는 `talog.exe run --check` / `--test-email`)
+- 화면 알림: `notify.toast`(Windows 토스트), `notify.webhook`(Teams·Slack·사내 서버)
+
+---
+
+## 4. 판단 결과 읽는 법
+
+경보를 사건으로 묶어(첫 경보 뒤 60초, 심각은 10초) 근거를 모읍니다 — 경보 순간의 진행 중 검사·소요·
+투입 간격·재시작·타임아웃·에러·NG 분포·GPU, 사건 시점에만 DLInfer.log 꼬리. 원인·조치·담당 사전은
+`talog/rules/runbook.yaml`.
+
+| 판단 | 의미 | 메일 |
+|---|---|---|
+| 룰·LLM 판단 일치 | 규칙과 LLM 이 같은 원인 | 지목된 담당 역할에 권고 조치와 함께 |
+| 판단 불일치 — 담당자 확인 필요 | 두 의견이 다름 | 두 의견을 모두 적고 확인 요청 |
+| 룰 판단 (LLM 미사용) | `ai.llm: false` | 룰 원인·조치 |
+| 오경보 의심 | 근거가 경보 기준에 못 미침 | 주의로 강등 (기본 메일 제외) |
+
+LLM 이 쓴 문구의 숫자·시각은 근거와 대조해, 근거에 없으면 룰 문구를 씁니다. 기록: `data_dir\incidents_YYYYMMDD.jsonl`
+(경보 재현은 `_replay.jsonl`).
+
+**검증 실적**: PC3 0727 사고 재현에서 08:55 검사 정체 사전 경보(사고 33분 전), 09:28:03 NoInspThread
+즉시 경보 → 원인 "처리량 포화", Tenneco 0730 11:21 → "GPU 컨텍스트 치명 오류", c1xx 0729 치명 결함 7건 모두 일치.
+
+---
+
+## 5. 진단 리포트 읽는 법 (탭 2개)
 
 ### 종합 탭 — 열자마자 이것만 보면 됩니다
 1. **KPI 카드**: 검사 수/완료/이상/에러/평균·최대 검사시간/재시작 (클릭 시 상세 이동)
@@ -94,178 +185,38 @@ inner id 를 선택하면 그 검사의 상태(완료/소실/이상 미투입/�
 최대 13분) 생기는 것으로, 실제 미완료가 아닙니다. 익일 폴더가 있으면 첫
 1시간을 자동 스티칭해 완료로 확정합니다.
 
----
-
-## 3. LLM 자연어 질의 (talog ask)
-
-```
-python -m talog ask <출력폴더 또는 .sqlite> --q "미완료 검사 원인은?"
-python -m talog ask <출력폴더>                       ← 대화형(REPL)
-```
-
-- **로컬(기본, 무료·오프라인)**: Ollama + qwen2.5:7b (설치 완료, RTX 3080 사용)
-  - 다른 모델: `--model qwen2.5-coder:14b`(SQL 강화), `exaone3.5:7.8b`(한국어 특화),
-    `deepseek-r1:14b`(복합 추론) — `ollama pull <이름>` 후 사용
-- **Claude API(품질 최상)**: 환경변수 `ANTHROPIC_API_KEY` 설정 후 `--backend claude`
-- LLM은 로그 원문이 아니라 **구조화 DB를 SQL로 조회**하고 필요 시 원문 라인만
-  창 단위로 열람합니다 (대용량 로그를 통째로 넣지 않는 3단 파이프라인).
+결과 파일: `<출력폴더>\<태그>.html`(리포트), `.sqlite`(DB), `_diagnosis.md`(소견). 콘솔에서 만들면
+`data_dir\reports\` 에 쌓이고 콘솔 안에서 열 때는 DB 를 직접 조회해 검사 수 제한 없이 넘겨 봅니다.
+리포트의 검사 조회에는 상태 필터와 **⬇ CSV 내보내기**가 있습니다. `--recipe` 를 주면 alg 번호를
+결함명·모델·GPU 배치로 번역합니다.
 
 ---
 
-## 4. 자주 하는 작업 레시피
+## 6. 자주 하는 작업
 
 | 하고 싶은 것 | 방법 |
 |---|---|
-| "어제 미검사 왜 났어?" | 리포트 열기 → 자동 진단 소견 → 미완료 표에서 inner id 클릭 → 간트 |
-| 특정 바코드 추적 | 상세 분석 → 검사 조회에 inner id 입력 |
-| 어떤 모델이 느린지 | 종합의 모델별 막대 → 클릭 → 모델·GPU 상세(executeV2 추이) |
-| 메모리 릭 의심 | 시스템 탭 RAM 추이 (자동 판정 배지) ※ 설비 LogConfig.ini 에서 `Process Usage Log=1` 필요 |
-| 재시작이 몇 번? 누가? | 시스템 탭 프로세스 세대 표 (kill 스크립트/크래시/정상 구분) |
-| 임의 분석 | `.sqlite` 를 DB 도구/파이썬으로 직접 쿼리 (스키마: AI_GUIDE.md) |
-| 로그 수집 시 주의 | 가급적 설비 유휴 시간에 복사, `BatchRunLog.txt` 포함, 익일 폴더도 함께 |
+| "방금 NoInspThread 왜 났어?" | 사건 → 해당 사건 → 판단·핵심 사실·권고 조치, 필요하면 "이 사건에 질문" |
+| "어제 미검사 왜 났어?" | 분석 → 어제 폴더 → 진단 리포트 → 자동 진단 소견 → 미완료 inner id 클릭 → 간트 |
+| 새 규칙이 과거 사고를 잡았을까 | 설정 저장 → 분석 → 사고 폴더 → **경보 재현** → 사건 화면의 '재현' |
+| 특정 바코드 추적 | 리포트 → 상세 분석 → 검사 조회에 inner id |
+| 어떤 모델이 느린지 | 리포트 종합의 모델별 막대 → 모델·GPU 상세 |
+| 메모리 릭 의심 | 리포트 시스템 탭 RAM 추이 (설비 LogConfig.ini 에 `Process Usage Log=1` 필요) |
+| 임의 분석 | 분석 → 리포트에 질문, 또는 `.sqlite` 를 DB 도구로 직접 조회 (스키마: `talog/guide.py`) |
 
 ---
 
-## 5. 예지보전 상주 감시 (talog watch)
+## 7. 현장 설치 · 유지보수
 
-설비 PC에서 백그라운드로 돌며 `D:\AIV_LOG\Talos\<YYYY_MM>\<DD>\` 를 실시간
-추적하고, 이상 징후를 **별도 예지보전 로그(`D:\AIV_LOG\TalogWatch\`)와
-토스트 팝업/웹훅**으로 알립니다.
-
-```
-run_watch.bat                          ← 더블클릭 (설정: watch.yaml)
-talog.exe watch --config watch.yaml    ← 명령줄
-talog.exe watch --replay <일자폴더>    ← 과거 사고 재생으로 룰 검증
-```
-
-**저부하 설계** (검사 프로그램 보호):
-새로 쓰인 바이트만 증분 읽기(20초 주기) · 소형 플랫폼 로그 6종만 감시 ·
-프로세스 우선순위 자동 강등 · LLM은 선택 기능이며 **기본 CPU 모드**
-(`num_gpu=0`)라 검사용 GPU를 건드리지 않습니다.
-
-**감지 룰** (watch.yaml 또는 콘솔에서 임계 조정):
-동일 에러 반복 · NoInspThread(미검사 임박, 즉시 — InspStarter 거부 라인과 comm
-설비 회신 둘 다) · 검사 정체(정상 소요 중앙값의 2배) · 재시작 빈발 · 메모리 증가
-추세(릭 의심) · GPU 온도 · 타임아웃·그랩 실패·저장 공간·조명 · **결함명 감시**
-(치명 결함·빈발·연속 NG·NG 비율) · **사용자 정의 로그 패턴**
-
-**LLM 감시 지시문(스크립트) 모드**: `watch.yaml` 의 `llm.enabled: true` +
-`llm.script: watch_script_example.txt` 처럼 자연어 지시문 파일을 주면, 주기
-(기본 30분)마다 현재 상태 요약을 LLM(CPU/GPU 선택)에 넘겨 지시문 관점으로
-점검하고, 이상 판단 시 알림을 발송합니다.
-
-### 5-1. 웹 콘솔 (v1.10) — 설정·상태·테스트를 화면으로
-
-```
-run_console.bat                        ← 더블클릭 (감시 + 콘솔, http://127.0.0.1:8778)
-talog.exe watch --ui --config watch.yaml [--port 8778] [--no-open]
-```
-
-| 탭 | 하는 일 |
-|---|---|
-| 상태 | 오늘 심각/주의 경보·사건·메일 수, GPU(nvidia-smi), 최근 경보·사건, 테스트 경보 주입 |
-| 추적 파일 | **기본**(핵심 9종) / **선택**(파일·와일드카드 체크) / **자동**(일자 폴더 전체) |
-| 경보 규칙 | 기본 룰 켜기·등급·"N분 내 N회" · 치명 결함명(레시피 결함명 목록에서 선택) · 사용자 정의 로그 패턴(프리셋·줄 붙여넣기 시험) |
-| 분석·LLM | 사건 분석 켜기, Ollama 주소·모델, **CPU / GPU / 자동** 장치, 속도 시험 |
-| 이메일 | SMTP 프리셋(Gmail·Microsoft 365·네이버·사내 릴레이), 인증, 수신자·역할별 수신자, 등급별 정책, 접속 확인·테스트 메일 |
-| 사건 기록 | 룰 진단·LLM 의견·합의·메일 미리보기 (리플레이 사건 포함) |
-| 리플레이 | 과거 사고 폴더를 **현재 설정으로 재생** — 경보·메일을 미리 확인 (발송 없음) |
-
-콘솔은 이 PC(127.0.0.1)에서만 열리고, 저장 시 `watch.yaml` 을 `.bak` 으로 백업한 뒤
-주석을 붙여 다시 쓰고 감시를 새 설정으로 재시작합니다.
-
-### 5-2. 경보 규칙 — 결함명·패턴·등급
-
-- **치명 결함명** (`rules.defect_watch.critical`): comm.log 판정 NG 의 결함명이 목록에
-  있으면 **1건만 나와도 즉시 심각**. 와일드카드 `*` 허용. 빈발(`repeat_count`)·연속 NG
-  (`ng_streak`)·NG 비율(`ng_rate_window`)은 0 = 끔
-- **사용자 정의 패턴** (`rules.patterns`): 추적 중인 파일의 모든 줄을 검사
-  ```yaml
-  patterns:
-    - name: GPU 컨텍스트 치명 오류
-      match: enqueueV3 cudaGetLastError    # 문구 포함 / 정규식은 "re:..."
-      files: [DLInfer.log]                  # tracking 에 포함돼 있어야 함 (select/auto)
-      severity: crit                        # info | warn | crit
-      count: 1                              # window_min 안에 N회 → 경보 (1 = 즉시)
-      window_min: 10
+- 배포 키트: `python tools\make_deploy.py --site "CMFB#1" --email-to lead@company.com`
+  → `deploy\talog_<설비>\` (talog.exe · run_talog.bat · run_service.bat · talog.yaml · DEPLOY.md)
+- 설치 점검: `talog.exe run --check` (경로·추적 파일·규칙·LLM·메일 접속·GPU·테스트 토스트)
+- 로그인 시 자동 시작:
   ```
-- **기본 룰 조정** (`rules.overrides`): `{img_timeout: {count: 3, window_min: 10},
-  grab_fail: {severity: warn}, alg_timeout: {enabled: false}}`
-- **등급 → 메일**: 심각(`email.immediate`)은 10초 뒤 즉시(룰 판단), 주의는 묶음, 정보는 기록만
-
-### 5-3. 사건 분석 에이전트 — 룰 진단 + LLM 2차 의견
-
-`agent.enabled: true` 면 경보를 사건으로 묶어 근거(경보 순간의 진행 중 검사·소요·
-투입 간격·재시작·타임아웃·에러·NG 분포·GPU, 사건 시점 DLInfer.log 꼬리)를 모으고
-원인을 판단합니다. 원인·조치·담당 사전은 `talog/rules/runbook.yaml`
-(문구 교체: `agent.runbook`).
-
-| 판단 | 의미 | 메일 |
-|---|---|---|
-| 룰·LLM 판단 일치 | 규칙과 LLM 이 같은 원인 | 지목된 담당 역할에 권고 조치와 함께 |
-| 판단 불일치 — 담당자 확인 필요 | 두 의견이 다름 | 두 의견을 모두 적고 확인 요청 조치 추가 |
-| 오경보 의심 | 근거가 경보 기준에 못 미침 (예: 재시작 1회를 5회로 센 경보) | 주의로 강등 (기본 메일 제외) |
-
-LLM 이 쓴 알림 문구의 숫자·시각은 근거 데이터와 대조해, 근거에 없으면 룰 문구로
-바꿉니다. 기록: `alert_dir\incidents_YYYYMMDD.jsonl`.
-
-**LLM 장치** (`llm.device`): `cpu`(기본, 검사 GPU 미사용, `cpu_threads` 로 스레드 상한) /
-`gpu` / `auto`(요청마다 여유 VRAM `gpu_min_free_mb`·사용률 `gpu_max_util` 을 보고 선택).
-특정 GPU 만 쓰려면 그 GPU 로 고정한 전용 Ollama 서버를 띄우고 `llm.url` 을
-`http://127.0.0.1:11435` 로 바꿉니다 (bat 파일 예):
-```
-set CUDA_VISIBLE_DEVICES=1
-set OLLAMA_HOST=127.0.0.1:11435
-set OLLAMA_VULKAN=0
-ollama serve
-```
-(`OLLAMA_VULKAN=0` 이 없으면 Vulkan 백엔드가 다른 GPU 를 잡을 수 있습니다.)
-이 경우 `device: auto` 의 여유 VRAM 판정도 그 GPU 로 하도록 `llm.gpu_index` 를 같은 번호로
-맞추십시오. 모델이 이미 GPU 에 올라가 있으면(`/api/ps`) auto 는 그대로 GPU 를 씁니다.
-
-### 5-4. 이메일 — SMTP·인증
-
-```yaml
-email:
-  enabled: true
-  smtp_host: smtp.gmail.com     # 사내 릴레이면 security: none + username 비움
-  smtp_port: 587
-  security: starttls
-  username: sender@example.com
-  to: [line-leader@example.com]
-  roles: {vision_engineer: [vision@example.com], quality: [quality@example.com]}
-```
-- **비밀번호는 파일에 평문으로 쓰지 않습니다**: 콘솔에 입력하면 Windows DPAPI 로
-  암호화해 `password_dpapi` 에 저장(이 PC·이 사용자만 복호화), 또는 환경변수
-  `TALOG_SMTP_PASSWORD` (`setx TALOG_SMTP_PASSWORD "앱비밀번호"`)
-- Gmail 은 2단계 인증 후 **앱 비밀번호**, Microsoft 365 는 조직이 SMTP AUTH 를 막았으면
-  사내 릴레이를 사용
-- 확인: `talog.exe watch --check` (접속·인증만) → `talog.exe watch --test-email` (예시 메일 발송)
-- 처음 설치할 때는 `dry_run: true` 로 두면 SMTP 없이 `alert_dir\outbox\*.eml` 만 남습니다
-
-**검증 실적**: PC3 0727 사고 리플레이에서 — 새벽 00:27 모델 로드 실패 반복
-경보, **08:55 검사 정체 사전 경보(사고 33분 전)**, 09:28:03 NoInspThread
-즉시 경보, 09:28:54 크래시 감지, 09:29 재시작 빈발 경보.
-
-**부팅 시 자동 시작 등록** (선택):
-```
-schtasks /Create /TN "talog watch" /SC ONLOGON /TR "E:\talos-log-analyzer\run_watch.bat" /RL LIMITED
-```
-
-## 6. 유지보수
-
-- **플랫폼 로그 메시지가 바뀌면**: 코드가 아니라 `talog\rules\events.yaml` 만 수정
-- **exe 재빌드**: `python -m PyInstaller talog.spec --noconfirm` → `dist\talog.exe`
-- **판정 기준 튜닝 위치**: 로그말미 5분(`assemble.py` 300), GPU 경합 4배/메모리
-  100MB/h(`diagnose.py`), 간트 내장 60건(`--detail`)
-- 문서: `README.md`(구조/명세), `AI_GUIDE.md`(DB 스키마·LLM 가이드)
-
-## v0.1 범위와 다음 버전 후보
-
-포함: 파서·레시피 조인·자동 진단·인터랙티브 리포트·날짜 스티칭·커버리지 판정·
-GPU/메모리 분석·로컬 LLM 소견·ask·exe/bat 패키징 (5개 사이트 실검증)
-
-v0.2 진행: **종속성 그래프 시각화 완료** (레시피/관측 겸용, 검사별 상태 색칠)
-
-v0.2 잔여 후보: 다설비 트렌드 대시보드, 과거 RCA 사례 지식베이스(벡터 검색),
-Tenneco 그룹(존) 단위 완료 판정 세분화
+  schtasks /Create /TN "talog" /SC ONLOGON /TR "D:\talog\run_service.bat" /RL LIMITED
+  ```
+- 저부하 설계: 새로 쓰인 바이트만 20초 주기로 증분 읽기 · 프로세스 우선순위 BELOW_NORMAL ·
+  LLM 기본 CPU(`num_gpu=0`) · GPU 온도는 nvidia-smi 로만 조회
+- 플랫폼 로그 메시지가 바뀌면 코드가 아니라 `talog\rules\events.yaml` 만 수정
+- 원인·조치·담당 문구는 `talog\rules\runbook.yaml`
+- exe 재빌드: `python -m PyInstaller talog.spec --noconfirm` → `dist\talog.exe`

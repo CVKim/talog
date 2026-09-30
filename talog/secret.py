@@ -1,6 +1,6 @@
 """SMTP 비밀번호 보관 — Windows DPAPI(CryptProtectData) 암호화.
 
-watch.yaml 에는 평문 대신 `email.password_dpapi: <base64>` 로 저장한다. 같은 PC 의
+설정 파일에는 평문 대신 DPAPI 암호문(talog.yaml 의 `mail.secret`)으로 저장한다. 같은 PC 의
 같은 Windows 사용자만 복호화할 수 있으므로 설정 파일이 복사·유출돼도 비밀번호는
 드러나지 않는다. 다른 OS 에서는 사용할 수 없고(available() == False) 환경변수
 (`email.password_env`) 방식을 쓴다.

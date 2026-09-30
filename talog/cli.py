@@ -1,10 +1,10 @@
-"""talog CLI.
+"""talog CLI — AI 비전 로그 운영 플랫폼.
 
-사용:
-    python -m talog <설비-일자 폴더 | 설비 폴더> [--recipe <레시피 폴더>] [--out <출력 폴더>]
+    talog                        콘솔 (감시·사건·분석·설정, http://127.0.0.1:8778)
+    talog run                    화면 없이 상주 감시 (자동 시작·서비스용)
+    talog analyze <로그 폴더>     일자·설비·여러 설비 폴더 진단 리포트
 
-설비-일자 폴더(플랫폼 로그 + alg 하위)를 직접 주거나, 날짜 하위 폴더들을 가진
-설비 폴더를 주면 일자별로 각각 리포트를 생성한다.
+옛 명령(talog <폴더>, watch, ask, view, fleet, kb)은 그대로 동작한다.
 """
 
 from __future__ import annotations
@@ -453,6 +453,19 @@ def fleet_main(argv=None) -> int:
     return 0
 
 
+USAGE = f"""talog {__version__} — AI 비전 로그 운영 플랫폼
+
+  talog                        콘솔 열기 — 감시 현황 · 사건 · 분석 · 설정
+                               (--config <talog.yaml> --port 8778 --no-open)
+  talog run                    화면 없이 상주 감시 (자동 시작·서비스용)
+                               --once · --check(설치 점검) · --replay <일자 폴더> · --test-email
+  talog analyze <로그 폴더>     일자 / 설비 / 여러 설비 폴더의 진단 리포트
+                               --recipe <레시피> --open --llm --fast --out <폴더>
+"""
+
+_LEGACY = ("ask", "watch", "kb", "fleet", "view")
+
+
 def main(argv=None):
     # 콘솔 코드페이지(cp949)에서도 안전하게 출력한다 (frozen exe 대응)
     for stream in (sys.stdout, sys.stderr):
@@ -461,41 +474,87 @@ def main(argv=None):
         except Exception:
             pass
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] == "ask":
-        from .ask import main as ask_main
-        return ask_main(argv[1:])
-    if argv and argv[0] == "watch":
-        from .watch import main as watch_main
-        return watch_main(argv[1:])
-    if argv and argv[0] == "kb":
-        from .casekb import main as kb_main
-        return kb_main(argv[1:])
-    if argv and argv[0] == "fleet":
-        return fleet_main(argv[1:])
-    if argv and argv[0] == "view":
-        import argparse as _ap
-        vp = _ap.ArgumentParser(prog="talog view",
-                                description="SQLite 직접 서빙 뷰어 — 대용량 "
-                                            "로그를 페이지 쿼리로 조회")
-        vp.add_argument("target", help=".sqlite 파일 / talog_out / 일자 폴더")
-        vp.add_argument("--port", type=int, default=8777)
-        vp.add_argument("--no-open", action="store_true")
-        va = vp.parse_args(argv[1:])
-        from .viewer import serve
-        try:
-            serve(va.target, port=va.port, open_browser=not va.no_open)
-        except FileNotFoundError as e:
-            print(f"[talog view] {e}")
-            return 1
-        except OSError as e:
-            print(f"[talog view] 포트 {va.port} 사용 불가 — --port 로 변경 "
-                  f"({e})")
-            return 1
+    cmd = argv[0] if argv else ""
+    if cmd in ("-h", "--help", "help"):
+        print(USAGE)
         return 0
-    ap = argparse.ArgumentParser(prog="talog", description="talos 로그 진단 분석기")
-    ap.add_argument("--version", action="version",
-                    version=f"talog {__version__}")
-    ap.add_argument("logs", help="설비-일자 폴더 또는 설비 폴더")
+    if cmd == "--version":
+        print(f"talog {__version__}")
+        return 0
+    if cmd in ("", "console") or cmd.startswith("-"):
+        return console_main(argv[1:] if cmd == "console" else argv)
+    if cmd == "run":
+        from .watch import main as watch_main
+        return watch_main(argv[1:], prog="talog run")
+    if cmd == "analyze":
+        return analyze_main(argv[1:])
+    if cmd in _LEGACY:
+        return _legacy(cmd, argv[1:])
+    return analyze_main(argv)             # 옛 사용법: talog <로그 폴더> [--recipe ...]
+
+
+def console_main(argv) -> int:
+    from .settings import default_path
+    ap = argparse.ArgumentParser(prog="talog", description="talog 콘솔")
+    ap.add_argument("--config", default=default_path())
+    ap.add_argument("--port", type=int, default=8778)
+    ap.add_argument("--no-open", action="store_true", help="브라우저 자동 열기 끔")
+    args = ap.parse_args(argv)
+    from .console import serve
+    try:
+        return serve(args.config, port=args.port, open_browser=not args.no_open)
+    except OSError as e:
+        print(f"[talog] 포트 {args.port} 사용 불가 — 이미 콘솔이 떠 있으면 "
+              f"http://127.0.0.1:{args.port} 를 여십시오. 다른 포트: --port ({e})")
+        return 1
+
+
+def _legacy(cmd: str, argv) -> int:
+    if cmd == "ask":
+        from .ask import main as ask_main
+        return ask_main(argv)
+    if cmd == "watch":
+        from .watch import main as watch_main
+        return watch_main(argv)
+    if cmd == "kb":
+        from .casekb import main as kb_main
+        return kb_main(argv)
+    if cmd == "fleet":
+        return fleet_main(argv)
+    import argparse as _ap
+    vp = _ap.ArgumentParser(prog="talog view",
+                            description="SQLite 직접 서빙 뷰어 — 대용량 "
+                                        "로그를 페이지 쿼리로 조회")
+    vp.add_argument("target", help=".sqlite 파일 / talog_out / 일자 폴더")
+    vp.add_argument("--port", type=int, default=8777)
+    vp.add_argument("--no-open", action="store_true")
+    va = vp.parse_args(argv)
+    from .viewer import serve
+    try:
+        serve(va.target, port=va.port, open_browser=not va.no_open)
+    except FileNotFoundError as e:
+        print(f"[talog view] {e}")
+        return 1
+    except OSError as e:
+        print(f"[talog view] 포트 {va.port} 사용 불가 — --port 로 변경 "
+              f"({e})")
+        return 1
+    return 0
+
+
+def _is_fleet_root(path: str) -> bool:
+    """하위 폴더들이 각각 설비 폴더(일자 폴더를 가진)인 루트인가."""
+    try:
+        subs = [os.path.join(path, n) for n in os.listdir(path)]
+    except OSError:
+        return False
+    return sum(1 for d in subs if os.path.isdir(d) and _collect_day_folders(d)) >= 2
+
+
+def analyze_main(argv) -> int:
+    ap = argparse.ArgumentParser(prog="talog analyze",
+                                 description="로그 폴더 진단 리포트 (일자·설비·여러 설비)")
+    ap.add_argument("logs", help="일자 폴더 / 설비 폴더 / 여러 설비를 가진 루트")
     ap.add_argument("--recipe", help="레시피 폴더 (제품 폴더 또는 버전 폴더)")
     ap.add_argument("--recipe-hint", default="", help="레시피 버전 매칭 힌트 문자열")
     ap.add_argument("--out", default="", help="출력 폴더 (기본: <logs>\\talog_out)")
@@ -507,6 +566,11 @@ def main(argv=None):
     ap.add_argument("--llm", action="store_true",
                     help="로컬 LLM(Ollama) 종합 소견을 리포트에 추가")
     args = ap.parse_args(argv)
+    root = os.path.abspath(args.logs)
+    if os.path.isdir(root) and not _collect_day_folders(root) and _is_fleet_root(root):
+        fa = [args.logs] + (["--out", args.out] if args.out else []) + \
+            (["--fast"] if args.fast else [])
+        return fleet_main(fa)
 
     recipe = None
     if args.recipe:

@@ -1,6 +1,6 @@
 """talog watch 사건 메일 발송기 — SMTP(STARTTLS/SSL/평문 릴레이) + outbox(.eml) 보관.
 
-보안: 비밀번호는 watch.yaml 에 쓰지 않고 환경변수(`email.password_env`, 기본
+보안: 비밀번호는 설정 파일에 평문으로 쓰지 않고 환경변수(`email.password_env`, 기본
 TALOG_SMTP_PASSWORD)로만 읽는다. 리플레이와 dry_run 은 SMTP 에 접속하지 않고
 outbox 에 .eml 만 남긴다(설치 초기 점검·감사용).
 

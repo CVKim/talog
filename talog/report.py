@@ -1461,6 +1461,7 @@ let SORT_DESC = true;      // true=최신순(기본), false=과거순
 let PAGE_OFF = 0;          // 서버 모드 페이지 오프셋
 // talog view(로컬 서버)로 열리면 검사 조회·간트 상세를 DB 쿼리로 전환한다
 const SERVER_MODE = location.protocol.startsWith('http');
+const API_BASE = window.TALOG_API || '';   // talog 콘솔은 /r/<리포트> 아래에서 서빙
 const BAD_SET = new Set(['rejected', 'incomplete_lost', 'incomplete', 'unknown']);
 
 function toggleSort() {
@@ -1531,7 +1532,7 @@ function renderList() {
   if (SERVER_MODE) {
     const q = encodeURIComponent(
       (document.getElementById('insp-search').value || '').trim());
-    fetch(`/api/insp?filter=${STATUS_FILTER}&q=${q}` +
+    fetch(API_BASE + `/api/insp?filter=${STATUS_FILTER}&q=${q}` +
           `&sort=${SORT_DESC ? 'desc' : 'asc'}&offset=${PAGE_OFF}&limit=400` +
           `&from=${tf}&to=${tt}`)
       .then(r => r.json())
@@ -1726,7 +1727,7 @@ function openInspection(iid) {
   renderList(iid);
   if (!DETAIL[iid] && SERVER_MODE) {
     // 서버 모드: 어떤 검사든 간트 상세를 DB 에서 온디맨드로 불러온다
-    fetch('/api/detail?inner=' + encodeURIComponent(iid))
+    fetch(API_BASE + '/api/detail?inner=' + encodeURIComponent(iid))
       .then(r => r.json())
       .then(d => {
         if (d && !d.error) DETAIL[iid] = d;

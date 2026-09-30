@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.0.0 (2026-09-30) — AI 비전 로그 운영 플랫폼으로 재설계
+
+흩어져 있던 기능(명령 7개·콘솔 탭 9개·설정 약 80키)을 에이전트 흐름
+**수집 → 탐지 → 판단 → 알림 (+ 조사)** 하나로 묶었다. 검증된 감시·판단 엔진은 그대로 두고
+사람이 보는 층(명령·설정·화면)을 새로 짰다.
+
+- **명령 3개**: `talog`(콘솔) · `talog run`(화면 없이 상주, --check/--replay/--test-email) ·
+  `talog analyze <폴더>`(일자·설비·여러 설비 루트 자동 판별). 옛 명령(`talog <폴더>`, watch,
+  ask, view, fleet, kb)은 숨은 별칭으로 계속 동작
+- **설정 `talog.yaml` (약 20키, `talog/settings.py`)**: site·log_root·data_dir·tracking(core/all/목록) ·
+  rules.builtin(기본 17규칙의 켜기·등급·조건) · rules.custom(결함명/로그 문구 한 형식) ·
+  ai(llm·url·model·device) · mail(provider off/gmail/m365/smtp, 받는 사람, 역할, digest, secret) ·
+  notify · advanced. 엔진 설정으로 펼치는 compile 과, 옛 watch.yaml 을 **손실 없이** 옮기는
+  from_engine(옮길 자리 없는 값은 advanced — 기존 설정 파일 19개 왕복 검증)
+- **콘솔 4화면**: 운영 현황(네 단계 상태 스트립·오늘 사건·경보) · 사건(판단·조치·근거·메일,
+  **사건에 질문**) · 분석(진단 리포트 만들기·경보 재현·콘솔 안 리포트 열기·**리포트에 질문**) ·
+  설정(수집·탐지·판단·알림 한 화면, 규칙 시험, 속도 시험, 연결 확인·테스트 메일)
+- **결함 규칙 일반화**: 결함명(와일드카드)·등급·"M분 내 N건"(같은 결함명끼리) — 옛
+  `critical`·`repeat_count` 도 같은 규칙으로 처리
+- **리포트 질문 신뢰도**: 실제 DB 열 이름을 프롬프트에 넣고(없으면 7B 모델이 열 이름·값을 지어냄 —
+  PC3 0727 시험에서 시각·ID 8개가 모두 근거 없음 → 넣은 뒤 4건 모두 일치), 답의 숫자·시각을
+  조회 결과와 대조해 없는 값은 화면에 경고
+- 사건 분석은 늘 켜짐(`ai.llm` 은 LLM 교차 확인만 켬). qwen3 계열은 생각 모드 자동 끔
+- **뺀 것**: LLM 주기 점검(지시문 script) 모드, 추적 default/auto 구분(core/all 로), 메일 세부 수치
+  (간격·상한·즉시 대기 — 고정, 필요하면 advanced), Direct Send MX 조회 화면, run_watch.bat·
+  run_console.bat·watch.yaml·watch_script_example.txt
+- 배포: `run_talog.bat`(더블클릭 = 콘솔, 끌어놓기 = 리포트) · `run_service.bat` · `talog.yaml`
+- 테스트 111개 (플랫폼 층 9개 추가)
+
 ## 1.10.0 (2026-09-29) — watch 사건 분석 에이전트 · 이메일 · 웹 콘솔
 
 - **경보 사건 분석 에이전트** (`talog/agent.py`, 런북 `talog/rules/runbook.yaml`):

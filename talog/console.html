@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>talog 감시 콘솔</title>
+<title>talog 운영 플랫폼</title>
 <style>
 :root{
-  --bg:#f5f6f8;--panel:#ffffff;--ink:#101828;--sub:#475467;--mute:#98a2b3;--line:#e4e7ec;
+  --bg:#f4f5f7;--panel:#fff;--ink:#101828;--sub:#475467;--mute:#98a2b3;--line:#e4e7ec;
   --soft:#f2f4f7;--pri:#2563eb;--pri-soft:#e8efff;--crit:#d92d20;--crit-soft:#fef3f2;
   --warn:#dc6803;--warn-soft:#fffaeb;--ok:#079455;--ok-soft:#ecfdf3;--info:#475467;
-  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);--r:10px;
+  --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.07);--r:12px;
 }
 @media (prefers-color-scheme:dark){:root{
   --bg:#0c111d;--panel:#161b26;--ink:#f5f5f6;--sub:#cecfd2;--mute:#85888e;--line:#2a3140;
@@ -18,88 +18,122 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 "Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif}
 button,input,select,textarea{font:inherit;color:inherit}
-.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:10px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
-.brand{font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px}
-.logo{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:7px;background:var(--pri);color:#fff;font-weight:800}
-.site{color:var(--sub);font-weight:600}
+a{color:var(--pri)}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:14px;padding:10px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--pri);color:#fff;font-weight:800}
+.brand b{font-size:16px}.brand small{display:block;color:var(--sub);font-size:11px;line-height:1.2}
+.site{color:var(--sub);font-weight:700;padding-left:14px;border-left:1px solid var(--line)}
 .spacer{flex:1}
 .pill{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;background:var(--soft);color:var(--sub)}
 .pill.on{background:var(--ok-soft);color:var(--ok)}.pill.off{background:var(--crit-soft);color:var(--crit)}
-.layout{display:flex;min-height:calc(100vh - 52px)}
-nav.side{width:176px;flex:none;padding:14px 10px;border-right:1px solid var(--line);background:var(--panel)}
-nav.side a{display:block;padding:8px 12px;border-radius:8px;color:var(--sub);cursor:pointer;font-weight:600;margin-bottom:2px;user-select:none}
+.layout{display:flex;min-height:calc(100vh - 51px)}
+nav.side{width:188px;flex:none;padding:14px 10px;border-right:1px solid var(--line);background:var(--panel)}
+nav.side a{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;color:var(--sub);cursor:pointer;font-weight:600;margin-bottom:3px;user-select:none}
 nav.side a:hover{background:var(--soft)}nav.side a.active{background:var(--pri-soft);color:var(--pri)}
-main{flex:1;min-width:0;padding:20px 24px 90px}
-section{display:none}section.active{display:block}
-h2{font-size:18px;margin:0 0 4px}h3{font-size:15px;margin:22px 0 8px}
-.desc{color:var(--sub);margin:0 0 14px;font-size:13px}
+nav.side a i{font-style:normal;width:18px;text-align:center}
+nav.side .cnt{margin-left:auto;font-size:11px;background:var(--crit);color:#fff;border-radius:999px;padding:0 7px}
+nav.side .foot{margin-top:18px;padding:10px 12px;font-size:11px;color:var(--mute);line-height:1.5}
+main{flex:1;min-width:0;padding:20px 24px 100px;max-width:1500px}
+section.view{display:none}section.view.active{display:block}
+h2{font-size:19px;margin:0 0 2px}h3{font-size:15px;margin:0 0 10px}h4{font-size:13px;margin:14px 0 6px;color:var(--sub)}
+.desc{color:var(--sub);margin:0 0 16px;font-size:13px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:16px;margin-bottom:14px}
-.grid{display:grid;gap:12px}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid{display:grid;gap:14px}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media (max-width:1100px){.g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:1fr}}
-@media (max-width:760px){nav.side{width:auto;position:fixed;bottom:0;left:0;right:0;z-index:6;display:flex;overflow-x:auto;padding:6px;border-right:0;border-top:1px solid var(--line)}nav.side a{white-space:nowrap}.g2,.g4{grid-template-columns:1fr}main{padding:14px 16px 140px}}
-.kpi .v{font-size:26px;font-weight:800;letter-spacing:-.5px}.kpi .l{color:var(--sub);font-size:12px;font-weight:600}
-.kpi .s{font-size:12px;color:var(--mute)}
+@media (max-width:760px){nav.side{width:auto;position:fixed;bottom:0;left:0;right:0;z-index:6;display:flex;overflow-x:auto;padding:6px;border-right:0;border-top:1px solid var(--line)}nav.side a{white-space:nowrap}nav.side .foot{display:none}.g2,.g4{grid-template-columns:1fr}main{padding:14px 16px 140px}.site{display:none}}
+/* 흐름 스트립 */
+.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin-bottom:14px}
+.stage{position:relative;background:var(--panel);border:1px solid var(--line);padding:14px 16px 14px 18px;cursor:pointer;min-height:118px}
+.stage:first-child{border-radius:var(--r) 0 0 var(--r)}.stage:last-child{border-radius:0 var(--r) var(--r) 0}
+.stage+.stage{border-left:0}
+.stage:not(:last-child)::after{content:"";position:absolute;right:-9px;top:50%;width:16px;height:16px;background:var(--panel);border-top:1px solid var(--line);border-right:1px solid var(--line);transform:translateY(-50%) rotate(45deg);z-index:1}
+.stage:hover{background:var(--soft)}.stage:hover::after{background:var(--soft)}
+.stage .h{display:flex;align-items:center;gap:8px;font-weight:700}
+.stage .n{font-size:11px;color:var(--mute);font-weight:700;letter-spacing:.5px}
+.stage .big{font-size:22px;font-weight:800;margin:6px 0 2px;letter-spacing:-.3px}
+.stage .l{font-size:12px;color:var(--sub)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--mute);flex:none}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.crit{background:var(--crit)}
+@media (max-width:1100px){.flow{grid-template-columns:repeat(2,minmax(0,1fr))}.stage{border-radius:0!important;border-left:1px solid var(--line)!important}.stage::after{display:none}}
+@media (max-width:560px){.flow{grid-template-columns:1fr}}
 .crit{color:var(--crit)}.warn{color:var(--warn)}.ok{color:var(--ok)}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;color:var(--sub);font-weight:600;font-size:12px;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 tbody tr:hover{background:var(--soft)}
-tr.click{cursor:pointer}
-.tbl-wrap{overflow:auto;max-height:460px}
-.sev{display:inline-block;min-width:38px;text-align:center;padding:1px 8px;border-radius:6px;font-size:12px;font-weight:700}
+tr.click{cursor:pointer}tr.sel{background:var(--pri-soft)!important}
+.tbl{overflow:auto;max-height:480px}
+.sev{display:inline-block;min-width:38px;text-align:center;padding:1px 8px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap}
 .sev.crit{background:var(--crit-soft);color:var(--crit)}.sev.warn{background:var(--warn-soft);color:var(--warn)}.sev.info{background:var(--soft);color:var(--info)}
 .muted{color:var(--mute)}.small{font-size:12px}.mono{font-family:Consolas,"D2Coding",monospace;font-size:12px}
 .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
 .field label,.lab{font-size:12px;font-weight:600;color:var(--sub)}
-.field .hint{font-size:12px;color:var(--mute)}
+.hint{font-size:12px;color:var(--mute)}
 input[type=text],input[type=number],input[type=password],select,textarea{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-width:0}
-input[type=number]{width:96px}input.w-s{width:70px}input.w-l{width:100%}
+input[type=number]{width:84px}input.w-s{width:64px}.w-l{width:100%}
+textarea{width:100%;resize:vertical;min-height:64px}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-soft);border-color:var(--pri)}
-.btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:7px 14px;cursor:pointer;font-weight:600}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:7px 14px;cursor:pointer;font-weight:600;white-space:nowrap}
 .btn:hover{background:var(--soft)}.btn.primary{background:var(--pri);border-color:var(--pri);color:#fff}
 .btn.primary:hover{filter:brightness(1.07)}.btn.danger{color:var(--crit)}.btn.sm{padding:4px 10px;font-size:12px}
 .btn:disabled{opacity:.5;cursor:default}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex-wrap:wrap}
 .seg button{border:0;background:var(--panel);padding:7px 14px;cursor:pointer;font-weight:600;color:var(--sub);border-right:1px solid var(--line)}
 .seg button:last-child{border-right:0}.seg button.on{background:var(--pri);color:#fff}
 .switch{position:relative;display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:600}
-.switch input{appearance:none;width:36px;height:20px;border-radius:999px;background:var(--line);position:relative;cursor:pointer;transition:.15s;margin:0}
+.switch input{appearance:none;width:36px;height:20px;border-radius:999px;background:var(--line);position:relative;cursor:pointer;transition:.15s;margin:0;flex:none}
 .switch input::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .switch input:checked{background:var(--pri)}.switch input:checked::after{left:18px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:5px 6px;background:var(--panel);min-height:36px}
-.chips input{border:0;outline:0;flex:1;min-width:140px;padding:3px 4px;background:transparent}
+.chips input{border:0;outline:0;flex:1;min-width:120px;padding:3px 4px;background:transparent}
 .chipx{display:inline-flex;align-items:center;gap:6px;background:var(--pri-soft);color:var(--pri);padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600}
 .chipx b{cursor:pointer;opacity:.7}.chipx b:hover{opacity:1}
 .sugg{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .sugg span{border:1px dashed var(--line);border-radius:6px;padding:2px 8px;font-size:12px;cursor:pointer;color:var(--sub)}
 .sugg span:hover{border-color:var(--pri);color:var(--pri)}.sugg span.have{opacity:.4;cursor:default}
-.note{border-left:3px solid var(--pri);background:var(--pri-soft);padding:8px 12px;border-radius:6px;font-size:13px;color:var(--ink);margin:8px 0 12px}
+.note{border-left:3px solid var(--pri);background:var(--pri-soft);padding:8px 12px;border-radius:6px;font-size:13px;margin:8px 0 12px}
 .note.warn{border-color:var(--warn);background:var(--warn-soft)}.note.crit{border-color:var(--crit);background:var(--crit-soft)}
 .result{margin-top:10px;font-size:13px;white-space:pre-wrap}
 .savebar{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:9;display:flex;align-items:center;gap:10px;background:var(--ink);color:var(--panel);padding:10px 12px 10px 18px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.25);font-weight:600}
 .savebar .btn{background:transparent;color:inherit;border-color:rgba(255,255,255,.3)}.savebar .btn.primary{background:var(--pri);border-color:var(--pri);color:#fff}
 .hidden{display:none!important}
 #toast{position:fixed;right:18px;top:64px;z-index:20;display:flex;flex-direction:column;gap:8px}
-#toast div{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--pri);border-radius:8px;padding:10px 14px;box-shadow:0 6px 20px rgba(0,0,0,.12);max-width:420px;font-size:13px;white-space:pre-wrap}
+#toast div{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--pri);border-radius:8px;padding:10px 14px;box-shadow:0 6px 20px rgba(0,0,0,.12);max-width:440px;font-size:13px;white-space:pre-wrap}
 #toast div.err{border-left-color:var(--crit)}#toast div.ok{border-left-color:var(--ok)}
-.modal{position:fixed;inset:0;z-index:30;background:rgba(15,20,30,.45);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
-.modal .box{background:var(--panel);border-radius:14px;max-width:1040px;width:100%;padding:18px 20px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
-.modal .head{display:flex;align-items:center;gap:10px;margin-bottom:8px}.modal .head h2{flex:1}
-iframe.mail{width:100%;height:560px;border:1px solid var(--line);border-radius:8px;background:#fff}
-.verdict{border-radius:10px;padding:12px 14px;margin:8px 0;background:var(--soft)}
-.verdict .lab2{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;color:#fff;background:var(--info)}
-.verdict .lab2.agree{background:var(--ok)}.verdict .lab2.warn{background:var(--warn)}
-ul.facts{margin:6px 0 0 18px;padding:0}
-pre.log{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;max-height:520px;overflow:auto;white-space:pre-wrap;margin:0}
+iframe.mail{width:100%;height:520px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.verdict{border-radius:10px;padding:12px 14px;margin:10px 0;background:var(--soft)}
+.lab2{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;color:#fff;background:var(--info)}
+.lab2.agree{background:var(--ok)}.lab2.warn{background:var(--warn)}
+ul.facts{margin:4px 0 0 18px;padding:0}ul.facts li{margin:2px 0}
+pre.log{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;max-height:420px;overflow:auto;white-space:pre-wrap;margin:0}
 .bar{height:6px;border-radius:4px;background:var(--soft);overflow:hidden;min-width:60px}.bar i{display:block;height:100%;background:var(--pri)}
-.tag{font-size:11px;padding:1px 6px;border-radius:5px;background:var(--soft);color:var(--sub);font-weight:600}
-.tag.on{background:var(--ok-soft);color:var(--ok)}.tag.will{background:var(--pri-soft);color:var(--pri)}
+.tag{font-size:11px;padding:1px 6px;border-radius:5px;background:var(--soft);color:var(--sub);font-weight:600;white-space:nowrap}
+.tag.on{background:var(--ok-soft);color:var(--ok)}.tag.will{background:var(--pri-soft);color:var(--pri)}.tag.w{background:var(--warn-soft);color:var(--warn)}
+.split{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;align-items:start}
+@media (max-width:1100px){.split{grid-template-columns:1fr}}
+.sticky{position:sticky;top:66px}
+.empty{padding:28px 10px;text-align:center;color:var(--mute)}
+.subnav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;position:sticky;top:51px;z-index:4;background:var(--bg);padding:8px 0}
+.subnav a{padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel);cursor:pointer;font-weight:600;font-size:13px;color:var(--sub)}
+.subnav a:hover{border-color:var(--pri);color:var(--pri)}
+.sechead{display:flex;align-items:center;gap:10px;margin:6px 0 10px}
+.sechead .n{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--pri);color:#fff;font-weight:800;font-size:12px}
+.sechead h3{margin:0;font-size:16px}
+.prov{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:900px){.prov{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.prov label{border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;font-weight:600;display:flex;gap:8px;align-items:center}
+.prov label.on{border-color:var(--pri);background:var(--pri-soft);color:var(--pri)}
+.prov input{margin:0}
+.qa{border-top:1px solid var(--line);padding:10px 0}.qa .q{font-weight:700}.qa .a{white-space:pre-wrap;margin-top:4px}
+details summary{cursor:pointer;color:var(--sub);font-size:12px;font-weight:600}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}.kv b{color:var(--sub);font-weight:600}
 </style>
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="logo">t</span>talog 감시 콘솔<span class="tag" id="ver"></span></div>
+  <div class="brand"><span class="logo">t</span><div><b>talog</b><small>AI 비전 로그 운영 플랫폼 <span id="ver"></span></small></div></div>
   <div class="site" id="siteName"></div>
   <div class="spacer"></div>
   <span class="pill" id="runPill">확인 중</span>
@@ -107,212 +141,136 @@ pre.log{background:var(--soft);border:1px solid var(--line);border-radius:8px;pa
 </header>
 <div class="layout">
 <nav class="side" id="nav">
-  <a data-tab="status" class="active">상태</a>
-  <a data-tab="files">추적 파일</a>
-  <a data-tab="rules">경보 규칙</a>
-  <a data-tab="llm">분석 · LLM</a>
-  <a data-tab="email">이메일</a>
-  <a data-tab="incidents">사건 기록</a>
-  <a data-tab="replay">리플레이</a>
-  <a data-tab="log">실행 로그</a>
-  <a data-tab="general">기본 설정</a>
+  <a data-v="ops" class="active"><i>◉</i>운영 현황</a>
+  <a data-v="inc"><i>⚑</i>사건<span class="cnt hidden" id="incCnt"></span></a>
+  <a data-v="ana"><i>▤</i>분석</a>
+  <a data-v="set"><i>⚙</i>설정</a>
+  <div class="foot">수집 → 탐지 → 판단 → 알림<br>룰이 결정하고 LLM 이 교차 확인합니다.</div>
 </nav>
 <main>
-<!-- 상태 ------------------------------------------------------------------>
-<section id="tab-status" class="active">
-  <h2>감시 상태</h2><p class="desc" id="stDesc">5초마다 새로 고칩니다.</p>
-  <div class="grid g4" id="kpis"></div>
-  <div class="grid g3">
-    <div class="card"><div class="lab">GPU (nvidia-smi)</div><div id="gpuBox" class="small"></div></div>
-    <div class="card"><div class="lab">사건 분석 · LLM</div><div id="llmBox" class="small"></div></div>
-    <div class="card"><div class="lab">이메일</div><div id="mailBox" class="small"></div></div>
+<!-- 운영 현황 ============================================================ -->
+<section class="view active" id="v-ops">
+  <h2>운영 현황</h2><p class="desc" id="opsDesc">5초마다 새로 고칩니다.</p>
+  <div class="flow" id="flow"></div>
+  <div class="split">
+    <div class="card"><div class="row" style="margin-bottom:8px"><h3 style="margin:0;flex:1">오늘 사건</h3><a class="small" data-go="inc">전체 보기 →</a></div>
+      <div class="tbl" style="max-height:420px"><table><tbody id="opsInc"></tbody></table></div></div>
+    <div class="card"><h3>최근 경보</h3><div class="tbl" style="max-height:420px"><table><tbody id="opsAlerts"></tbody></table></div></div>
   </div>
+  <div class="grid g2">
+    <div class="card"><h3>GPU</h3><div id="gpuBox" class="small"></div></div>
+    <div class="card"><h3>시험 경보</h3>
+      <div class="row"><select id="injKind"><option value="noinsp">심각 — NoInspThread</option><option value="defect">심각 — 치명 결함</option><option value="warn">주의 — 로그 문구</option></select><button class="btn" id="btnInject">넣기</button></div>
+      <p class="hint" style="margin:8px 0 0">실제 경보와 같은 경로(사건 분석 → 메일)로 처리됩니다. 메일을 켜 두었으면 실제로 발송됩니다.</p></div>
+  </div>
+  <details class="card"><summary>실행 로그</summary><pre class="log" id="logBox" style="margin-top:10px"></pre></details>
+</section>
+
+<!-- 사건 ================================================================= -->
+<section class="view" id="v-inc">
+  <h2>사건</h2><p class="desc">경보를 사건으로 묶어 근거를 모으고, 룰 진단과 LLM 2차 의견이 같을 때만 "판단 일치"로 보냅니다.</p>
+  <div class="split">
+    <div class="card sticky"><div class="row" style="margin-bottom:8px"><select id="incDays"><option value="1">오늘</option><option value="3" selected>최근 3일</option><option value="7">최근 7일</option><option value="30">최근 30일</option></select>
+        <label class="small"><input type="checkbox" id="incReplay" checked> 재현 포함</label><span class="spacer"></span><span id="incCount" class="small muted"></span></div>
+      <div class="tbl" style="max-height:calc(100vh - 230px)"><table><tbody id="incRows"></tbody></table></div></div>
+    <div class="card" id="incDetail"><div class="empty">왼쪽에서 사건을 고르십시오.</div></div>
+  </div>
+</section>
+
+<!-- 분석 ================================================================= -->
+<section class="view" id="v-ana">
+  <h2>분석</h2><p class="desc">로그 폴더를 진단 리포트로 만들거나, 현재 경보 규칙으로 그날을 다시 돌려 봅니다. 만든 리포트에는 자연어로 질문할 수 있습니다.</p>
+  <div class="card"><h3>로그 폴더</h3>
+    <div class="row"><input type="text" id="anaDir" list="dayList" style="flex:1;min-width:260px" placeholder="일자 폴더 (예: D:\AIV_LOG\Talos\2026_09\28) 또는 설비 폴더"><datalist id="dayList"></datalist>
+      <button class="btn primary" id="btnReport">진단 리포트 만들기</button><button class="btn" id="btnReplay">경보 재현</button></div>
+    <div class="row" style="margin-top:8px"><span class="lab">레시피 (선택)</span><input type="text" id="anaRecipe" style="flex:1;min-width:240px" placeholder="ALG.ini 가 있는 레시피 폴더 — 알고리즘 번호를 결함명·모델로 번역"></div>
+    <p class="hint" style="margin:8px 0 0"><b>진단 리포트</b>: 검사별 판정·미완료 원인(RCA)·타임라인. <b>경보 재현</b>: 저장된 경보 규칙으로 그날을 시간순 재생해 어떤 경보·사건·메일이 나왔을지 봅니다 (메일은 보내지 않음, 결과는 사건 화면의 '재현').</p>
+    <div id="jobBox" class="hidden" style="margin-top:12px"><div class="row small" id="jobState"></div><pre class="log" id="jobLog" style="margin-top:8px;max-height:260px"></pre></div>
+  </div>
+  <div class="split">
+    <div class="card"><h3>리포트</h3><div class="tbl" style="max-height:560px"><table><tbody id="repRows"></tbody></table></div></div>
+    <div class="card"><h3>리포트에 질문 <span class="small muted" id="askTag"></span></h3>
+      <p class="hint" style="margin:0 0 8px">LLM 이 리포트 DB 를 SQL 로 직접 조회해 답합니다 (설정 → 판단의 LLM 서버 사용). 예: "미완료 검사 원인은?", "가장 오래 걸린 검사 5개", "12시 이후 NG 결함 분포".</p>
+      <textarea id="askQ" placeholder="질문을 입력하고 Ctrl+Enter"></textarea>
+      <div class="row" style="margin-top:8px"><button class="btn primary" id="btnAsk">질문</button><span id="askBusy" class="small muted"></span></div>
+      <div id="askList"></div></div>
+  </div>
+</section>
+
+<!-- 설정 ================================================================= -->
+<section class="view" id="v-set">
+  <h2>설정</h2><p class="desc">설정 파일 <span class="mono" id="cfgPath"></span> <span id="legacyTag"></span></p>
+  <div class="subnav"><a data-sec="s-collect">1 수집</a><a data-sec="s-detect">2 탐지</a><a data-sec="s-judge">3 판단</a><a data-sec="s-notify">4 알림</a></div>
+
+  <div id="s-collect"><div class="sechead"><span class="n">1</span><h3>수집 — 무엇을 읽을까</h3></div>
+  <div class="card"><div class="grid g3">
+      <div class="field"><label>설비 이름 (메일 제목·기록에 표시)</label><input type="text" data-path="site" placeholder="예: PC3, CMFB#1"></div>
+      <div class="field"><label>talos 로그 루트 — 오늘 YYYY_MM\DD 폴더를 자동으로 따라감</label><input type="text" data-path="log_root"></div>
+      <div class="field"><label>저장 폴더 (경보·사건·리포트)</label><input type="text" data-path="data_dir"></div></div>
+    <div class="row"><span class="lab">추적 방식</span><div class="seg" id="trSeg"><button data-v="core">핵심 로그 (권장)</button><button data-v="all">폴더 전체</button><button data-v="list">직접 선택</button></div></div>
+    <div class="note small" id="trHelp"></div>
+    <div id="trListBox" class="field hidden"><label>읽을 파일 — 파일명 또는 와일드카드 (예: Comm.log, seq_*.log, DLInfer.log, alg\alg_dl_*.log)</label><div class="chips" data-path="tracking" data-ph="파일명 입력 후 Enter"></div></div>
+    <details id="fileDetails"><summary>오늘 폴더 파일 보기</summary>
+      <div class="row" style="margin-top:8px"><input type="text" id="fileDir" style="flex:1" placeholder="비우면 오늘 폴더 (없으면 가장 최근 폴더)"><button class="btn sm" id="btnFiles">불러오기</button></div>
+      <div class="tbl" style="margin-top:8px;max-height:380px"><table><thead><tr><th></th><th>파일</th><th>크기</th><th>분류</th><th>수정</th><th>추적</th></tr></thead><tbody id="fileRows"></tbody></table></div>
+      <p class="hint" id="fileNote"></p></details>
+  </div></div>
+
+  <div id="s-detect"><div class="sechead"><span class="n">2</span><h3>탐지 — 경보 규칙</h3></div>
   <div class="card">
-    <div class="row"><h3 style="margin:0;flex:1">테스트 경보 주입</h3>
-      <select id="injKind"><option value="noinsp">심각 — NoInspThread</option><option value="defect">심각 — 치명 결함</option><option value="warn">주의 — 사용자 패턴</option></select>
-      <button class="btn" id="btnInject">주입</button></div>
-    <p class="desc" style="margin:6px 0 0">실제 경보와 같은 경로(사건 분석 → 메일 정책)로 처리됩니다. 메일이 켜져 있으면 실제로 발송됩니다.</p>
-  </div>
-  <div class="card"><h3 style="margin-top:0">최근 경보</h3><div class="tbl-wrap"><table><thead><tr><th>시각</th><th>등급</th><th>룰</th><th>내용</th></tr></thead><tbody id="alertRows"></tbody></table></div></div>
-  <div class="card"><h3 style="margin-top:0">최근 사건 분석</h3><div class="tbl-wrap"><table><thead><tr><th>시각</th><th>등급</th><th>사건</th><th>원인(룰)</th><th>판단</th><th>메일</th></tr></thead><tbody id="incRowsLive"></tbody></table></div></div>
-</section>
+    <div class="note small">등급이 알림을 정합니다 — <b class="crit">심각</b>: 즉시 메일 · <b class="warn">주의</b>: 묶음 메일(알림에서 켤 때) · 정보: 기록만. 조건의 "1회"는 한 번만 나와도 경보, "N회 / M분"은 M분 안에 N번 나오면 경보입니다.</div>
+    <h4 style="margin-top:4px">기본 규칙 <span class="muted small">— 플랫폼 소스와 대조 검증된 감지</span></h4>
+    <div class="tbl" style="max-height:none"><table><thead><tr><th style="width:52px">사용</th><th>규칙</th><th style="width:110px">등급</th><th>조건</th></tr></thead><tbody id="biRows"></tbody></table></div>
+    <div class="row" style="margin-top:18px"><h4 style="margin:0;flex:1">사용자 규칙 <span class="muted small">— 결함명(판정 NG) 또는 로그 문구</span></h4>
+      <button class="btn sm" id="btnAddDef">+ 결함명 규칙</button><button class="btn sm" id="btnAddLog">+ 로그 문구 규칙</button>
+      <select id="presetSel" class="small"><option value="">예시에서 추가…</option></select></div>
+    <div class="tbl" style="max-height:none;margin-top:8px"><table><thead><tr><th style="width:52px">사용</th><th>이름</th><th>종류</th><th>찾을 것</th><th>대상 파일</th><th>등급</th><th>조건</th><th></th></tr></thead><tbody id="cuRows"></tbody></table></div>
+    <div class="field" style="margin-top:12px"><label>결함명 제안 — 레시피 결함명과 오늘 나온 NG 결함 (누르면 '치명 결함' 규칙에 추가)</label><div class="sugg" id="defSugg"><span class="muted" style="border:0">불러오는 중…</span></div></div>
+    <div class="card" style="background:var(--soft);margin:6px 0 0"><div class="lab">규칙 시험 — 로그 한 줄이나 결함명을 넣고 어떤 규칙에 걸리는지 확인</div>
+      <div class="row" style="margin-top:6px"><input type="text" id="rtFile" placeholder="파일명 (로그 문구, 선택)" style="width:200px"><input type="text" id="rtText" style="flex:1;min-width:240px" placeholder="예: ...V2M_INSPECT_START_ACK,V3.0,TALOS3,NoInspThread,...  또는  BOOT_DAMAGED"><button class="btn" id="btnRt">시험</button></div>
+      <div id="rtRes" class="result"></div></div>
+  </div></div>
 
-<!-- 추적 파일 --------------------------------------------------------------->
-<section id="tab-files">
-  <h2>추적 파일</h2><p class="desc">talos 가 쓰는 일자 폴더(<span class="mono" id="dayDir"></span>)에서 무엇을 실시간으로 읽을지 정합니다.</p>
+  <div id="s-judge"><div class="sechead"><span class="n">3</span><h3>판단 — 룰 진단 + LLM 교차 확인</h3></div>
   <div class="card">
-    <div class="seg" id="modeSeg"><button data-v="default">기본 (핵심 9종)</button><button data-v="select">선택한 파일만</button><button data-v="auto">자동 (폴더 전체)</button></div>
-    <div id="modeHelp" class="note" style="margin-top:12px"></div>
-    <div id="selBox" class="field hidden"><label>선택 목록 — 파일명 또는 와일드카드 (예: seq_*.log, DLInfer.log, alg\alg_dl_*.log)</label><div class="chips" data-path="tracking.files" data-ph="파일명 입력 후 Enter"></div></div>
-    <div id="autoBox" class="hidden">
-      <div class="field"><label>제외 목록 (와일드카드)</label><div class="chips" data-path="tracking.exclude" data-ph="예: *.dmp"></div></div>
-      <label class="switch"><input type="checkbox" data-path="tracking.include_alg">alg\ 하위 알고리즘 로그도 포함</label>
+    <div class="seg" id="aiSeg"><button data-v="0">룰 진단만</button><button data-v="1">룰 + LLM 교차 확인</button></div>
+    <p class="hint" style="margin:8px 0 0">룰이 근거(검사 흐름·GPU 로그·자원)로 원인을 정하고 조치·담당을 고릅니다. LLM(Qwen)은 같은 근거로 독립 판단해 <b>같은 원인일 때만 "판단 일치"</b>, 다르면 두 의견을 붙여 확인을 요청합니다. 심각 등급 메일은 룰 판단으로 먼저 나가고 LLM 의견은 같은 스레드의 후속 메일로 갑니다.</p>
+    <div id="aiBox" style="margin-top:14px">
+      <div class="row"><span class="lab">LLM 서버 (Ollama)</span><input type="text" data-path="ai.url" style="width:260px"><button class="btn sm" id="btnModels">연결 확인</button><span id="llmAlive" class="small"></span></div>
+      <div class="row" style="margin-top:10px"><span class="lab">모델</span><select id="modelSel" style="min-width:220px"></select><span class="hint">qwen3.5:9b 가 판단이 더 정확하고 qwen2.5:7b 는 가볍습니다</span></div>
+      <div class="row" style="margin-top:12px"><span class="lab">장치</span><div class="seg" id="devSeg"><button data-v="cpu">CPU</button><button data-v="gpu">GPU</button><button data-v="auto">자동</button></div><span id="devHelp" class="small muted"></span></div>
+      <h4>GPU 지금 상태</h4><div id="gpuFree" class="small"></div>
+      <h4>속도 시험 <span class="muted small">(짧은 한 문장 생성 — CPU 는 첫 로드에 수십 초)</span></h4>
+      <div class="row"><button class="btn sm" data-llmtest="cpu">CPU 로 시험</button><button class="btn sm" data-llmtest="gpu">GPU 로 시험</button><span id="llmTestBusy" class="small muted"></span></div>
+      <div class="tbl" style="margin-top:6px"><table><tbody id="llmTestRows"></tbody></table></div>
     </div>
-    <div class="row" style="margin-top:12px"><span class="lab">처음 보는 파일이 이보다 크면 끝부분부터 읽기</span><input type="number" data-path="tracking.max_initial_mb" data-type="number"> MB <span class="muted small">(선택·자동 모드)</span></div>
-  </div>
+  </div></div>
+
+  <div id="s-notify"><div class="sechead"><span class="n">4</span><h3>알림 — 누구에게 어떻게</h3></div>
   <div class="card">
-    <div class="row"><span class="lab">폴더</span><input type="text" id="fileDir" class="w-l" style="flex:1" placeholder="비우면 오늘 폴더(없으면 가장 최근 폴더)"><button class="btn" id="btnFiles">불러오기</button></div>
-    <div class="tbl-wrap" style="margin-top:10px;max-height:560px"><table><thead><tr><th style="width:34px"></th><th>파일</th><th>크기</th><th>분류</th><th>수정</th><th>지금 추적</th><th>저장 시</th><th>읽은 위치</th></tr></thead><tbody id="fileRows"></tbody></table></div>
-    <p class="desc small" id="fileNote" style="margin:8px 0 0"></p>
-  </div>
-</section>
-
-<!-- 경보 규칙 --------------------------------------------------------------->
-<section id="tab-rules">
-  <h2>경보 규칙</h2><p class="desc">등급은 메일 정책과 이어집니다 — 기본값으로 <b class="crit">심각</b>은 즉시 메일, <b class="warn">주의</b>는 묶음 메일, 정보는 기록만. "횟수" 1 은 한 번만 나와도 경보입니다.</p>
-  <div class="card"><h3 style="margin-top:0">기본 감지 룰</h3>
-    <div class="tbl-wrap" style="max-height:none"><table><thead><tr><th>룰</th><th>사용</th><th>등급</th><th>조건</th></tr></thead><tbody id="ruleRows"></tbody></table></div></div>
-  <div class="card"><h3 style="margin-top:0">결함명 감시 <span class="muted small">(comm.log 판정 NG 의 결함명)</span></h3>
-    <div class="field"><label>치명 결함 — 1건만 나와도 즉시 심각 경보 (와일드카드 * 허용)</label><div class="chips" data-path="rules.defect_watch.critical" data-ph="결함명 입력 후 Enter"></div>
-      <div class="hint">레시피 결함명(모델 로드 시 comm.log 기록)과 오늘 나온 NG 결함 — 눌러서 추가</div><div class="sugg" id="defSugg"></div></div>
-    <div class="grid g3">
-      <div class="field"><label>동일 결함 빈발 (주의)</label><div class="row"><input type="number" data-path="rules.defect_watch.repeat_count" data-type="number" class="w-s">건 / <input type="number" data-path="rules.defect_watch.repeat_window_min" data-type="number" class="w-s">분 <span class="hint">0 = 끔</span></div></div>
-      <div class="field"><label>연속 NG (심각)</label><div class="row"><input type="number" data-path="rules.defect_watch.ng_streak" data-type="number" class="w-s">건 연속 <span class="hint">0 = 끔</span></div></div>
-      <div class="field"><label>NG 비율 (주의)</label><div class="row">최근 <input type="number" data-path="rules.defect_watch.ng_rate_window" data-type="number" class="w-s">검사 중 <input type="number" data-path="rules.defect_watch.ng_rate_percent" data-type="number" class="w-s">% 이상 <span class="hint">0 = 끔</span></div></div>
+    <div class="prov" id="provBox"></div>
+    <div class="note small hidden" id="provHelp"></div>
+    <div id="mailBox">
+      <div class="grid g3" id="provFields"></div>
+      <div class="field"><label>받는 사람</label><div class="chips" data-path="mail.to" data-ph="이메일 입력 후 Enter"></div></div>
+      <label class="switch"><input type="checkbox" data-path="mail.digest">주의 등급도 묶어서 메일 (5분 이상 간격)</label>
+      <details style="margin-top:12px"><summary>역할별 추가 수신자 — 분석이 지목한 담당에게만 더 보냄</summary><div id="roleBox" style="margin-top:8px"></div></details>
+      <div class="row" style="margin-top:14px"><button class="btn" id="btnMailCheck">연결 확인</button><button class="btn" id="btnMailTest">테스트 메일 보내기</button><span class="hint">저장 전 입력값으로 시험합니다</span></div>
+      <div id="mailRes" class="result"></div>
+      <div class="note small">심각 등급은 10초 안에 룰 판단으로 바로 보내고, LLM 2차 의견은 같은 스레드의 후속 메일로 보냅니다. 시간당 10통을 넘기지 않습니다.</div>
     </div>
-    <div class="row"><span class="lab">치명 결함 재경보 간격</span><input type="number" data-path="rules.defect_watch.critical_cooldown_min" data-type="number" class="w-s">분</div>
-  </div>
-  <div class="card"><div class="row"><h3 style="margin:0;flex:1">사용자 정의 로그 패턴</h3>
-      <select id="presetSel"><option value="">프리셋에서 추가…</option></select><button class="btn" id="btnAddPat">+ 빈 패턴</button></div>
-    <p class="desc" style="margin:6px 0 10px">추적 중인 파일의 모든 줄을 검사합니다. 정규식은 <span class="mono">re:</span> 로 시작합니다(예: <span class="mono">re:Code: 0x[0-9a-f]+</span>). 파일을 비우면 추적 중인 전체 파일입니다.</p>
-    <div class="tbl-wrap" style="max-height:none"><table><thead><tr><th>사용</th><th>이름</th><th>찾을 문구</th><th>파일</th><th>레벨</th><th>등급</th><th>횟수 / 분</th><th>재경보(분)</th><th>분석 계열</th><th></th></tr></thead><tbody id="patRows"></tbody></table></div>
-    <div class="card" style="margin:12px 0 0;background:var(--soft)"><div class="lab">패턴 시험 — 로그 한 줄을 붙여 넣고 어떤 패턴에 걸리는지 확인</div>
-      <div class="row" style="margin-top:6px"><input type="text" id="ptFile" placeholder="파일명 (선택, 예: Comm.log)" style="width:200px"><input type="text" id="ptLine" class="w-l" style="flex:1" placeholder="예: 2026/07/27-09:28:03.502	[Debug][[S]LEN:0079][0]	V2M_INSPECT_START_ACK,V3.0,TALOS3,NoInspThread,..."><button class="btn" id="btnPt">시험</button></div>
-      <div id="ptRes" class="result"></div></div>
-  </div>
-</section>
+    <h4>화면 알림</h4>
+    <div class="row" style="gap:22px"><label class="switch"><input type="checkbox" data-path="notify.toast">Windows 토스트</label>
+      <span class="lab">웹훅 (Teams·Slack·사내 서버)</span><input type="text" data-path="notify.webhook" style="flex:1;min-width:240px" placeholder="비우면 끔"></div>
+  </div></div>
 
-<!-- 분석 · LLM --------------------------------------------------------------->
-<section id="tab-llm">
-  <h2>분석 · LLM</h2><p class="desc">경보가 나면 근거를 모아 <b>룰 진단</b>을 내고, 로컬 LLM(Qwen 등)의 <b>2차 의견</b>과 같은 원인일 때만 "판단 일치"로 보냅니다. 다르면 두 의견을 붙여 담당자 확인을 요청합니다.</p>
-  <div class="card"><h3 style="margin-top:0">사건 분석 에이전트</h3>
-    <div class="row" style="gap:22px"><label class="switch"><input type="checkbox" data-path="agent.enabled">사건 분석 사용</label>
-      <label class="switch"><input type="checkbox" data-path="agent.use_llm">LLM 2차 의견</label>
-      <label class="switch"><input type="checkbox" data-path="agent.reason_first">서술 후 판단(2단계, 정확도↑·시간↑)</label></div>
-    <div class="row" style="margin-top:12px"><span class="lab">분석 기준 등급</span><select data-path="agent.min_severity"><option value="crit">심각 이상</option><option value="warn">주의 이상</option></select>
-      <span class="lab">묶음</span><input type="number" data-path="agent.batch_seconds" data-type="number" class="w-s">초 <span class="hint small muted">(즉시 등급은 이메일 탭의 즉시 대기 시간)</span></div>
-  </div>
-  <div class="card"><h3 style="margin-top:0">LLM 서버 · 장치</h3>
-    <div class="row"><span class="lab">Ollama 주소</span><input type="text" data-path="llm.url" style="width:280px"><button class="btn sm" id="btnModels">연결 확인</button><span id="llmAlive" class="small"></span></div>
-    <div class="row" style="margin-top:10px"><span class="lab">모델</span><select id="modelSel" data-path="llm.model" style="min-width:220px"></select><span class="hint small muted">qwen3.5:9b 가 판단 정확도가 높고(Robot_Sim 벤치 55% 대 31%) qwen2.5:7b 는 가볍습니다</span></div>
-    <div class="row" style="margin-top:14px"><span class="lab">장치</span><div class="seg" id="devSeg"><button data-v="cpu">CPU</button><button data-v="gpu">GPU</button><button data-v="auto">자동</button></div><span id="devHelp" class="small muted"></span></div>
-    <div class="grid g4" style="margin-top:12px">
-      <div class="field"><label>CPU 스레드 상한</label><input type="number" data-path="llm.cpu_threads" data-type="number"><span class="hint">0 = Ollama 기본(전체 코어)</span></div>
-      <div class="field"><label>자동: 필요 여유 VRAM (MB)</label><input type="number" data-path="llm.gpu_min_free_mb" data-type="number"></div>
-      <div class="field"><label>자동: GPU 사용률 상한 (%)</label><input type="number" data-path="llm.gpu_max_util" data-type="number"></div>
-      <div class="field"><label>자동: 대상 GPU 번호</label><input type="number" data-path="llm.gpu_index" data-type="number"><span class="hint">-1 = 여유가 가장 많은 GPU</span></div>
-      <div class="field"><label>모델 상주 (keep_alive)</label><input type="text" data-path="llm.keep_alive" placeholder="서버 기본"><span class="hint">예: 10m · 0(바로 내림, GPU 권장)</span></div>
-      <div class="field"><label>컨텍스트 (num_ctx)</label><input type="number" data-path="llm.num_ctx" data-type="number"></div>
-      <div class="field"><label>응답 제한 (초)</label><input type="number" data-path="llm.timeout_s" data-type="number"></div>
-      <div class="field"><label>생각 모드 (qwen3 계열)</label><select data-path="llm.think" data-type="nullable-bool"><option value="">서버 기본</option><option value="false">끄기 (빠름)</option><option value="true">켜기</option></select></div>
-    </div>
-    <div class="note warn small">GPU 를 고르면 검사 프로그램과 VRAM 을 나눠 씁니다. 특정 GPU 만 쓰려면 그 GPU 로 고정한 전용 Ollama 서버(CUDA_VISIBLE_DEVICES)를 따로 띄우고 주소를 바꾸십시오.</div>
-    <h3>GPU 현재 상태</h3><div id="gpuFree" class="small"></div>
-    <h3>속도 시험 <span class="muted small">(저장 전 값으로 짧은 한 문장 생성)</span></h3>
-    <div class="row"><button class="btn" data-llmtest="cpu">CPU 로 시험</button><button class="btn" data-llmtest="gpu">GPU 로 시험</button><span id="llmTestBusy" class="small muted"></span></div>
-    <div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th>시각</th><th>모델</th><th>장치</th><th>전체(초)</th><th>로드(초)</th><th>생성 토큰/초</th><th>응답</th></tr></thead><tbody id="llmTestRows"></tbody></table></div>
-  </div>
-  <div class="card"><h3 style="margin-top:0">주기 점검 (지시문)</h3>
-    <div class="row"><label class="switch"><input type="checkbox" data-path="llm.enabled">사용</label><span class="lab">주기</span><input type="number" data-path="llm.interval_min" data-type="number" class="w-s">분 <span class="lab">지시문 파일</span><input type="text" data-path="llm.script" style="width:340px" placeholder="watch_script_example.txt"></div>
-  </div>
-</section>
-
-<!-- 이메일 ------------------------------------------------------------------>
-<section id="tab-email">
-  <h2>이메일</h2><p class="desc">사건 분석 결과를 담당자에게 보냅니다. 비밀번호는 이 PC 의 Windows 사용자 키로 암호화(DPAPI)해 저장하며 화면에 다시 표시하지 않습니다.</p>
-  <div class="card">
-    <div class="row" style="gap:22px"><label class="switch"><input type="checkbox" data-path="email.enabled">메일 사용</label>
-      <label class="switch"><input type="checkbox" data-path="email.dry_run">발송 없이 보관만 (dry run)</label>
-      <label class="switch"><input type="checkbox" data-path="email.outbox">보낸 메일 사본 보관 (outbox)</label></div>
-  </div>
-  <div class="card"><h3 style="margin-top:0">발송 방식 · 인증</h3>
-    <div class="row" id="smtpPresets"></div><div id="smtpHelp" class="note hidden"></div>
-    <div class="row" style="margin-top:10px"><span class="lab">발송 방식</span><div class="seg" id="trSeg"><button data-v="smtp">SMTP</button><button data-v="graph">Microsoft 365 Graph (OAuth2)</button></div></div>
-    <div id="graphBox" class="hidden" style="margin-top:12px">
-      <div class="note small">Exchange Online 은 SMTP 아이디·비밀번호 인증을 폐지하는 중입니다. IT 관리자가 <b>Entra ID 앱 등록 → Mail.Send(애플리케이션) 권한 + 관리자 동의</b>를 1회 해 주면, 토큰으로 발송합니다. 권장: Application Access Policy 로 보낼 사서함 1개만 허용.</div>
-      <div class="grid g4">
-        <div class="field" style="grid-column:span 2"><label>테넌트 ID 또는 회사 도메인</label><input type="text" data-path="email.graph.tenant_id" placeholder="예: company.com"></div>
-        <div class="field" style="grid-column:span 2"><label>앱(클라이언트) ID</label><input type="text" data-path="email.graph.client_id" placeholder="00000000-0000-0000-0000-000000000000"></div>
-        <div class="field" style="grid-column:span 2"><label>보낼 사서함 (UPN)</label><input type="text" data-path="email.graph.sender" placeholder="talog-alert@회사도메인"></div>
-        <div class="field" style="grid-column:span 2"><label>클라이언트 암호 (값)</label><input type="password" id="gsInput" autocomplete="new-password"><span class="hint" id="gsHint"></span>
-          <label class="small"><input type="checkbox" id="gsClear"> 저장된 암호 지우기</label></div>
-        <div class="field" style="grid-column:span 2"><label>암호 환경변수 (있으면 우선)</label><input type="text" data-path="email.graph.secret_env"></div>
-      </div>
-    </div>
-    <div class="grid g4 smtp-only" id="smtpBox" style="margin-top:10px">
-      <div class="field" style="grid-column:span 2"><label>SMTP 서버</label><input type="text" data-path="email.smtp_host" placeholder="smtp.gmail.com"></div>
-      <div class="field"><label>포트</label><input type="number" data-path="email.smtp_port" data-type="number"></div>
-      <div class="field"><label>보안</label><select data-path="email.security"><option value="starttls">STARTTLS (587)</option><option value="ssl">SSL/TLS (465)</option><option value="none">없음 (사내 릴레이)</option></select></div>
-      <div class="field" style="grid-column:span 2"><label>사용자 이름 (비우면 인증 없이 발송)</label><input type="text" data-path="email.username" placeholder="sender@example.com"></div>
-      <div class="field" style="grid-column:span 2"><label>비밀번호 / 앱 비밀번호</label><input type="password" id="pwInput" autocomplete="new-password"><span class="hint" id="pwHint"></span>
-        <label class="small"><input type="checkbox" id="pwClear"> 저장된 비밀번호 지우기</label></div>
-      <div class="field" style="grid-column:span 2"><label>보내는 사람 (비우면 사용자 이름)</label><input type="text" data-path="email.sender" placeholder="talog watch &lt;sender@example.com&gt;"></div>
-      <div class="field" style="grid-column:span 2"><label>비밀번호 환경변수 (있으면 우선)</label><input type="text" data-path="email.password_env"></div>
-      <div class="field" style="grid-column:span 4"><div class="row"><span class="lab">MX 조회 (Direct Send 용)</span><input type="text" id="mxDomain" placeholder="받는 사람 도메인 (예: company.com)" style="width:260px"><button class="btn sm" id="btnMx">조회해서 서버에 넣기</button><span id="mxRes" class="small muted"></span></div></div>
-    </div>
-    <div class="row"><button class="btn" id="btnSmtp">접속·인증 확인</button><button class="btn" id="btnTestMail">테스트 메일 보내기</button><span class="small muted">저장 전 입력값으로 시험합니다</span></div>
-    <div id="mailRes" class="result"></div>
-  </div>
-  <div class="card"><h3 style="margin-top:0">받는 사람</h3>
-    <div class="field"><label>항상 받는 사람</label><div class="chips" data-path="email.to" data-ph="이메일 입력 후 Enter"></div></div>
-    <div id="roleBox"></div>
-  </div>
-  <div class="card"><h3 style="margin-top:0">등급별 발송 정책</h3>
-    <div class="row" style="gap:18px"><span class="lab">즉시 발송 등급</span>
-      <label class="small"><input type="checkbox" data-imm="crit"> 심각</label><label class="small"><input type="checkbox" data-imm="warn"> 주의</label>
-      <span class="lab">즉시 대기</span><input type="number" data-path="email.immediate_seconds" data-type="number" class="w-s">초 <span class="hint small muted">같은 순간 동반 경보를 모으는 시간</span></div>
-    <div class="row" style="margin-top:12px;gap:18px"><span class="lab">메일 최소 등급</span><select data-path="email.min_severity"><option value="crit">심각만</option><option value="warn">주의 이상</option><option value="info">전부</option></select>
-      <span class="lab">묶음 메일 간격</span><input type="number" data-path="email.min_interval_min" data-type="number" class="w-s">분
-      <span class="lab">시간당 상한</span><input type="number" data-path="email.max_per_hour" data-type="number" class="w-s">통</div>
-    <div class="row" style="margin-top:12px;gap:22px"><label class="switch"><input type="checkbox" data-path="email.llm_followup">즉시 메일 뒤 LLM 2차 의견을 후속 메일로</label>
-      <label class="switch"><input type="checkbox" data-path="email.attach_json">근거 JSON 첨부</label></div>
-    <div class="note small">즉시 등급은 묶음 간격을 무시하고 시간당 상한만 지킵니다. 분석 계열·원인·권고 조치가 지목한 담당 역할의 수신자가 자동으로 더해집니다.</div>
-  </div>
-</section>
-
-<!-- 사건 기록 --------------------------------------------------------------->
-<section id="tab-incidents">
-  <h2>사건 기록</h2><p class="desc">경보 묶음마다 룰 진단·LLM 의견·합의 결과·메일을 기록합니다 (<span class="mono" id="incDir"></span>).</p>
-  <div class="card"><div class="row"><select id="incDays"><option value="1">오늘</option><option value="3" selected>최근 3일</option><option value="7">최근 7일</option><option value="30">최근 30일</option></select>
-      <label class="small"><input type="checkbox" id="incReplay" checked> 리플레이 포함</label><button class="btn sm" id="btnInc">새로 고침</button><span id="incCount" class="small muted"></span></div>
-    <div class="tbl-wrap" style="margin-top:10px;max-height:640px"><table><thead><tr><th>일자</th><th>시각</th><th>등급</th><th>사건</th><th>원인(룰)</th><th>LLM</th><th>판단</th><th>메일</th></tr></thead><tbody id="incRows"></tbody></table></div></div>
-</section>
-
-<!-- 리플레이 ---------------------------------------------------------------->
-<section id="tab-replay">
-  <h2>리플레이</h2><p class="desc">과거 일자 폴더를 <b>현재 설정(저장된 값)</b>으로 시간순 재생해, 그날 어떤 경보·사건·메일이 나왔을지 미리 봅니다. 메일은 보내지 않고 outbox_replay 에만 저장합니다.</p>
-  <div class="card"><div class="row"><input type="text" id="rpDir" class="w-l" style="flex:1" placeholder="예: H:\...\pc3_0727\27 또는 D:\AIV_LOG\Talos\2026_09\28"><button class="btn primary" id="btnReplay">재생</button></div>
-    <div class="row small muted" style="margin-top:8px" id="rpState"></div>
-    <pre class="log" id="rpLog" style="margin-top:10px;max-height:420px"></pre></div>
-</section>
-
-<!-- 실행 로그 --------------------------------------------------------------->
-<section id="tab-log">
-  <h2>실행 로그</h2><p class="desc">감시·분석·메일 처리 과정의 최근 300줄입니다.</p>
-  <pre class="log" id="logBox"></pre>
-</section>
-
-<!-- 기본 설정 --------------------------------------------------------------->
-<section id="tab-general">
-  <h2>기본 설정</h2><p class="desc">설정 파일: <span class="mono" id="cfgPath"></span></p>
-  <div class="card"><div class="grid g2">
-    <div class="field"><label>설비 이름 (메일 제목·기록에 표시)</label><input type="text" data-path="site" placeholder="예: PC3, CMFB#1"></div>
-    <div class="field"><label>talos 로그 루트 (YYYY_MM\DD 자동 추적)</label><input type="text" data-path="watch_root"></div>
-    <div class="field"><label>경보·사건 기록 폴더</label><input type="text" data-path="alert_dir"></div>
-    <div class="field"><label>폴링 주기 (초)</label><input type="number" data-path="poll_seconds" data-type="number"></div>
-    <div class="field"><label>같은 경보 재발송 억제 (분)</label><input type="number" data-path="cooldown_min" data-type="number"></div>
-    <div class="field"><label>웹훅 (Teams/Slack/사내 서버, 비우면 끔)</label><input type="text" data-path="notify.webhook"></div>
-  </div>
-  <div class="row" style="gap:22px"><label class="switch"><input type="checkbox" data-path="low_priority">우선순위 강등 (검사 SW 보호)</label>
-    <label class="switch"><input type="checkbox" data-path="notify.toast">Windows 토스트</label>
-    <label class="switch"><input type="checkbox" data-path="notify.jsonl">경보 JSONL 기록</label></div></div>
+  <div class="card hidden" id="advCard"><h3>고급 값 <span class="muted small">— talog.yaml 의 advanced (엔진 세부값). 파일에서 직접 고칩니다</span></h3><pre class="log" id="advBox"></pre></div>
 </section>
 </main>
 </div>
 
-<div class="savebar hidden" id="saveBar"><span id="saveTxt">저장하지 않은 변경이 있습니다</span><button class="btn" id="btnRevert">되돌리기</button><button class="btn primary" id="btnSave">저장하고 적용</button></div>
+<div class="savebar hidden" id="saveBar"><span>저장하지 않은 변경이 있습니다</span><button class="btn" id="btnRevert">되돌리기</button><button class="btn primary" id="btnSave">저장하고 적용</button></div>
 <div id="toast"></div>
-<div class="modal hidden" id="modal"><div class="box"><div class="head"><h2 id="mTitle"></h2><button class="btn" id="mClose">닫기</button></div><div id="mBody"></div></div></div>
 
 <script>
 "use strict";
@@ -321,7 +279,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const SEVK = {crit: "심각", warn: "주의", info: "정보"};
-const S = {cfg: null, orig: "", meta: null, status: null, files: null, tab: "status", pw: "", pwClear: false, llmTests: []};
+const S = {set: null, orig: "", meta: null, st: null, folder: null, secret: "", clearSecret: false, view: "ops", inc: null, rep: null, tests: []};
 
 async function api(path, body) {
   const opt = body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json", "X-Talog-Token": TOKEN}, body: JSON.stringify(body)};
@@ -331,329 +289,317 @@ async function api(path, body) {
   if (!r.ok && typeof data === "object") data._status = r.status;
   return data;
 }
-function toast(msg, kind = "") {
-  const d = document.createElement("div"); d.className = kind; d.textContent = msg;
-  $("#toast").appendChild(d); setTimeout(() => d.remove(), kind === "err" ? 9000 : 4500);
-}
+function toast(msg, kind = "") { const d = document.createElement("div"); d.className = kind; d.textContent = msg; $("#toast").appendChild(d); setTimeout(() => d.remove(), kind === "err" ? 9000 : 4500); }
 const getp = (o, p) => p.split(".").reduce((a, k) => (a == null ? undefined : a[k]), o);
 function setp(o, p, v) { const ks = p.split("."); let a = o; ks.slice(0, -1).forEach(k => { if (a[k] == null || typeof a[k] !== "object") a[k] = {}; a = a[k]; }); a[ks[ks.length - 1]] = v; }
-function sevTag(s) { return `<span class="sev ${esc(s)}">${esc(SEVK[s] || s || "-")}</span>`; }
+const sevTag = s => `<span class="sev ${esc(s)}">${esc(SEVK[s] || s || "-")}</span>`;
 function fmtSize(n) { if (n >= 1048576) return (n / 1048576).toFixed(1) + " MB"; if (n >= 1024) return (n / 1024).toFixed(0) + " KB"; return n + " B"; }
-function wild(p) { return new RegExp("^" + p.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$", "i"); }
+function gateCls(mode, label) { return mode === "agree" ? "agree" : (mode === "disagree" || mode === "llm_only" || (label || "").startsWith("오경보")) ? "warn" : ""; }
 
-/* ── 설정 바인딩 ───────────────────────────────────────── */
-function isDirty() { return JSON.stringify(S.cfg) !== S.orig || !!S.pw || S.pwClear || !!S.gs || S.gsClear; }
+/* ── 화면 전환 ─────────────────────────────────────────── */
+function go(v) { S.view = v; $$("#nav a").forEach(a => a.classList.toggle("active", a.dataset.v === v));
+  $$("section.view").forEach(s => s.classList.toggle("active", s.id === "v-" + v));
+  if (v === "inc") loadInc(); if (v === "ana") { loadReports(); loadDays(); pollJob(); } if (v === "set") { renderGpuFree(); if (!S.folder) loadFolder(); }
+  window.scrollTo(0, 0); }
+$$("#nav a").forEach(a => a.onclick = () => go(a.dataset.v));
+document.addEventListener("click", ev => { const g = ev.target.closest("[data-go]"); if (g) { ev.preventDefault(); go(g.dataset.go); } });
+function goSec(id) { go("set"); setTimeout(() => $("#" + id).scrollIntoView({behavior: "smooth", block: "start"}), 30); }
+$$(".subnav a").forEach(a => a.onclick = () => $("#" + a.dataset.sec).scrollIntoView({behavior: "smooth", block: "start"}));
+
+/* ── 운영 현황 ─────────────────────────────────────────── */
+async function loadStatus() {
+  let st; try { st = await api("/api/status"); } catch (e) { $("#runPill").textContent = "연결 끊김"; $("#runPill").className = "pill off"; return; }
+  S.st = st;
+  $("#ver").textContent = "v" + st.version; $("#siteName").textContent = st.site || "설비 이름 미지정";
+  $("#runPill").textContent = st.running ? "감시 중" : "정지"; $("#runPill").className = "pill " + (st.running ? "on" : "off");
+  $("#btnRun").textContent = st.running ? "감시 정지" : "감시 시작";
+  const up = st.uptime_s ? (st.uptime_s >= 3600 ? (st.uptime_s / 3600).toFixed(1) + "시간" : Math.round(st.uptime_s / 60) + "분") : "-";
+  $("#opsDesc").textContent = `가동 ${up} · 저장 ${st.data_dir} · 5초마다 새로 고침`;
+  const C = st.collect, D = st.detect, J = st.judge, N = st.notify;
+  const stages = [
+    ["s-collect", "1 수집", !st.running ? "" : C.exists ? "ok" : "warn", C.exists ? `${C.files}개 파일` : "오늘 폴더 없음",
+      `${esc(C.tracking)} · 마지막 읽음 ${esc(C.last_read || "-")}`, `<span class="mono">${esc(C.day_dir || "")}</span>`],
+    ["s-detect", "2 탐지", D.crit ? "crit" : D.warn ? "warn" : st.running ? "ok" : "",
+      `<span class="${D.crit ? "crit" : ""}">심각 ${D.crit}</span> · <span class="${D.warn ? "warn" : ""}">주의 ${D.warn}</span>`,
+      `규칙 ${D.rules}개 · 오늘`, D.last ? esc(D.last.title) : "오늘 경보 없음"],
+    ["s-judge", "3 판단", J.llm && J.alive === false ? "warn" : st.running ? "ok" : "", `사건 ${J.incidents}`,
+      J.llm ? `룰 + ${esc(J.model)} · 지금 ${esc((J.resolved || "").toUpperCase())}${J.alive === false ? ' · <b class="warn">서버·모델 없음</b>' : ""}` : "룰 진단만",
+      J.llm ? `판단 일치 ${J.agree}건` : (J.last ? esc(J.last.cause || J.last.title) : "")],
+    ["s-notify", "4 알림", N.provider === "off" ? "warn" : N.failed ? "crit" : "ok", N.provider === "off" ? "메일 꺼짐" : `발송 ${N.sent}`,
+      N.provider === "off" ? (N.toast ? "화면 토스트만" : "알림 없음") : `${esc(N.label)} · 받는 사람 ${N.to}명`,
+      N.provider === "off" ? "설정 → 알림에서 발송 방식 선택" : N.failed ? `<b class="crit">실패 ${N.failed}건</b>` : !N.has_secret && N.provider !== "smtp" ? '<b class="warn">비밀번호 미입력</b>' : (N.digest ? "주의 묶음 메일 켜짐" : "심각만 즉시")]];
+  $("#flow").innerHTML = stages.map(([sec, n, dot, big, l1, l2]) => `<div class="stage" data-sec="${sec}"><div class="h"><span class="dot ${dot}"></span><span class="n">${n}</span></div><div class="big">${big}</div><div class="l">${l1}</div><div class="l small muted" style="margin-top:2px">${l2}</div></div>`).join("");
+  $$("#flow .stage").forEach(s => s.onclick = () => goSec(s.dataset.sec));
+  $("#opsInc").innerHTML = st.incidents.length ? st.incidents.map(r => `<tr class="click" data-id="${esc(r.id)}"><td class="mono" style="width:70px">${esc(r.time)}</td><td style="width:50px">${sevTag(r.severity)}</td><td><b>${esc(r.title)}</b><div class="small muted">${esc(r.cause || "")}${r.mode ? " · " + esc(r.mode) : ""}</div></td><td class="small" style="width:44px">${esc(r.mail)}</td></tr>`).join("") : '<tr><td class="empty">오늘 사건 없음</td></tr>';
+  $$("#opsInc tr.click").forEach(tr => tr.onclick = () => { go("inc"); openInc(tr.dataset.id, false); });
+  $("#opsAlerts").innerHTML = st.alerts.length ? st.alerts.map(a => `<tr><td class="mono" style="width:70px">${esc(a.time.slice(6))}</td><td style="width:50px">${sevTag(a.severity)}</td><td><b>${esc(a.title)}</b><div class="muted small">${esc(a.evidence)}</div></td></tr>`).join("") : `<tr><td class="empty">${st.running ? "경보 없음 — 정상 감시 중" : "감시가 정지되어 있습니다"}</td></tr>`;
+  const n = st.incidents.filter(r => r.severity === "crit").length; $("#incCnt").textContent = n; $("#incCnt").classList.toggle("hidden", !n);
+  const gf = st.gpu_free || [];
+  $("#gpuBox").innerHTML = gf.length ? gf.map(g => { const used = g.total - g.free; const t = (st.gpu.find(x => x.gpu === g.gpu) || {}).temp;
+    return `<div class="row" style="margin:6px 0"><b>GPU${g.gpu}</b><div class="bar" style="flex:1"><i style="width:${(100 * used / g.total).toFixed(0)}%"></i></div><span class="mono">${(used / 1024).toFixed(1)}/${(g.total / 1024).toFixed(0)}GB · ${g.util}%${t != null ? " · " + t + "°C" : ""}</span></div>`; }).join("") : '<span class="muted">nvidia-smi 없음</span>';
+  if (D.pattern_errors && D.pattern_errors.length) toast("규칙 설정 오류: " + D.pattern_errors.join(" / "), "err");
+  if (S.view === "set") renderGpuFree();
+  if (st.job && st.job.state === "running" && S.view === "ana") pollJob();
+}
+$("#btnRun").onclick = async () => { const on = S.st && S.st.running; $("#btnRun").disabled = true;
+  const r = await api("/api/control", {action: on ? "stop" : "start"}); $("#btnRun").disabled = false;
+  toast(r.running ? "감시를 시작했습니다" : "감시를 멈췄습니다", "ok"); loadStatus(); };
+$("#btnInject").onclick = async () => { const r = await api("/api/test/alert", {kind: $("#injKind").value}); toast(r.ok ? r.message : r.error, r.ok ? "ok" : "err"); setTimeout(loadStatus, 1500); };
+async function loadLog() { const r = await api("/api/log"); const b = $("#logBox"); const atEnd = b.scrollTop + b.clientHeight >= b.scrollHeight - 20; b.textContent = r.lines.join("\n"); if (atEnd) b.scrollTop = b.scrollHeight; }
+
+/* ── 사건 ──────────────────────────────────────────────── */
+async function loadInc() { const r = await api(`/api/incidents?days=${$("#incDays").value}&replay=${$("#incReplay").checked ? 1 : 0}`);
+  S.incRows = r.rows; $("#incCount").textContent = `${r.rows.length}건`;
+  $("#incRows").innerHTML = r.rows.length ? r.rows.map(x => `<tr class="click ${S.inc && S.inc.id === x.id ? "sel" : ""}" data-id="${esc(x.id)}" data-rp="${x.replay ? 1 : 0}"><td style="width:92px"><div class="mono">${esc(x.time)}</div><div class="small muted">${esc(x.day.slice(4, 6) + "/" + x.day.slice(6, 8))}${x.replay ? ' <span class="tag">재현</span>' : ""}</div></td><td style="width:50px">${sevTag(x.severity)}</td><td><b>${esc(x.title)}</b>${x.n_alerts > 1 ? ` <span class="small muted">+${x.n_alerts - 1}</span>` : ""}<div class="small muted">${esc(x.cause || "-")}</div></td><td style="width:84px"><span class="tag ${x.gate === "agree" ? "on" : (x.gate === "disagree" || x.gate === "llm_only") ? "w" : ""}">${esc(x.gate === "agree" ? "판단 일치" : x.gate === "disagree" ? "불일치" : x.gate === "llm_only" ? "LLM 만" : x.gate === "rule_only" || x.gate === "rule" ? "룰" : x.gate || "-")}</span><div class="small muted" style="margin-top:2px">메일 ${esc(x.mail)}</div></td></tr>`).join("") : '<tr><td class="empty">기록 없음</td></tr>';
+  $$("#incRows tr.click").forEach(tr => tr.onclick = () => openInc(tr.dataset.id, tr.dataset.rp === "1")); }
+$("#incDays").onchange = loadInc; $("#incReplay").onchange = loadInc;
+async function openInc(id, rp) {
+  const d = await api(`/api/incident?id=${encodeURIComponent(id)}&replay=${rp ? 1 : 0}`);
+  if (!d || d.error) { toast("사건을 찾을 수 없습니다", "err"); return; }
+  S.inc = {id, rp, d, qa: []}; $$("#incRows tr").forEach(tr => tr.classList.toggle("sel", tr.dataset.id === id));
+  const v = d.verdict || {}, rule = d.rule || {}, llm = d.llm || {}, ev = d.evidence || {};
+  const acts = (v.actions || []).map(a => `<li>${esc((d.action_text || {})[a] || a)}</li>`).join("");
+  const roles = (v.notify || []).map(r => (d.role_text || {})[r] || r).join(", ");
+  const em = d.email || {}, fu = d.email_followup;
+  $("#incDetail").innerHTML = `<div class="row"><h3 style="margin:0;flex:1">${esc((d.alerts[0] || {}).title || id)}</h3>${d.day_dir ? `<button class="btn sm" id="btnIncAna">이 날 로그 분석</button>` : ""}</div>
+    <div class="small muted">${esc(d.site || "")} · ${esc(d.opened)}–${esc(d.closed || "")} · ${esc(d.family_title || d.family)} · 사건 ${esc(d.id)}${rp ? ' · <span class="tag">재현</span>' : ""}</div>
+    <div class="verdict"><span class="lab2 ${gateCls(v.mode, v.label)}">${esc(v.label || "")}</span> ${sevTag(v.severity)} <b>${esc(v.cause_name || "")}</b>${v.llm_cause_name && v.llm_cause !== v.cause ? ` <span class="muted">/ LLM: ${esc(v.llm_cause_name)}</span>` : ""}<p style="margin:8px 0 0">${esc(v.message || "")}</p></div>
+    <div class="grid g2"><div><h4>권고 조치</h4><ol style="margin:0 0 0 18px;padding:0">${acts || "<li>-</li>"}</ol><div class="small" style="margin-top:6px">담당: ${esc(roles || "-")}</div></div>
+      <div><h4>핵심 사실</h4><ul class="facts">${(ev.key_facts || []).slice(0, 8).map(f => `<li>${esc(f)}</li>`).join("") || "<li>-</li>"}</ul></div></div>
+    <div class="grid g2"><div><h4>룰 진단 근거</h4><ul class="facts small">${(rule.facts || []).map(f => `<li>${esc(f)}</li>`).join("") || "<li>-</li>"}</ul></div>
+      <div><h4>LLM 2차 의견 ${llm.ok ? `<span class="muted small">${esc(llm.model)} · ${esc(llm.device)} · ${llm.wall_s}s</span>` : ""}</h4>
+      ${llm.ok ? `<div><b>${esc(llm.root_cause || "")}</b></div><ul class="facts small">${(llm.evidence || []).map(x => `<li>${esc(x)}</li>`).join("")}</ul>${(llm.fact && !llm.fact.ok) ? `<div class="note warn small">근거에 없는 수치 ${esc(llm.fact.unsupported.join(", "))} — 메일에는 룰 문구를 썼습니다</div>` : ""}<details><summary>LLM 분석 서술</summary><div class="small" style="white-space:pre-wrap">${esc(llm.analysis || "")}</div></details>` : (d.llm ? `<div class="crit small">응답 실패: ${esc(llm.error)}</div>` : '<div class="muted small">LLM 미사용 (룰 진단만)</div>')}</div></div>
+    <h4>경보 ${d.alerts.length}건</h4><div class="tbl" style="max-height:200px"><table><tbody>${d.alerts.map(a => `<tr><td class="mono" style="width:70px">${esc(a.time)}</td><td style="width:50px">${sevTag(a.severity)}</td><td><b>${esc(a.title)}</b><div class="muted small">${esc(a.evidence)}</div></td></tr>`).join("")}</tbody></table></div>
+    <details style="margin-top:10px"><summary>근거 로그</summary><pre class="log" style="margin-top:6px">${esc((ev.log_lines || []).join("\n"))}</pre></details>
+    <h4>메일 ${em.sent ? '<span class="tag on">발송</span>' : em.eml ? '<span class="tag">보관</span>' : '<span class="tag">없음</span>'} ${fu ? '<button class="btn sm" id="mFu">후속 메일 보기</button>' : ""}</h4>
+    ${em.eml || em.sent ? `<iframe class="mail" id="mFrame" src="/api/mail?id=${encodeURIComponent(id)}&replay=${rp ? 1 : 0}"></iframe>` : '<div class="muted small">메일을 보내지 않은 사건입니다 (등급 기준 미만이거나 메일 꺼짐)</div>'}
+    <h4>이 사건에 질문</h4><p class="hint" style="margin:0 0 6px">사건 기록(근거·판단)만으로 LLM 이 답합니다. 예: "왜 룰과 LLM 판단이 달랐나?", "지금 무엇부터 확인해야 하나?"</p>
+    <div class="row"><input type="text" id="iaQ" style="flex:1" placeholder="질문 입력 후 Enter"><button class="btn" id="btnIa">질문</button><span id="iaBusy" class="small muted"></span></div><div id="iaList"></div>`;
+  if (fu) $("#mFu").onclick = () => { $("#mFrame").src = `/api/mail?id=${encodeURIComponent(id)}&replay=${rp ? 1 : 0}&which=followup`; };
+  if (d.day_dir) $("#btnIncAna").onclick = () => { go("ana"); $("#anaDir").value = d.day_dir; };
+  const ask = async () => { const q = $("#iaQ").value.trim(); if (!q) return; $("#btnIa").disabled = true; $("#iaBusy").textContent = "답을 만드는 중… (CPU 는 1~2분)";
+    const r = await api("/api/ask/incident", {id, replay: rp, q}); $("#btnIa").disabled = false; $("#iaBusy").textContent = "";
+    if (!r.ok) { toast("질문 실패: " + r.error, "err"); return; } $("#iaQ").value = "";
+    S.inc.qa.unshift({q, ...r}); $("#iaList").innerHTML = S.inc.qa.map(x => `<div class="qa"><div class="q">Q. ${esc(x.q)}</div><div class="a">${esc(x.answer)}</div><div class="small muted">${esc(x.model)} · ${esc(x.device)} · ${x.wall_s}s</div></div>`).join(""); };
+  $("#btnIa").onclick = ask; $("#iaQ").onkeydown = ev => { if (ev.key === "Enter") ask(); };
+  if (window.innerWidth < 1100) $("#incDetail").scrollIntoView({behavior: "smooth"});
+}
+
+/* ── 분석 ──────────────────────────────────────────────── */
+async function loadDays() { const f = S.folder || await api("/api/folder"); S.folder = f;
+  $("#dayList").innerHTML = (f.days || []).map(d => `<option value="${esc(d)}">`).join("");
+  if (!$("#anaDir").value && f.days && f.days[0]) $("#anaDir").placeholder = "예: " + f.days[0]; }
+async function startJob(kind) { const dir = $("#anaDir").value.trim() || (S.folder && S.folder.days && S.folder.days[0]) || "";
+  if (!dir) { toast("로그 폴더를 넣으십시오", "err"); return; }
+  if (kind === "replay" && isDirty()) toast("저장하지 않은 규칙 변경은 재현에 반영되지 않습니다 — 저장 후 다시 돌리십시오", "err");
+  $("#anaDir").value = dir; const r = await api("/api/job", {kind, dir, recipe: $("#anaRecipe").value.trim()});
+  if (!r.ok) { toast(r.error, "err"); return; } pollJob(); }
+$("#btnReport").onclick = () => startJob("report"); $("#btnReplay").onclick = () => startJob("replay");
+let jobTimer = null;
+async function pollJob() { const j = await api("/api/job"); if (j.state === "idle") return; $("#jobBox").classList.remove("hidden");
+  const kind = j.kind === "replay" ? "경보 재현" : "진단 리포트";
+  $("#jobState").innerHTML = j.state === "running" ? `<b>${kind}</b> 진행 중… <span class="mono">${esc(j.target)}</span>` : j.state === "done" ? `<b class="ok">${kind} 완료</b> (${j.elapsed_s}초)${j.kind === "replay" ? ' — <a data-go="inc">사건 화면</a>에서 \'재현\' 사건을 확인하십시오' : ""}` : `<b class="crit">${kind} 실패</b>`;
+  $("#jobLog").textContent = (j.log || []).join("\n"); $("#jobLog").scrollTop = 1e9;
+  clearTimeout(jobTimer); if (j.state === "running") jobTimer = setTimeout(pollJob, 1500); else if (S.jobWas === "running") { loadReports(); if (j.kind === "report" && j.reports && j.reports[0]) selectReport(j.reports[0]); }
+  S.jobWas = j.state; }
+async function loadReports() { const r = await api("/api/reports"); S.reports = r.rows;
+  $("#repRows").innerHTML = r.rows.length ? r.rows.map(x => `<tr class="${S.rep === x.tag ? "sel" : ""}" data-tag="${esc(x.tag)}"><td><b>${esc(x.tag)}</b><div class="small muted">${esc(x.mtime)} · 소견 ${x.n_findings}건</div>${x.findings.slice(0, 2).map(f => `<div class="small">${esc(f)}</div>`).join("")}</td><td style="width:120px;text-align:right"><a class="btn sm" href="/r/${encodeURIComponent(x.tag)}/" target="_blank">열기</a> ${x.db ? `<button class="btn sm" data-ask="${esc(x.tag)}">질문</button>` : ""}</td></tr>`).join("") : '<tr><td class="empty">아직 만든 리포트가 없습니다 — 위에서 폴더를 넣고 "진단 리포트 만들기"</td></tr>';
+  $$("#repRows [data-ask]").forEach(b => b.onclick = () => selectReport(b.dataset.ask)); }
+function selectReport(tag) { S.rep = tag; S.repQa = []; $("#askTag").textContent = "— " + tag; $("#askList").innerHTML = ""; $$("#repRows tr").forEach(tr => tr.classList.toggle("sel", tr.dataset.tag === tag)); $("#askQ").focus(); }
+async function askReport() { const q = $("#askQ").value.trim(); if (!q) return; if (!S.rep) { toast("리포트 목록에서 '질문'을 눌러 대상을 고르십시오", "err"); return; }
+  $("#btnAsk").disabled = true; $("#askBusy").textContent = "LLM 이 DB 를 조회하는 중… (CPU 는 몇 분 걸릴 수 있음)";
+  const r = await api("/api/ask/report", {tag: S.rep, q}); $("#btnAsk").disabled = false; $("#askBusy").textContent = "";
+  if (!r.ok) { toast("질문 실패: " + r.error, "err"); return; } $("#askQ").value = "";
+  S.repQa.unshift({q, ...r});
+  $("#askList").innerHTML = S.repQa.map(x => `<div class="qa"><div class="q">Q. ${esc(x.q)}</div><div class="a">${esc(x.answer)}</div>${factNote(x.fact, "조회 결과")}<div class="small muted">${esc(x.model)} · ${esc(x.device)} · ${x.wall_s}s</div>${x.trace && x.trace.length ? `<details><summary>조회한 근거 ${x.trace.length}건</summary><pre class="log">${esc(x.trace.map(t => "▶ " + t.tool + ": " + (t.args.query || JSON.stringify(t.args)) + "\n" + (t.result || "")).join("\n\n"))}</pre></details>` : ""}</div>`).join(""); }
+function factNote(f, src) { if (!f) return ""; return f.ok ? `<div class="small ok">답의 숫자·시각이 모두 ${src}에 있습니다</div>`
+  : `<div class="note warn small">${src}에 없는 값: <b>${esc(f.unsupported.join(", "))}</b> — LLM 이 지어냈을 수 있습니다. 근거로 확인하십시오.</div>`; }
+$("#btnAsk").onclick = askReport; $("#askQ").onkeydown = ev => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) askReport(); };
+
+/* ── 설정: 바인딩 ─────────────────────────────────────── */
+function isDirty() { return S.set && (JSON.stringify(S.set) !== S.orig || !!S.secret || S.clearSecret); }
 function markDirty() { $("#saveBar").classList.toggle("hidden", !isDirty()); }
 function bind(root) {
   $$("[data-path]", root).forEach(el => {
     if (el.classList.contains("chips")) return chips(el);
     if (el.dataset.bound) return; el.dataset.bound = "1";
     const p = el.dataset.path, t = el.dataset.type || "";
-    const load = () => { const v = getp(S.cfg, p);
-      if (el.type === "checkbox") el.checked = !!v;
-      else if (t === "nullable-bool") el.value = v === null || v === undefined ? "" : String(v);
-      else el.value = v ?? ""; };
+    const load = () => { const v = getp(S.set, p); if (el.type === "checkbox") el.checked = !!v; else el.value = v ?? ""; };
     load(); el._load = load;
     el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", () => {
-      let v;
-      if (el.type === "checkbox") v = el.checked;
-      else if (t === "number") v = el.value === "" ? 0 : Number(el.value);
-      else if (t === "nullable-bool") v = el.value === "" ? null : el.value === "true";
-      else v = el.value;
-      setp(S.cfg, p, v); markDirty(); onChange(p);
-    });
+      let v = el.type === "checkbox" ? el.checked : t === "number" ? (el.value === "" ? 0 : Number(el.value)) : el.value;
+      setp(S.set, p, v); markDirty(); onChange(p); });
   });
 }
 function reloadBound() { $$("[data-path]").forEach(el => { if (el._load) el._load(); if (el._render) el._render(); }); }
 function chips(el) {
   const p = el.dataset.path;
-  const render = () => {
-    const arr = getp(S.cfg, p) || [];
+  const render = () => { let arr = getp(S.set, p); if (!Array.isArray(arr)) arr = [];
     el.innerHTML = arr.map((x, i) => `<span class="chipx">${esc(x)}<b data-i="${i}">×</b></span>`).join("") + `<input type="text" placeholder="${esc(el.dataset.ph || "")}">`;
     const inp = $("input", el);
-    inp.addEventListener("keydown", ev => {
-      if ((ev.key === "Enter" || ev.key === ",") && inp.value.trim()) { ev.preventDefault(); addTo(p, inp.value.trim()); render(); $("input", el).focus(); }
-      else if (ev.key === "Backspace" && !inp.value && arr.length) { arr.pop(); setp(S.cfg, p, arr); markDirty(); onChange(p); render(); $("input", el).focus(); }
-    });
+    inp.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === ",") && inp.value.trim()) { ev.preventDefault(); addTo(p, inp.value.trim()); render(); $("input", el).focus(); }
+      else if (ev.key === "Backspace" && !inp.value && arr.length) { arr.pop(); setp(S.set, p, arr); markDirty(); onChange(p); render(); $("input", el).focus(); } });
     inp.addEventListener("blur", () => { if (inp.value.trim()) { addTo(p, inp.value.trim()); render(); } });
-    $$("b", el).forEach(b => b.onclick = () => { arr.splice(+b.dataset.i, 1); setp(S.cfg, p, arr); markDirty(); onChange(p); render(); });
-  };
+    $$("b", el).forEach(b => b.onclick = () => { arr.splice(+b.dataset.i, 1); setp(S.set, p, arr); markDirty(); onChange(p); render(); }); };
   el._render = render; render();
 }
-function addTo(p, v) { const arr = getp(S.cfg, p) || []; v.split(",").map(s => s.trim()).filter(Boolean).forEach(x => { if (!arr.includes(x)) arr.push(x); }); setp(S.cfg, p, arr); markDirty(); onChange(p); }
-function onChange(p) {
-  if (p.startsWith("tracking")) renderFiles();
-  if (p === "rules.defect_watch.critical") renderSugg();
-  if (p === "llm.device") renderDev();
-}
+function addTo(p, v) { let arr = getp(S.set, p); if (!Array.isArray(arr)) arr = []; v.split(",").map(s => s.trim()).filter(Boolean).forEach(x => { if (!arr.includes(x)) arr.push(x); }); setp(S.set, p, arr); markDirty(); onChange(p); }
+function onChange(p) { if (p === "tracking") renderFiles(); }
 
-/* ── 탭 ─────────────────────────────────────────────── */
-$$("#nav a").forEach(a => a.onclick = () => showTab(a.dataset.tab));
-function showTab(t) {
-  S.tab = t; $$("#nav a").forEach(a => a.classList.toggle("active", a.dataset.tab === t));
-  $$("main section").forEach(s => s.classList.toggle("active", s.id === "tab-" + t));
-  if (t === "files" && !S.files) loadFiles();
-  if (t === "llm") renderGpuFree();
-  if (t === "incidents") loadInc();
-  if (t === "log") loadLog();
-  if (t === "replay") pollReplay();
-}
+/* ── 설정: 수집 ───────────────────────────────────────── */
+function trMode() { const t = S.set.tracking; return Array.isArray(t) ? "list" : t === "all" ? "all" : "core"; }
+function renderTracking() { const m = trMode(); $$("#trSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === m));
+  $("#trListBox").classList.toggle("hidden", m !== "list");
+  $("#trHelp").innerHTML = {core: "<b>핵심 로그</b> — InspStarter·Comm·seq_1~3 등 소형 로그 9종만 읽습니다(초당 수 KB, 검사 PC 부하 최소). 기본 규칙이 모두 동작하고, 로그 문구 규칙이 다른 파일을 가리키면 그 파일도 같이 읽습니다.",
+    all: "<b>폴더 전체</b> — 일자 폴더의 *.log / *.txt 전체(DLInfer.log 같은 대용량 포함)를 읽습니다. 로그 문구 규칙을 폴더 전체에 걸 때 씁니다.",
+    list: "<b>직접 선택</b> — 목록의 파일·와일드카드만 읽습니다. 기본 규칙은 고른 파일 범위에서만 동작합니다 (예: Comm.log 를 빼면 결함명 감시가 멈춤)."}[m];
+  renderFiles(); }
+$$("#trSeg button").forEach(b => b.onclick = () => { const v = b.dataset.v;
+  S.set.tracking = v === "list" ? (Array.isArray(S.set.tracking) ? S.set.tracking : ["InspStarter.log", "Comm.log", "WorkerThreadPoolMng.log", "exception.log", "ProcessUsage.log", "BatchRunLog.txt", "seq_*.log"]) : v;
+  markDirty(); reloadBound(); renderTracking(); loadFolder(); });
+async function loadFolder() { const dir = $("#fileDir").value.trim();
+  S.folder = await api("/api/folder?dir=" + encodeURIComponent(dir) + "&tracking=" + encodeURIComponent(JSON.stringify(S.set.tracking)));
+  if (!dir) $("#fileDir").placeholder = S.folder.folder || "폴더 없음"; renderFiles(); renderSugg(); }
+$("#btnFiles").onclick = loadFolder;
+function renderFiles() { const F = S.folder; if (!F) return; const list = trMode() === "list";
+  const sel = new Set((Array.isArray(S.set.tracking) ? S.set.tracking : []).map(x => x.toLowerCase()));
+  $("#fileRows").innerHTML = F.files.map(f => `<tr><td>${list ? `<input type="checkbox" data-f="${esc(f.name)}" ${sel.has(f.name.toLowerCase()) ? "checked" : ""}>` : ""}</td><td class="mono">${esc(f.name)}</td><td class="mono">${fmtSize(f.size)}</td><td class="small">${esc(f.category)}</td><td class="mono small">${esc(f.mtime)}</td><td>${f.tracked ? '<span class="tag will">읽음</span>' : ""}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">파일 없음</td></tr>';
+  $$("#fileRows input[data-f]").forEach(cb => cb.onchange = () => { const arr = S.set.tracking.slice(); const n = cb.dataset.f; const i = arr.findIndex(x => x.toLowerCase() === n.toLowerCase());
+    if (cb.checked && i < 0) arr.push(n); if (!cb.checked && i >= 0) arr.splice(i, 1); S.set.tracking = arr; markDirty(); reloadBound(); loadFolder(); });
+  const w = F.files.filter(f => f.tracked); $("#fileNote").textContent = `${F.folder || "-"} · 파일 ${F.files.length}개 · 읽는 파일 ${w.length}개 (${fmtSize(w.reduce((a, f) => a + f.size, 0))}) — 저장 전 설정 기준 미리보기`; }
 
-/* ── 상태 ───────────────────────────────────────────── */
-async function loadStatus() {
-  let st; try { st = await api("/api/status"); } catch (e) { $("#runPill").textContent = "연결 끊김"; $("#runPill").className = "pill off"; return; }
-  S.status = st;
-  $("#ver").textContent = "v" + st.version; $("#siteName").textContent = st.site || "(설비 이름 미지정)";
-  $("#runPill").textContent = st.running ? "감시 중" : "정지"; $("#runPill").className = "pill " + (st.running ? "on" : "off");
-  $("#btnRun").textContent = st.running ? "감시 정지" : "감시 시작";
-  $("#dayDir").textContent = st.day_dir || "(오늘 폴더 없음)"; $("#cfgPath").textContent = st.config; $("#incDir").textContent = st.alert_dir;
-  const up = st.uptime_s ? (st.uptime_s / 3600).toFixed(1) + "시간" : "-";
-  $("#stDesc").textContent = `오늘 폴더 ${st.day_dir || "없음"} · 추적 ${({default:"기본",select:"선택",auto:"자동"})[st.mode] || st.mode} ${st.files.length}개 · 가동 ${up} · 5초마다 새로 고침`;
-  const c = st.counts;
-  $("#kpis").innerHTML = [
-    ["오늘 심각 경보", c.crit, "crit", "즉시 메일 대상"], ["오늘 주의 경보", c.warn, "warn", "묶음 메일 대상"],
-    ["오늘 사건 분석", c.incidents, "", `메일 발송 ${c.mail_sent} · 실패 ${c.mail_failed}`],
-    ["추적 파일", st.files.length, "", ({default:"기본 9종",select:"선택 모드",auto:"폴더 전체"})[st.mode] || ""]
-  ].map(([l, v, k, s]) => `<div class="card kpi"><div class="l">${l}</div><div class="v ${k}">${v}</div><div class="s">${esc(s)}</div></div>`).join("");
-  const gf = st.gpu_free || [];
-  $("#gpuBox").innerHTML = gf.length ? gf.map(g => { const used = g.total - g.free; const t = (st.gpu.find(x => x.gpu === g.gpu) || {}).temp;
-    return `<div class="row" style="margin:6px 0"><b>GPU${g.gpu}</b><div class="bar" style="flex:1"><i style="width:${(100 * used / g.total).toFixed(0)}%"></i></div><span class="mono">${(used / 1024).toFixed(1)}/${(g.total / 1024).toFixed(0)}GB · ${g.util}%${t != null ? " · " + t + "°C" : ""}</span></div>`; }).join("") : '<span class="muted">nvidia-smi 없음</span>';
-  const L = st.llm;
-  $("#llmBox").innerHTML = `<div>분석 ${L.agent ? '<b class="ok">사용</b>' : '<span class="muted">꺼짐</span>'} · LLM ${L.use_llm ? "사용" : "끔"}</div><div class="mono">${esc(L.model)} @ ${esc(L.url)}</div><div>장치 설정 <b>${esc(L.device)}</b> → 지금 <b>${esc(L.resolved)}</b></div><div class="muted">${esc(L.reason)}</div>`;
-  const E = st.email;
-  $("#mailBox").innerHTML = E.enabled ? `<div><b class="ok">사용</b>${E.dry_run ? ' · <span class="warn">dry run (보관만)</span>' : ""}</div><div class="mono">${esc(E.host || "-")}</div><div>기본 수신 ${E.to}명 · 즉시 등급 ${esc((E.immediate || []).map(x => SEVK[x] || x).join(", ") || "없음")}</div>` : '<span class="muted">꺼짐 — 이메일 탭에서 설정</span>';
-  $("#alertRows").innerHTML = st.alerts.length ? st.alerts.slice(0, 40).map(a => `<tr><td class="mono">${esc(a.time)}</td><td>${sevTag(a.severity)}</td><td class="mono">${esc(a.rule)}</td><td><b>${esc(a.title)}</b><div class="muted small">${esc(a.evidence)}</div></td></tr>`).join("") : '<tr><td colspan="4" class="ok">경보 없음 — 정상 감시 중</td></tr>';
-  $("#incRowsLive").innerHTML = st.live_incidents.length ? st.live_incidents.map(r => `<tr class="click" data-id="${esc(r.id)}"><td class="mono">${esc(r.time)}</td><td>${sevTag(r.severity)}</td><td>${esc(r.title)}</td><td>${esc(r.cause)}</td><td class="small">${esc(r.mode)}</td><td>${esc(r.email)}</td></tr>`).join("") : '<tr><td colspan="6" class="muted">이번 가동 중 분석한 사건 없음</td></tr>';
-  $$("#incRowsLive tr.click").forEach(tr => tr.onclick = () => openInc(tr.dataset.id, false));
-  if (st.pattern_errors && st.pattern_errors.length) toast("패턴 설정 오류: " + st.pattern_errors.join(" / "), "err");
-  if (S.tab === "llm") renderGpuFree();
-  if (S.tab === "files") renderFiles();
-}
-$("#btnRun").onclick = async () => { const on = S.status && S.status.running; $("#btnRun").disabled = true;
-  const r = await api("/api/control", {action: on ? "stop" : "start"}); $("#btnRun").disabled = false;
-  toast(r.running ? "감시를 시작했습니다" : "감시를 멈췄습니다", "ok"); loadStatus(); };
-$("#btnInject").onclick = async () => { const r = await api("/api/test/alert", {kind: $("#injKind").value});
-  toast(r.ok ? r.message : r.error, r.ok ? "ok" : "err"); setTimeout(loadStatus, 1500); };
-
-/* ── 추적 파일 ──────────────────────────────────────── */
-async function loadFiles() {
-  S.files = await api("/api/files?dir=" + encodeURIComponent($("#fileDir").value.trim()));
-  if (!$("#fileDir").value) $("#fileDir").placeholder = S.files.folder || "폴더 없음";
-  renderFiles(); renderSugg();
-}
-$("#btnFiles").onclick = loadFiles;
-function willTrack(name) {
-  const t = S.cfg.tracking || {}; const m = t.mode || "default";
-  if (m === "select") return (t.files || []).some(p => !p.includes("\\") && wild(p).test(name));
-  if (m === "auto") return /\.(log|txt)$/i.test(name) && !(t.exclude || []).some(p => wild(p).test(name));
-  return S.files.defaults.some(d => d.toLowerCase() === name.toLowerCase());
-}
-function renderFiles() {
-  const m = (S.cfg.tracking || {}).mode || "default";
-  $$("#modeSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === m));
-  $("#selBox").classList.toggle("hidden", m !== "select"); $("#autoBox").classList.toggle("hidden", m !== "auto");
-  $("#modeHelp").innerHTML = {default: "기본: InspStarter·Comm·seq_1~3 등 <b>소형 핵심 로그 9종</b>만 읽습니다 (초당 수 KB, 검사 PC 부하 최소). 모든 기본 룰이 동작합니다.",
-    select: "선택: 목록의 파일·와일드카드만 읽습니다. 아래 표에서 체크하거나 위 칸에 와일드카드를 넣으십시오. 기본 룰은 선택한 파일 범위에서만 동작합니다(예: Comm.log 를 빼면 결함명 감시가 멈춤).",
-    auto: "자동: 일자 폴더의 <b>*.log / *.txt 전체</b>를 읽습니다. DLInfer.log 같은 대용량이 포함되어 초당 수십 KB 를 읽습니다. 사용자 패턴을 폴더 전체에 걸 때 쓰십시오."}[m];
-  if (!S.files) return;
-  const live = {}; ((S.status && S.status.files) || []).forEach(f => live[f.name.toLowerCase()] = f);
-  const sel = new Set(((S.cfg.tracking || {}).files || []).map(x => x.toLowerCase()));
-  $("#fileRows").innerHTML = S.files.files.map(f => { const L = live[f.name.toLowerCase()]; const will = willTrack(f.name);
-    const pct = L && L.size ? Math.min(100, 100 * L.offset / L.size) : 0;
-    return `<tr><td>${m === "select" ? `<input type="checkbox" data-f="${esc(f.name)}" ${sel.has(f.name.toLowerCase()) ? "checked" : ""}>` : ""}</td><td class="mono">${esc(f.name)}</td><td class="mono">${fmtSize(f.size)}</td><td class="small">${esc(f.category)}</td><td class="mono small">${esc(f.mtime)}</td><td>${f.tracked ? '<span class="tag on">추적 중</span>' : ""}</td><td>${will ? '<span class="tag will">추적</span>' : ""}</td><td>${L ? `<div class="row" style="gap:6px"><div class="bar" style="width:70px"><i style="width:${pct.toFixed(0)}%"></i></div><span class="small muted">${esc(L.last || "")}</span></div>` : ""}</td></tr>`; }).join("") || '<tr><td colspan="8" class="muted">파일 없음</td></tr>';
-  $$("#fileRows input[data-f]").forEach(cb => cb.onchange = () => { const arr = (S.cfg.tracking.files || []).slice();
-    const n = cb.dataset.f; const i = arr.findIndex(x => x.toLowerCase() === n.toLowerCase());
-    if (cb.checked && i < 0) arr.push(n); if (!cb.checked && i >= 0) arr.splice(i, 1);
-    S.cfg.tracking.files = arr; markDirty(); const c = $('#selBox .chips'); if (c._render) c._render(); renderFiles(); });
-  const w = S.files.files.filter(f => willTrack(f.name)); const tot = w.reduce((a, f) => a + f.size, 0);
-  $("#fileNote").textContent = `${S.files.folder} · 파일 ${S.files.files.length}개 (alg\\ ${S.files.alg_files}개) · 저장 시 추적 ${w.length}개, 합계 ${fmtSize(tot)}`;
-}
-$$("#modeSeg button").forEach(b => b.onclick = () => { S.cfg.tracking.mode = b.dataset.v;
-  if (b.dataset.v === "select" && !(S.cfg.tracking.files || []).length) S.cfg.tracking.files = S.files ? S.files.defaults.slice() : [];
-  markDirty(); reloadBound(); renderFiles(); });
-
-/* ── 경보 규칙 ──────────────────────────────────────── */
-function ov(name) { const o = S.cfg.rules.overrides = S.cfg.rules.overrides || {}; o[name] = o[name] || {}; return o[name]; }
-function condHtml(name, kind) {
-  const R = S.cfg.rules, n = (p, cls = "w-s") => `<input type="number" class="${cls}" data-path="${p}" data-type="number">`;
-  if (kind === "error_repeat") return `같은 에러 ${n("rules.error_repeat.count")}회 / ${n("rules.error_repeat.window_min")}분`;
-  if (kind === "insp_stall") return `평소 소요 중앙값의 ${n("rules.insp_stall.factor_x_median")}배 · 최소 ${n("rules.insp_stall.min_seconds")}초`;
-  if (kind === "restart_burst") return `재시작 ${n("rules.restart_burst.count")}회 / ${n("rules.restart_burst.window_min")}분`;
-  if (kind === "memory_trend") return `+${n("rules.memory_trend.mb_per_hour")}MB/h · ${n("rules.memory_trend.min_hours")}시간 이상`;
-  if (kind === "gpu_temp") return `${n("rules.gpu_temp.celsius")}°C 이상`;
-  return `<input type="number" class="w-s" data-ov="${name}" data-k="count" min="1">회 / <input type="number" class="w-s" data-ov="${name}" data-k="window_min">분 <span class="muted small">(1회 = 즉시)</span>`;
-}
-function renderRules() {
-  const rows = S.meta.rules.map(([name, label, def, kind]) => { const o = (S.cfg.rules.overrides || {})[name] || {};
-    const sevSel = def === "-" ? '<span class="muted small">패턴별 등급</span>' : `<select data-ov="${name}" data-k="severity"><option value="">기본 (${SEVK[def]})</option><option value="crit">심각</option><option value="warn">주의</option><option value="info">정보</option></select>`;
-    return `<tr><td><b>${esc(label)}</b><div class="mono muted small">${esc(name)}</div></td><td><label class="switch"><input type="checkbox" data-ov="${name}" data-k="enabled"></label></td><td>${sevSel}</td><td class="small">${condHtml(name, kind)}</td></tr>`; });
-  $("#ruleRows").innerHTML = rows.join("");
-  $$("#ruleRows [data-ov]").forEach(el => { const name = el.dataset.ov, k = el.dataset.k; const o = (S.cfg.rules.overrides || {})[name] || {};
-    if (k === "enabled") el.checked = o.enabled !== false; else if (k === "severity") el.value = o.severity || ""; else if (k === "count") el.value = o.count || 1; else el.value = o.window_min || 10;
-    el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", () => { const x = ov(name);
-      if (k === "enabled") x.enabled = el.checked; else if (k === "severity") x.severity = el.value; else x[k] = Number(el.value || (k === "count" ? 1 : 10));
-      markDirty(); }); });
-  bind($("#ruleRows")); renderPats();
-}
-function cleanOverrides() { const o = S.cfg.rules.overrides || {}; Object.keys(o).forEach(k => { const x = o[k];
-  if (x.enabled !== false) delete x.enabled; if (!x.severity) delete x.severity; if (!x.count || x.count <= 1) { delete x.count; delete x.window_min; }
-  if (!Object.keys(x).length) delete o[k]; }); }
-function renderSugg() {
-  if (!S.files) return; const have = new Set((S.cfg.rules.defect_watch.critical || []).map(x => x.toUpperCase()));
-  const seen = {}; (S.files.seen_defects || []).forEach(([n, c]) => seen[n] = c);
-  const names = Array.from(new Set([...(S.files.seen_defects || []).map(x => x[0]), ...(S.files.recipe_defects || [])]));
-  $("#defSugg").innerHTML = names.length ? names.slice(0, 120).map(n => `<span class="${have.has(n.toUpperCase()) ? "have" : ""}" data-n="${esc(n)}">${esc(n)}${seen[n] ? ` <b>${seen[n]}</b>` : ""}</span>`).join("") : '<span class="muted small" style="border:0">추적 파일 탭에서 폴더를 불러오면 레시피 결함명이 여기에 나옵니다</span>';
-  $$("#defSugg span[data-n]").forEach(s => s.onclick = () => { if (s.classList.contains("have")) return; addTo("rules.defect_watch.critical", s.dataset.n); $("#tab-rules .chips[data-path='rules.defect_watch.critical']")._render(); renderSugg(); });
-}
-function renderPats() {
-  const P = S.cfg.rules.patterns = S.cfg.rules.patterns || [];
-  $("#patRows").innerHTML = P.length ? P.map((p, i) => `<tr data-i="${i}">
-    <td><input type="checkbox" data-k="enabled" ${p.enabled !== false ? "checked" : ""}></td>
-    <td><input type="text" data-k="name" value="${esc(p.name || "")}" style="width:130px"></td>
-    <td><input type="text" data-k="match" value="${esc(p.match || "")}" style="width:220px" class="mono"></td>
-    <td><input type="text" data-k="files" value="${esc((p.files || []).join(", "))}" style="width:130px" placeholder="전체"></td>
-    <td><select data-k="level"><option value="">전체</option>${["Error","Debug","Info","Verbose"].map(l => `<option ${p.level === l ? "selected" : ""}>${l}</option>`).join("")}</select></td>
-    <td><select data-k="severity">${["crit","warn","info"].map(s => `<option value="${s}" ${p.severity === s ? "selected" : ""}>${SEVK[s]}</option>`).join("")}</select></td>
-    <td class="small" style="white-space:nowrap"><input type="number" data-k="count" value="${p.count || 1}" class="w-s" min="1">회 / <input type="number" data-k="window_min" value="${p.window_min || 10}" class="w-s">분</td>
-    <td><input type="number" data-k="cooldown_min" value="${p.cooldown_min || 30}" class="w-s"></td>
-    <td><select data-k="family"><option value="system" ${(p.family || "system") === "system" ? "selected" : ""}>설비·기타</option><option value="reject" ${p.family === "reject" ? "selected" : ""}>시작 거부·정체</option><option value="defect" ${p.family === "defect" ? "selected" : ""}>결함 판정</option></select></td>
-    <td><button class="btn sm danger" data-del="${i}">삭제</button></td></tr>`).join("") : '<tr><td colspan="10" class="muted">패턴 없음 — 프리셋이나 빈 패턴으로 추가하십시오</td></tr>';
-  $$("#patRows tr[data-i]").forEach(tr => { const p = P[+tr.dataset.i];
+/* ── 설정: 탐지 ───────────────────────────────────────── */
+function biVal(b) { const u = (S.set.rules.builtin || {})[b.name] || {}; return Object.assign({enabled: true, severity: b.severity, count: 1, window_min: 10}, b.default, u); }
+function biSet(name, k, v) { const bi = S.set.rules.builtin = S.set.rules.builtin || {}; const b = S.meta.builtin.find(x => x.name === name);
+  const cur = Object.assign({}, bi[name] || {}); cur[k] = v;
+  const def = Object.assign({enabled: true, severity: b.severity, count: 1, window_min: 10}, b.default);
+  Object.keys(cur).forEach(x => { if (JSON.stringify(cur[x]) === JSON.stringify(def[x])) delete cur[x]; });
+  if (Object.keys(cur).length) bi[name] = cur; else delete bi[name]; markDirty(); }
+function numIn(name, k, v, cls = "w-s", step = "") { return `<input type="number" class="${cls}" data-bi="${name}" data-k="${k}" value="${esc(v)}" ${step ? `step="${step}"` : ""} min="0">`; }
+function condOf(b, v) {
+  if (b.kind === "event") return `${numIn(b.name, "count", v.count)}회 / ${numIn(b.name, "window_min", v.window_min)}분 <span class="hint">(1회 = 즉시)</span>`;
+  if (b.kind === "repeat") return `${numIn(b.name, "count", v.count)}회 / ${numIn(b.name, "window_min", v.window_min)}분`;
+  if (b.kind === "stall") return `평소 소요 중앙값의 ${numIn(b.name, "factor", v.factor, "w-s", "0.1")}배 넘게 끝나지 않으면`;
+  if (b.kind === "memory") return `+${numIn(b.name, "mb_per_hour", v.mb_per_hour)} MB/시간 넘게 오르면`;
+  if (b.kind === "gpu") return `${numIn(b.name, "celsius", v.celsius)} °C 이상`;
+  if (b.kind === "streak") return `${numIn(b.name, "count", v.count)}건 연속 NG`;
+  if (b.kind === "rate") return `최근 ${numIn(b.name, "count", v.count)}검사 중 ${numIn(b.name, "percent", v.percent)}% 이상 NG`;
+  return ""; }
+function renderBuiltin() {
+  $("#biRows").innerHTML = S.meta.builtin.map(b => { const v = biVal(b);
+    return `<tr><td><label class="switch"><input type="checkbox" data-bi="${b.name}" data-k="enabled" ${v.enabled !== false ? "checked" : ""}></label></td><td><b>${esc(b.label)}</b><div class="mono muted small">${esc(b.name)}</div></td>
+      <td><select data-bi="${b.name}" data-k="severity">${["crit", "warn", "info"].map(s => `<option value="${s}" ${v.severity === s ? "selected" : ""}>${SEVK[s]}</option>`).join("")}</select></td><td class="small">${condOf(b, v)}</td></tr>`; }).join("");
+  $$("#biRows [data-bi]").forEach(el => el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", () => {
+    const k = el.dataset.k; biSet(el.dataset.bi, k, el.type === "checkbox" ? el.checked : el.tagName === "SELECT" ? el.value : Number(el.value || 0)); })); }
+function renderCustom() { const C = S.set.rules.custom = S.set.rules.custom || [];
+  $("#cuRows").innerHTML = C.length ? C.map((r, i) => { const def = r.type === "defect"; const mv = Array.isArray(r.match) ? r.match.join(", ") : (r.match || "");
+    return `<tr data-i="${i}"><td><label class="switch"><input type="checkbox" data-k="enabled" ${r.enabled !== false ? "checked" : ""}></label></td>
+    <td><input type="text" data-k="name" value="${esc(r.name || "")}" style="width:130px"></td>
+    <td><select data-k="type"><option value="defect" ${def ? "selected" : ""}>결함명</option><option value="log" ${!def ? "selected" : ""}>로그 문구</option></select></td>
+    <td><input type="text" data-k="match" value="${esc(mv)}" class="mono" style="width:230px" placeholder="${def ? "BOOT_DAMAGED, *CRACK*" : "문구 또는 re:정규식"}"></td>
+    <td>${def ? '<span class="muted small">Comm.log 판정</span>' : `<input type="text" data-k="files" value="${esc((r.files || []).join(", "))}" style="width:130px" placeholder="추적 파일 전체">`}</td>
+    <td><select data-k="severity">${["crit", "warn", "info"].map(s => `<option value="${s}" ${(r.severity || "warn") === s ? "selected" : ""}>${SEVK[s]}</option>`).join("")}</select></td>
+    <td class="small" style="white-space:nowrap"><input type="number" data-k="count" value="${r.count || 1}" class="w-s" min="1">회 / <input type="number" data-k="window_min" value="${r.window_min || 10}" class="w-s">분</td>
+    <td><button class="btn sm danger" data-del="${i}">삭제</button></td></tr>`; }).join("") : '<tr><td colspan="8" class="empty">사용자 규칙 없음 — 치명 결함명이나 꼭 잡을 로그 문구를 추가하십시오</td></tr>';
+  $$("#cuRows tr[data-i]").forEach(tr => { const r = C[+tr.dataset.i];
     $$("[data-k]", tr).forEach(el => el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", () => { const k = el.dataset.k;
-      if (k === "enabled") p.enabled = el.checked; else if (k === "files") p.files = el.value.split(",").map(s => s.trim()).filter(Boolean);
-      else if (["count","window_min","cooldown_min"].includes(k)) p[k] = Number(el.value || 1); else p[k] = el.value; markDirty(); })); });
-  $$("#patRows [data-del]").forEach(b => b.onclick = () => { P.splice(+b.dataset.del, 1); markDirty(); renderPats(); });
-}
-$("#btnAddPat").onclick = () => { S.cfg.rules.patterns.push({name: "새 패턴", match: "", files: [], level: "", severity: "warn", count: 1, window_min: 10, cooldown_min: 30, family: "system", enabled: true}); markDirty(); renderPats(); };
-$("#presetSel").onchange = ev => { const i = ev.target.value; if (i === "") return; const p = JSON.parse(JSON.stringify(S.meta.presets[+i])); p.enabled = true; p.cooldown_min = p.cooldown_min || 30;
-  S.cfg.rules.patterns.push(p); ev.target.value = ""; markDirty(); renderPats(); toast(`프리셋 '${p.name}' 추가 — 저장해야 적용됩니다`); };
-$("#btnPt").onclick = async () => { const line = $("#ptLine").value, file = $("#ptFile").value.trim(); if (!line) return;
-  const P = S.cfg.rules.patterns || []; if (!P.length) { $("#ptRes").textContent = "패턴이 없습니다."; return; }
-  const res = await Promise.all(P.map(p => api("/api/test/pattern", {pattern: p, line, file})));
-  $("#ptRes").innerHTML = P.map((p, i) => { const r = res[i]; return `${r.ok ? (r.match ? '<b class="ok">걸림</b>' : '<span class="muted">안 걸림</span>') : '<b class="crit">오류</b>'} — ${esc(p.name)} ${r.ok ? (r.file_ok ? "" : '<span class="warn">(파일 범위 밖)</span>') : esc(r.error)}`; }).join("<br>"); };
+      if (k === "enabled") r.enabled = el.checked; else if (k === "files") r.files = el.value.split(",").map(s => s.trim()).filter(Boolean);
+      else if (k === "match") r.match = r.type === "defect" ? el.value.split(",").map(s => s.trim()).filter(Boolean) : el.value;
+      else if (k === "count" || k === "window_min") r[k] = Number(el.value || 1);
+      else if (k === "type") { r.type = el.value; r.match = el.value === "defect" ? String(Array.isArray(r.match) ? r.match.join(",") : r.match || "").split(",").map(s => s.trim()).filter(Boolean) : (Array.isArray(r.match) ? r.match.join(", ") : r.match || ""); if (el.value === "defect") delete r.files; renderCustom(); }
+      else r[k] = el.value;
+      markDirty(); if (k === "match") renderSugg(); })); });
+  $$("#cuRows [data-del]").forEach(b => b.onclick = () => { C.splice(+b.dataset.del, 1); markDirty(); renderCustom(); renderSugg(); }); }
+$("#btnAddDef").onclick = () => { S.set.rules.custom.push({type: "defect", name: "치명 결함", match: [], severity: "crit", count: 1, window_min: 10}); markDirty(); renderCustom(); };
+$("#btnAddLog").onclick = () => { S.set.rules.custom.push({type: "log", name: "새 로그 규칙", match: "", files: [], severity: "warn", count: 1, window_min: 10}); markDirty(); renderCustom(); };
+$("#presetSel").onchange = ev => { const i = ev.target.value; if (i === "") return; const p = JSON.parse(JSON.stringify(S.meta.presets[+i]));
+  S.set.rules.custom.push(Object.assign({type: "log"}, p)); ev.target.value = ""; markDirty(); renderCustom(); toast(`'${p.name}' 추가 — 저장해야 적용됩니다`); };
+function renderSugg() { const F = S.folder; if (!F) return;
+  const have = new Set(S.set.rules.custom.filter(r => r.type === "defect").flatMap(r => r.match || []).map(x => String(x).toUpperCase()));
+  const seen = {}; (F.seen_defects || []).forEach(([n, c]) => seen[n] = c);
+  const names = Array.from(new Set([...(F.seen_defects || []).map(x => x[0]), ...(F.recipe_defects || [])]));
+  $("#defSugg").innerHTML = names.length ? names.slice(0, 120).map(n => `<span class="${have.has(n.toUpperCase()) ? "have" : ""}" data-n="${esc(n)}">${esc(n)}${seen[n] ? ` <b>${seen[n]}</b>` : ""}</span>`).join("") : '<span class="muted" style="border:0">오늘 폴더의 Comm.log 에서 결함명을 찾지 못했습니다 (수집 → 오늘 폴더 파일 보기에서 다른 폴더를 불러올 수 있음)</span>';
+  $$("#defSugg span[data-n]").forEach(s => s.onclick = () => { if (s.classList.contains("have")) return;
+    let r = S.set.rules.custom.find(x => x.type === "defect" && x.severity === "crit" && (x.count || 1) === 1);
+    if (!r) { r = {type: "defect", name: "치명 결함", match: [], severity: "crit", count: 1, window_min: 10}; S.set.rules.custom.push(r); }
+    r.match = (r.match || []).concat([s.dataset.n]); markDirty(); renderCustom(); renderSugg(); }); }
+$("#btnRt").onclick = async () => { const text = $("#rtText").value; if (!text) return; const C = S.set.rules.custom;
+  if (!C.length) { $("#rtRes").textContent = "사용자 규칙이 없습니다."; return; }
+  const r = await api("/api/test/rule", {rules: C, text, file: $("#rtFile").value.trim()});
+  $("#rtRes").innerHTML = r.results.map(x => `${x.ok ? (x.match ? '<b class="ok">걸림</b>' : '<span class="muted">안 걸림</span>') : '<b class="crit">오류</b>'} — ${esc(x.name)} ${x.ok ? (x.file_ok ? "" : '<span class="warn">(대상 파일 밖)</span>') : esc(x.error)}`).join("<br>"); };
 
-/* ── LLM ─────────────────────────────────────────────── */
-function renderDev() { const d = S.cfg.llm.device || "cpu"; $$("#devSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === d));
-  $("#devHelp").textContent = {cpu: "검사 GPU 를 전혀 쓰지 않습니다 (num_gpu=0). 느리지만 가장 안전합니다.", gpu: "GPU 로 오프로드합니다. 빠르지만 검사와 VRAM 을 나눠 씁니다.", auto: "요청마다 여유 VRAM·사용률을 보고 GPU/CPU 를 고릅니다 (검사가 GPU 를 많이 쓰면 CPU 로 비켜 감)."}[d]; }
-$$("#devSeg button").forEach(b => b.onclick = () => { S.cfg.llm.device = b.dataset.v; markDirty(); renderDev(); });
-async function loadModels() { const url = S.cfg.llm.url; $("#llmAlive").textContent = "확인 중…"; const r = await api("/api/llm/models?url=" + encodeURIComponent(url));
-  $("#llmAlive").innerHTML = r.alive ? `<b class="ok">연결됨</b> · 모델 ${r.models.length}개` : '<b class="crit">응답 없음</b> — Ollama 서버를 켜거나 주소를 확인하십시오';
-  const sel = $("#modelSel"), cur = S.cfg.llm.model; const ms = Array.from(new Set([cur, ...r.models.filter(m => !/embed/i.test(m))].filter(Boolean)));
-  sel.innerHTML = ms.map(m => `<option ${m === cur ? "selected" : ""}>${esc(m)}</option>`).join(""); }
+/* ── 설정: 판단 ───────────────────────────────────────── */
+function renderAi() { const on = !!S.set.ai.llm; $$("#aiSeg button").forEach(b => b.classList.toggle("on", (b.dataset.v === "1") === on)); $("#aiBox").classList.toggle("hidden", !on);
+  const d = S.set.ai.device || "cpu"; $$("#devSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === d));
+  $("#devHelp").textContent = {cpu: "검사 GPU 를 전혀 쓰지 않습니다. 사건당 1~2분, 가장 안전.", gpu: "사건당 3~6초. 검사와 VRAM 을 나눠 씁니다.", auto: "요청마다 여유 VRAM(6GB↑)·사용률(40%↓)을 보고 GPU/CPU 를 고릅니다."}[d]; }
+$$("#aiSeg button").forEach(b => b.onclick = () => { S.set.ai.llm = b.dataset.v === "1"; markDirty(); renderAi(); if (S.set.ai.llm) loadModels(); });
+$$("#devSeg button").forEach(b => b.onclick = () => { S.set.ai.device = b.dataset.v; markDirty(); renderAi(); });
+$("#modelSel").onchange = ev => { S.set.ai.model = ev.target.value; markDirty(); };
+async function loadModels() { $("#llmAlive").textContent = "확인 중…"; const r = await api("/api/llm/models?url=" + encodeURIComponent(S.set.ai.url || ""));
+  $("#llmAlive").innerHTML = r.alive ? `<b class="ok">연결됨</b> · 모델 ${r.models.length}개` : '<b class="crit">응답 없음</b> — Ollama 를 켜거나 주소를 확인하십시오';
+  const cur = S.set.ai.model; const ms = Array.from(new Set([cur, ...r.models.filter(m => !/embed/i.test(m))].filter(Boolean)));
+  $("#modelSel").innerHTML = ms.map(m => `<option ${m === cur ? "selected" : ""}>${esc(m)}</option>`).join(""); }
 $("#btnModels").onclick = loadModels;
-function renderGpuFree() { const g = (S.status && S.status.gpu_free) || [];
-  $("#gpuFree").innerHTML = g.length ? `<table><thead><tr><th>GPU</th><th>여유 VRAM</th><th>전체</th><th>사용률</th><th>자동 모드 판정</th></tr></thead><tbody>${g.map(x => { const ok = x.free >= S.cfg.llm.gpu_min_free_mb && x.util <= S.cfg.llm.gpu_max_util && (S.cfg.llm.gpu_index < 0 || S.cfg.llm.gpu_index === x.gpu);
-    return `<tr><td>GPU${x.gpu}</td><td class="mono">${(x.free / 1024).toFixed(1)} GB</td><td class="mono">${(x.total / 1024).toFixed(0)} GB</td><td>${x.util}%</td><td>${ok ? '<span class="tag on">GPU 가능</span>' : '<span class="tag">CPU 로</span>'}</td></tr>`; }).join("")}</tbody></table>` : '<span class="muted">nvidia-smi 없음 — CPU 모드만 가능합니다</span>'; }
-$$("[data-llmtest]").forEach(b => b.onclick = async () => { $$("[data-llmtest]").forEach(x => x.disabled = true); $("#llmTestBusy").textContent = `${b.dataset.llmtest.toUpperCase()} 로 생성 중… (CPU 는 첫 로드에 수십 초)`;
-  const r = await api("/api/test/llm", {device: b.dataset.llmtest, url: S.cfg.llm.url, model: S.cfg.llm.model, cpu_threads: S.cfg.llm.cpu_threads, think: S.cfg.llm.think});
+function renderGpuFree() { const g = (S.st && S.st.gpu_free) || [];
+  $("#gpuFree").innerHTML = g.length ? `<table><thead><tr><th>GPU</th><th>여유 VRAM</th><th>사용률</th><th>자동 모드라면</th></tr></thead><tbody>${g.map(x => { const ok = x.free >= 6000 && x.util <= 40;
+    return `<tr><td>GPU${x.gpu}</td><td class="mono">${(x.free / 1024).toFixed(1)} / ${(x.total / 1024).toFixed(0)} GB</td><td>${x.util}%</td><td>${ok ? '<span class="tag on">GPU 사용</span>' : '<span class="tag">CPU 로</span>'}</td></tr>`; }).join("")}</tbody></table>` : '<span class="muted">nvidia-smi 없음 — CPU 만 쓸 수 있습니다</span>'; }
+$$("[data-llmtest]").forEach(b => b.onclick = async () => { $$("[data-llmtest]").forEach(x => x.disabled = true); $("#llmTestBusy").textContent = `${b.dataset.llmtest.toUpperCase()} 로 생성 중…`;
+  const r = await api("/api/test/llm", {device: b.dataset.llmtest, url: S.set.ai.url, model: S.set.ai.model});
   $$("[data-llmtest]").forEach(x => x.disabled = false); $("#llmTestBusy").textContent = "";
   if (!r.ok) { toast("LLM 시험 실패: " + r.error, "err"); return; }
-  S.llmTests.unshift({t: new Date().toLocaleTimeString(), ...r});
-  $("#llmTestRows").innerHTML = S.llmTests.map(x => `<tr><td class="mono">${esc(x.t)}</td><td class="mono">${esc(x.model)}</td><td><b>${esc(x.device.toUpperCase())}</b></td><td>${x.wall_s}</td><td>${x.load_s}</td><td>${x.tok_s}</td><td class="small">${esc(x.reply)}</td></tr>`).join(""); });
+  S.tests.unshift({t: new Date().toLocaleTimeString(), ...r});
+  $("#llmTestRows").innerHTML = S.tests.map(x => `<tr><td class="mono">${esc(x.t)}</td><td class="mono">${esc(x.model)}</td><td><b>${esc(x.device.toUpperCase())}</b></td><td>${x.wall_s}초 (로드 ${x.load_s})</td><td>${x.tok_s} 토큰/초</td><td class="small">${esc(x.reply)}</td></tr>`).join(""); });
 
-/* ── 이메일 ───────────────────────────────────────────── */
-function firstDomain() { const a = (S.cfg.email.to || [])[0] || ""; return a.includes("@") ? a.split("@").pop().replace(/>$/, "") : ""; }
-async function fillMx(domain) { domain = (domain || "").trim(); if (!domain) { toast("받는 사람 도메인을 입력하거나 '항상 받는 사람'을 먼저 넣으십시오", "err"); return false; }
-  const r = await api("/api/mx?domain=" + encodeURIComponent(domain)); if (!r.hosts || !r.hosts.length) { $("#mxRes").textContent = "MX 를 찾지 못했습니다"; return false; }
-  const E = S.cfg.email; E.smtp_host = r.hosts[0]; E.smtp_port = 25; E.security = "starttls"; E.username = "";
-  if (!E.sender) E.sender = `talog watch <talog-watch@${domain}>`; markDirty(); reloadBound(); $("#mxRes").textContent = "MX: " + r.hosts.join(", "); return true; }
-function renderTransport() { const t = S.cfg.email.transport || "smtp"; $$("#trSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === t));
-  $("#graphBox").classList.toggle("hidden", t !== "graph"); $("#smtpBox").classList.toggle("hidden", t === "graph"); }
-function renderEmail() {
-  const E = S.cfg.email; E.graph = E.graph || {};
-  $("#smtpPresets").innerHTML = '<span class="lab">빠른 설정</span>' + Object.entries(S.meta.smtp).map(([k, p]) => `<button class="btn sm" data-sp="${k}">${esc(p.label)}</button>`).join("");
-  $$("[data-sp]").forEach(b => b.onclick = async () => { const p = S.meta.smtp[b.dataset.sp]; E.transport = p.transport || "smtp";
-    if (E.transport === "smtp" && !p.mx) { E.smtp_host = p.smtp_host || E.smtp_host; E.smtp_port = p.smtp_port; E.security = p.security; if (b.dataset.sp === "relay") E.username = ""; }
-    if (E.transport === "graph" && !E.graph.tenant_id && firstDomain()) E.graph.tenant_id = firstDomain();
-    markDirty(); reloadBound(); renderTransport(); $("#smtpHelp").textContent = p.help; $("#smtpHelp").classList.remove("hidden");
-    if (p.mx) { $("#mxDomain").value = $("#mxDomain").value || firstDomain(); await fillMx($("#mxDomain").value); } });
-  $$("#trSeg button").forEach(b => b.onclick = () => { E.transport = b.dataset.v; markDirty(); renderTransport(); });
-  $("#btnMx").onclick = () => fillMx($("#mxDomain").value || firstDomain());
-  renderTransport();
-  $("#gsHint").textContent = E.graph.has_secret ? "저장된 암호가 있습니다 — 바꿀 때만 입력하십시오" : "암호가 저장되어 있지 않습니다";
-  $("#pwHint").textContent = E.has_password ? "저장된 비밀번호가 있습니다 — 바꿀 때만 입력하십시오" : "비밀번호가 저장되어 있지 않습니다";
-  $("#roleBox").innerHTML = Object.entries(S.meta.roles).map(([r, lab]) => `<div class="field"><label>${esc(lab)} <span class="mono muted">(${esc(r)})</span> — 이 역할이 지목되면 추가</label><div class="chips" data-path="email.roles.${r}" data-ph="이메일 입력 후 Enter"></div></div>`).join("");
-  Object.keys(S.meta.roles).forEach(r => { if (!Array.isArray(E.roles[r])) E.roles[r] = E.roles[r] ? [].concat(E.roles[r]) : []; });
-  bind($("#roleBox"));
-  const imm = (E.immediate || []).map(x => String(x).toLowerCase());
-  $$("[data-imm]").forEach(cb => { cb.checked = imm.includes(cb.dataset.imm); cb.onchange = () => { const s = new Set((E.immediate || []).map(x => String(x).toLowerCase()));
-    cb.checked ? s.add(cb.dataset.imm) : s.delete(cb.dataset.imm); E.immediate = Array.from(s); markDirty(); }; });
-}
-$("#pwInput").addEventListener("input", ev => { S.pw = ev.target.value; markDirty(); });
-$("#pwClear").onchange = ev => { S.pwClear = ev.target.checked; markDirty(); };
-$("#gsInput").addEventListener("input", ev => { S.gs = ev.target.value; markDirty(); });
-$("#gsClear").onchange = ev => { S.gsClear = ev.target.checked; markDirty(); };
-$("#btnSmtp").onclick = async () => { $("#mailRes").textContent = "접속 중…"; const r = await api("/api/test/smtp", {email: S.cfg.email, password: S.pw, graph_secret: S.gs});
-  $("#mailRes").innerHTML = r.ok ? `<b class="ok">${r.transport === "graph" ? "토큰 발급 성공" : "접속·인증 성공"}</b> — ${esc(r.detail)} (비밀: ${esc(r.password_source)})` : `<b class="crit">실패</b> — ${esc(r.detail || r.error)}`; };
-$("#btnTestMail").onclick = async () => { $("#mailRes").textContent = "보내는 중…"; const r = await api("/api/test/email", {email: S.cfg.email, password: S.pw, graph_secret: S.gs});
-  $("#mailRes").innerHTML = r.dry_run ? `<b class="warn">dry run</b> — 보내지 않고 보관: <span class="mono">${esc(r.eml)}</span>` : r.sent ? `<b class="ok">발송 성공</b> → ${esc((r.to || []).join(", "))}<br><span class="muted">${esc(r.subject)}</span>` : `<b class="crit">발송 실패</b> — ${esc(r.error)}`; };
-
-/* ── 사건 기록 ─────────────────────────────────────── */
-async function loadInc() { const r = await api(`/api/incidents?days=${$("#incDays").value}&replay=${$("#incReplay").checked ? 1 : 0}`);
-  $("#incCount").textContent = `${r.rows.length}건`;
-  $("#incRows").innerHTML = r.rows.length ? r.rows.map(x => `<tr class="click" data-id="${esc(x.id)}" data-rp="${x.replay ? 1 : 0}"><td class="mono small">${esc(x.day)}${x.replay ? ' <span class="tag">재생</span>' : ""}</td><td class="mono">${esc(x.time)}</td><td>${sevTag(x.severity)}</td><td>${esc(x.title)}</td><td>${esc(x.cause || "-")}</td><td class="small">${esc(x.llm || "-")}${x.llm_device ? `<div class="muted">${esc(x.llm_device)} · ${x.llm_s}s</div>` : ""}</td><td class="small">${esc(x.mode || "")}</td><td>${esc(x.mail)}</td></tr>`).join("") : '<tr><td colspan="8" class="muted">기록 없음</td></tr>';
-  $$("#incRows tr.click").forEach(tr => tr.onclick = () => openInc(tr.dataset.id, tr.dataset.rp === "1")); }
-$("#btnInc").onclick = loadInc; $("#incDays").onchange = loadInc; $("#incReplay").onchange = loadInc;
-async function openInc(id, rp) {
-  const d = await api(`/api/incident?id=${encodeURIComponent(id)}&replay=${rp ? 1 : 0}`);
-  if (!d || d.error) { toast("사건을 찾을 수 없습니다", "err"); return; }
-  const v = d.verdict || {}, rule = d.rule || {}, llm = d.llm || {};
-  const labCls = v.mode === "agree" ? "agree" : (v.mode === "disagree" || v.mode === "llm_only" || (v.label || "").startsWith("오경보")) ? "warn" : "";
-  const acts = (v.actions || []).map(a => `<li>${esc((d.action_text || {})[a] || a)}</li>`).join("");
-  const roles = (v.notify || []).map(r => (d.role_text || {})[r] || r).join(", ");
-  const em = d.email || {}, fu = d.email_followup;
-  $("#mTitle").textContent = (d.alerts[0] || {}).title || id;
-  $("#mBody").innerHTML = `<div class="muted small">${esc(d.site || "")} · ${esc(d.opened)} · 사건 ${esc(d.id)} · ${esc(d.family_title || d.family)}</div>
-    <div class="verdict"><span class="lab2 ${labCls}">${esc(v.label || "")}</span> ${sevTag(v.severity)} <b>${esc(v.cause_name || "")}</b>${v.llm_cause_name && v.llm_cause !== v.cause ? ` <span class="muted">/ LLM: ${esc(v.llm_cause_name)}</span>` : ""}<p style="margin:8px 0 0">${esc(v.message || "")}</p></div>
-    <div class="grid g2"><div><h3>권고 조치</h3><ol style="margin:0 0 0 18px;padding:0">${acts || "<li>-</li>"}</ol><div class="small" style="margin-top:6px">담당: ${esc(roles || "-")}</div>
-      <h3>룰 진단 근거</h3><ul class="facts">${(rule.facts || []).map(f => `<li>${esc(f)}</li>`).join("") || "<li>-</li>"}</ul></div>
-    <div><h3>LLM 2차 의견 ${llm.ok ? `<span class="muted small">${esc(llm.model)} · ${esc(llm.device)} · ${llm.wall_s}s · 토큰 ${llm.prompt_tokens}+${llm.gen_tokens}</span>` : ""}</h3>
-      ${llm.ok ? `<ul class="facts">${(llm.evidence || []).map(x => `<li>${esc(x)}</li>`).join("")}</ul>${(llm.fact && !llm.fact.ok) ? `<div class="note warn small">근거에 없는 수치 ${esc(llm.fact.unsupported.join(", "))} — 메일에는 룰 문구를 썼습니다</div>` : ""}<details style="margin-top:6px"><summary class="small">LLM 분석 서술</summary><div class="small" style="white-space:pre-wrap">${esc(llm.analysis || "")}</div></details>` : (d.llm ? `<div class="crit small">응답 실패: ${esc(llm.error)}</div>` : '<div class="muted small">LLM 미사용</div>')}</div></div>
-    <h3>경보 ${d.alerts.length}건</h3><table><tbody>${d.alerts.map(a => `<tr><td class="mono">${esc(a.time)}</td><td>${sevTag(a.severity)}</td><td><b>${esc(a.title)}</b><div class="muted small">${esc(a.evidence)}</div></td></tr>`).join("")}</tbody></table>
-    <h3>근거 로그 (요약)</h3><pre class="log">${esc(((d.evidence || {}).log_lines || []).join("\n"))}</pre>
-    <h3>메일 ${em.sent ? '<span class="tag on">발송</span>' : em.eml ? '<span class="tag">보관</span>' : '<span class="tag">없음</span>'} ${fu ? '<button class="btn sm" id="mFu">후속 메일 보기</button>' : ""}</h3>
-    ${em.eml || em.sent ? `<iframe class="mail" id="mFrame" src="/api/mail?id=${encodeURIComponent(id)}&replay=${rp ? 1 : 0}"></iframe>` : '<div class="muted small">메일을 보내지 않은 사건입니다 (등급 기준 미만이거나 메일 꺼짐)</div>'}`;
-  if (fu) $("#mFu").onclick = () => { $("#mFrame").src = `/api/mail?id=${encodeURIComponent(id)}&replay=${rp ? 1 : 0}&which=followup`; };
-  $("#modal").classList.remove("hidden");
-}
-$("#mClose").onclick = () => $("#modal").classList.add("hidden");
-$("#modal").onclick = ev => { if (ev.target.id === "modal") $("#modal").classList.add("hidden"); };
-
-/* ── 리플레이 · 로그 ─────────────────────────────── */
-$("#btnReplay").onclick = async () => { const d = $("#rpDir").value.trim(); if (!d) return;
-  if (isDirty()) toast("저장하지 않은 변경은 리플레이에 반영되지 않습니다 — 저장 후 재생하십시오", "err");
-  const r = await api("/api/replay", {day_dir: d}); if (!r.ok) { toast(r.error, "err"); return; } pollReplay(); };
-async function pollReplay() { const j = await api("/api/replay");
-  $("#rpState").textContent = j.state === "running" ? `재생 중… ${j.day_dir}` : j.state === "done" ? `완료 (${j.elapsed_s}초) — 사건 기록 탭에서 '재생' 표시 사건을 확인하십시오` : j.state === "error" ? "오류로 끝났습니다" : "대기";
-  $("#rpLog").textContent = (j.log || []).join("\n"); $("#rpLog").scrollTop = 1e9;
-  if (j.state === "running") setTimeout(pollReplay, 1500); }
-async function loadLog() { const r = await api("/api/log"); const b = $("#logBox"); const atEnd = b.scrollTop + b.clientHeight >= b.scrollHeight - 20;
-  b.textContent = r.lines.join("\n"); if (atEnd) b.scrollTop = b.scrollHeight; }
+/* ── 설정: 알림 ───────────────────────────────────────── */
+const PF = {
+  gmail: [["mail.account", "Gmail 주소 (보내는 계정)", "you@gmail.com"], ["#secret", "앱 비밀번호 (16자리)", ""], ["mail.sender", "보내는 이름 (선택)", "talog <you@gmail.com>"]],
+  m365: [["mail.tenant_id", "테넌트 ID 또는 회사 도메인", "company.com"], ["mail.client_id", "앱(클라이언트) ID", "00000000-0000-…"], ["mail.sender", "보낼 사서함", "talog-alert@company.com"], ["#secret", "클라이언트 암호 (값)", ""]],
+  smtp: [["mail.host", "SMTP 서버", "smtp.company.com"], ["mail.port", "포트", "587", "number"], ["mail.security", "보안", "", "sec"], ["mail.account", "계정 (비우면 인증 없이)", ""], ["#secret", "비밀번호", ""], ["mail.sender", "보내는 사람", "talog <talog@company.com>"]]};
+function renderProv() { const M = S.set.mail, p = M.provider || "off";
+  $("#provBox").innerHTML = Object.entries(S.meta.providers).map(([k, v]) => `<label class="${k === p ? "on" : ""}"><input type="radio" name="prov" value="${k}" ${k === p ? "checked" : ""}>${esc(v.label)}</label>`).join("");
+  $$("#provBox input").forEach(r => r.onchange = () => { M.provider = r.value; markDirty(); renderProv(); });
+  $("#provHelp").textContent = (S.meta.providers[p] || {}).help || ""; $("#provHelp").classList.toggle("hidden", !(S.meta.providers[p] || {}).help);
+  $("#mailBox").classList.toggle("hidden", p === "off");
+  const saved = (S.origSet && S.origSet.mail.provider === p && S.origSet.mail.account === M.account && S.origSet.mail.has_secret);
+  $("#provFields").innerHTML = (PF[p] || []).map(([path, label, ph, t]) => path === "#secret"
+    ? `<div class="field"><label>${esc(label)}</label><input type="password" id="secretIn" autocomplete="new-password" placeholder="${saved ? "저장됨 — 바꿀 때만 입력" : "입력하면 DPAPI 로 암호화해 저장"}"><label class="small"><input type="checkbox" id="secretClear"> 저장된 값 지우기</label>${S.meta.secret_env ? `<span class="hint">${esc(S.meta.secret_env)} 가 있으면 그 값을 먼저 씁니다</span>` : ""}</div>`
+    : t === "sec" ? `<div class="field"><label>${esc(label)}</label><select data-path="${path}"><option value="starttls">STARTTLS (587)</option><option value="ssl">SSL/TLS (465)</option><option value="none">없음 (사내 릴레이)</option></select></div>`
+    : `<div class="field"><label>${esc(label)}</label><input type="${t === "number" ? "number" : "text"}" data-path="${path}" ${t === "number" ? 'data-type="number"' : ""} placeholder="${esc(ph)}"></div>`).join("");
+  bind($("#provFields"));
+  const si = $("#secretIn"); if (si) { si.value = S.secret; si.oninput = () => { S.secret = si.value; markDirty(); }; $("#secretClear").checked = S.clearSecret; $("#secretClear").onchange = ev => { S.clearSecret = ev.target.checked; markDirty(); }; } }
+function renderRoles() { const R = S.set.mail.roles = S.set.mail.roles || {};
+  Object.keys(S.meta.roles).forEach(r => { if (!Array.isArray(R[r])) R[r] = R[r] ? [].concat(R[r]) : []; });
+  $("#roleBox").innerHTML = Object.entries(S.meta.roles).map(([r, lab]) => `<div class="field"><label>${esc(lab)} <span class="mono muted">(${esc(r)})</span></label><div class="chips" data-path="mail.roles.${r}" data-ph="이메일 입력 후 Enter"></div></div>`).join("");
+  bind($("#roleBox")); }
+$("#btnMailCheck").onclick = async () => { $("#mailRes").textContent = "접속 중…"; const r = await api("/api/test/mail-check", {settings: S.set, secret: S.secret});
+  $("#mailRes").innerHTML = r.ok ? `<b class="ok">${r.transport === "graph" ? "토큰 발급 성공" : "접속·인증 성공"}</b> — ${esc(r.detail)} (비밀: ${esc(r.secret_source)})` : `<b class="crit">실패</b> — ${esc(r.detail || r.error)}`; };
+$("#btnMailTest").onclick = async () => { $("#mailRes").textContent = "보내는 중…"; const r = await api("/api/test/mail", {settings: S.set, secret: S.secret});
+  $("#mailRes").innerHTML = r.dry_run ? `<b class="warn">보관만</b> — <span class="mono">${esc(r.eml)}</span>` : r.sent ? `<b class="ok">발송 성공</b> → ${esc((r.to || []).join(", "))}<br><span class="muted">${esc(r.subject)}</span>` : `<b class="crit">발송 실패</b> — ${esc(r.error)}`; };
 
 /* ── 저장 ───────────────────────────────────────────── */
-function resetSecrets() { S.pw = ""; S.pwClear = false; S.gs = ""; S.gsClear = false;
-  ["#pwInput", "#gsInput"].forEach(s => $(s).value = ""); ["#pwClear", "#gsClear"].forEach(s => $(s).checked = false); }
-$("#btnSave").onclick = async () => { cleanOverrides(); $("#btnSave").disabled = true;
-  const r = await api("/api/config", {cfg: S.cfg, password: S.pw, clear_password: S.pwClear, graph_secret: S.gs, clear_graph_secret: S.gsClear}); $("#btnSave").disabled = false;
+$("#btnSave").onclick = async () => { $("#btnSave").disabled = true;
+  const r = await api("/api/settings", {settings: S.set, secret: S.secret, clear_secret: S.clearSecret}); $("#btnSave").disabled = false;
   if (!r.ok) { toast("저장 실패\n- " + (r.errors || [r.error]).join("\n- "), "err"); return; }
-  resetSecrets(); setCfg(r.cfg); toast("저장했습니다 — 감시를 새 설정으로 재시작합니다", "ok"); S.files = null; if (S.tab === "files") loadFiles(); setTimeout(loadStatus, 800); };
-$("#btnRevert").onclick = () => { setCfg(JSON.parse(S.orig)); resetSecrets(); markDirty(); toast("변경을 되돌렸습니다"); };
+  S.secret = ""; S.clearSecret = false; setSettings(r.settings); toast("저장했습니다 — 감시를 새 설정으로 다시 시작합니다", "ok"); setTimeout(loadStatus, 900); };
+$("#btnRevert").onclick = () => { S.secret = ""; S.clearSecret = false; setSettings(JSON.parse(S.orig)); toast("변경을 되돌렸습니다"); };
 window.addEventListener("beforeunload", ev => { if (isDirty()) { ev.preventDefault(); ev.returnValue = ""; } });
-function setCfg(cfg) {
-  S.cfg = cfg; S.cfg.rules.overrides = S.cfg.rules.overrides || {}; S.cfg.rules.patterns = S.cfg.rules.patterns || []; S.cfg.email.roles = S.cfg.email.roles || {};
-  Object.keys(S.meta.roles).forEach(r => { if (!Array.isArray(S.cfg.email.roles[r])) S.cfg.email.roles[r] = S.cfg.email.roles[r] ? [].concat(S.cfg.email.roles[r]) : []; });
-  S.orig = JSON.stringify(S.cfg);
-  // 입력 이벤트는 매번 전역 S.cfg 에 쓰므로 한 번만 묶고, 이후엔 값만 다시 채운다
+function setSettings(s) {
+  S.set = s; S.set.rules.custom = S.set.rules.custom || []; S.set.rules.builtin = S.set.rules.builtin || {};
+  S.origSet = JSON.parse(JSON.stringify(s)); renderRoles(); S.orig = JSON.stringify(S.set);
   if (!S.boundOnce) { bind(document); S.boundOnce = true; } else reloadBound();
-  renderRules(); renderEmail(); renderDev(); renderFiles(); renderSugg(); markDirty();
-}
+  renderTracking(); renderBuiltin(); renderCustom(); renderSugg(); renderAi(); renderProv();
+  const adv = S.set.advanced || {}; $("#advCard").classList.toggle("hidden", !Object.keys(adv).length); $("#advBox").textContent = JSON.stringify(adv, null, 2);
+  markDirty(); }
 
 /* ── 시작 ───────────────────────────────────────────── */
 (async function init() {
-  const r = await api("/api/config"); S.meta = {rules: r.rules, presets: r.presets, smtp: r.smtp, roles: r.roles};
-  $("#presetSel").innerHTML = '<option value="">프리셋에서 추가…</option>' + r.presets.map((p, i) => `<option value="${i}">${esc(p.name)} (${SEVK[p.severity]}, ${p.count}회/${p.window_min}분)</option>`).join("");
-  setCfg(r.cfg); await loadStatus(); loadModels();
-  setInterval(() => { loadStatus(); if (S.tab === "log") loadLog(); }, 5000);
+  const r = await api("/api/settings"); S.meta = r.meta;
+  $("#cfgPath").textContent = r.meta.config;
+  $("#legacyTag").innerHTML = r.meta.legacy ? '<span class="tag w">옛 watch.yaml 형식 — 저장하면 새 형식(값 그대로)으로 바뀝니다</span>' : "";
+  $("#presetSel").innerHTML = '<option value="">예시에서 추가…</option>' + r.meta.presets.map((p, i) => `<option value="${i}">${esc(p.name)} (${SEVK[p.severity]}, ${p.count}회/${p.window_min}분)</option>`).join("");
+  setSettings(r.settings); await loadStatus(); if (S.set.ai.llm) loadModels();
+  api("/api/folder").then(f => { S.folder = S.folder || f; renderFiles(); renderSugg(); });
+  setInterval(() => { loadStatus(); if ($("#logBox").closest("details").open) loadLog(); }, 5000);
 })();
 </script>
 </body>

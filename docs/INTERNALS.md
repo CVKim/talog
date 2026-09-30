@@ -5,18 +5,14 @@ README 에서 분리한 상세 문서입니다: 파싱 명세, 모듈 구조, �
 
 ## 빠른 시작 (현장용)
 
-- **`run_talog.bat` 에 로그 폴더를 드래그&드롭** (또는 더블클릭 후 경로 입력)
-  → 레시피 경로 입력(선택) → 완료되면 리포트가 자동으로 열린다.
+- `run_talog.bat` **더블클릭 = 콘솔**(감시·사건·분석·설정), **로그 폴더를 끌어다 놓기 = 진단 리포트**.
 - Python 이 없는 PC 에서는 `dist\talog.exe` 를 같은 방식으로 사용한다.
 
 ```
-talog.exe <로그 폴더> [--recipe <레시피 폴더>] [--out <출력 폴더>] [--open] [--fast]
-python -m talog <로그 폴더> [--recipe <레시피 폴더>] [--out <출력 폴더>]
+talog.exe [--config talog.yaml]                 콘솔
+talog.exe run [--check | --replay <일자> | --once]  화면 없이 상주
+talog.exe analyze <로그 폴더> [--recipe <레시피>] [--out <출력>] [--open] [--fast] [--llm]
 ```
-
-- `--open` 완료 후 리포트 자동 열기 / `--fast` 대용량 종속성 그래프 로그 생략
-- `--detail N` 간트 상세를 내장할 검사 수 상한 (기본 60)
-- `--llm` 로컬 LLM(Ollama) AI 종합 소견을 리포트 상단에 추가
 
 상세 사용법은 `USAGE.md` 참조.
 
@@ -67,18 +63,43 @@ talog/
   assemble.py      검사/채널 런 조립 + 미완료 사유 분류 + 프로세스 세대
   store.py         SQLite 스키마
   report.py        단일 파일 HTML 리포트
-  cli.py           CLI
+  cli.py           CLI — talog(콘솔) / run(상주) / analyze(리포트), 옛 명령은 별칭
+  settings.py      사용자 설정(talog.yaml, 약 20키) ↔ 엔진 설정 변환 (compile / from_engine)
   watch.py         상주 감시 (LiveWatch: tail → RuleEngine → Notifier → 에이전트)
-  tracker.py       추적 대상 선택(default/select/auto) + 사용자 정의 패턴 엔진
+  tracker.py       추적 대상 선택(default/select/auto) + 로그 문구 규칙 엔진
   agent.py         사건 분석: 근거 수집 → 룰 진단 → LLM 2차 의견 → 합의 관문 → 숫자 대조
   rules/runbook.yaml  원인·조치·담당 런북 (LLM 이 읽는 원인 설명 포함)
   llm.py           Ollama 클라이언트 (cpu/gpu/auto 장치 선택, keep_alive, think)
   mailer.py        SMTP 발송 (즉시/묶음 정책, 역할 라우팅, 후속 메일 스레드, outbox)
   secret.py        SMTP 비밀번호 DPAPI 암호화
-  console.py       로컬 웹 콘솔 서버 (console.html) — 127.0.0.1, 토큰·Host 확인
+  console.py       플랫폼 콘솔 서버 (console.html: 운영 현황·사건·분석·설정) — 127.0.0.1,
+                   토큰·Host 확인, 리포트 서빙(/r/<태그>/ + 뷰어 API), 사건·리포트 질의
 ```
 
-## watch 사건 분석 흐름 (v1.10)
+## 설정 두 층 (v2.0)
+
+사람이 정하는 값은 `talog.yaml`(settings.DEFAULTS 모양)에만 둔다. 엔진은 예전과 같은
+세부 dict(`watch._DEFAULT_CFG` 모양)를 받는다.
+
+```
+talog.yaml ──settings.load──▶ 사용자 설정 ──compile──▶ 엔진 설정 ──▶ LiveWatch / 에이전트 / 메일
+옛 watch.yaml ─(is_legacy)─▶ from_engine ─┘  (옮길 자리 없는 값 = advanced, compile 마지막에 병합)
+```
+
+- `from_engine` 은 `compile(from_engine(x)) == x` 가 되도록 차이를 `advanced` 로 남긴다
+  (`_norm_engine` 으로 옛 결함 키·빈 역할 목록을 정규화한 뒤 비교). 옛 LLM 주기 점검 키
+  (`llm.enabled/script/interval_min`)는 기능과 함께 없앴다.
+- 사건 분석(에이전트)은 늘 켜져 있다. `ai.llm` 이 LLM 교차 확인만 켠다.
+- 결함 규칙은 `rules.defect_watch.rules`(결함명 와일드카드·등급·N건/M분, 같은 결함명끼리
+  계수) 한 형식이다. 엔진은 옛 `critical`·`repeat_count` 도 같은 규칙으로 옮겨 쓴다
+  (`watch._defect_rules`). 등급 crit 는 `defect_critical`, 그 밖은 `defect_repeat` 로 발보.
+- 메일 방식(`mail.provider`)이 엔진의 transport·호스트·비밀 키를 정한다. 비밀은 한 칸
+  (`mail.secret`, DPAPI)이고, 콘솔은 방식·계정이 바뀌면 옛 비밀을 버린다.
+- 리포트 질의(`/api/ask/report`)는 `ask.py` 도구 루프를 쓰고, 시스템 프롬프트에 실제 DB 열
+  이름을 넣는다(`_schema_text` — 없으면 7B 모델이 열 이름을 지어내고 값까지 지어냄).
+  답의 숫자·시각은 `agent.fact_check` 로 조회 결과와 대조해 화면에 경고한다.
+
+## 사건 분석 흐름
 
 ```
 TailReader(추적 모드) ─줄→ PatternEngine ─┐
