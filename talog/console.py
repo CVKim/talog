@@ -100,7 +100,7 @@ def _recipe_defects(day_dir: str) -> tuple[list[str], list[list]]:
 
 def _report_tag(day_dir: str) -> str:
     """리포트 이름: ...\\2026_09\\28 → 2026_09_28, 그 밖은 마지막 두 폴더 이름."""
-    parts = [p for p in os.path.normpath(day_dir).split(os.sep) if p]
+    parts = [p for p in re.split(r"[\\/]+", os.path.normpath(day_dir)) if p]
     tail = parts[-2:] if len(parts) >= 2 else parts
     tag = "_".join(tail)
     return re.sub(r"[^\w.\-가-힣]+", "_", tag).strip("_") or "report"

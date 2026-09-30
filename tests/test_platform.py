@@ -202,6 +202,7 @@ def test_console_settings_save_and_security(tmp_path):
             new2["mail"].update(provider="smtp", host="relay.local", account="")
             code, res2 = call("/api/settings", {"settings": new2})
             assert code == 200 and not res2["settings"]["mail"]["has_secret"]
+        call("/api/settings", {"settings": new})         # 두 번째 저장부터 .bak 이 남는다
         assert os.path.exists(path + ".bak")
         code, r = call("/api/test/rule", {"rules": [
             {"type": "log", "name": "n", "match": "NoInspThread", "files": ["comm.log"]},
