@@ -309,7 +309,7 @@ class Console:
                       "resolved": dev, "reason": why,
                       "alive": self._llm_up() if ai.get("llm") else None,
                       "incidents": len(incs),
-                      "agree": sum(1 for i in incs if "일치" in (i.get("mode") or "")),
+                      "agree": sum(1 for i in incs if i.get("gate") == "agree"),
                       "last": incs[0] if incs else None},
             "notify": {"provider": prov,
                        "label": settings.PROVIDERS.get(prov, {}).get("label", prov),
