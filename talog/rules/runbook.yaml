@@ -13,6 +13,8 @@ params:
   exec_slowdown_ratio: 1.5       # 최근 executeV2 중앙값 / 직전 구간 중앙값
   recipe_change_window_min: 60   # 기종 교체(모델 로드) 후 N분 안의 결함 급증은 레시피 부적합 후보
   restart_merge_s: 30            # 30초 안의 재시작 흔적(풀 생성 5종 등)은 재시작 1회로 센다
+  drift_ratio: 1.2               # 기준선 대비 점유 시간 배율이 이 이상이면 '시간 경과형 열화' 후보
+  interval_tol_pct: 10           # 투입 간격 변화가 ±N% 안이어야 열화로 본다 (밖이면 부하 변화)
 
 roles:
   operator: 현장 작업자
@@ -23,7 +25,7 @@ roles:
 actions:
   monitor: 감시 지속 — 일시 현상인지 다음 검사들로 확인
   avoid_restart_now: 진행 중 검사가 끝날 때까지 재시작 보류 (지금 재시작하면 진행분 결과 소실)
-  planned_restart: 투입이 멈춘 휴지 시점에 계획 재시작
+  planned_restart: 투입이 멈춘 휴지 시점(쉬는 시간이 없는 라인은 라인과 협의한 계획 정지)에 재시작
   check_gpu_load: GPU 부하·동시 인퍼런스(채널 병렬·모델 instance) 점검
   adjust_cadence: 라인(PLC) 담당과 투입 간격 조정 협의
   check_gpu_health: GPU 드라이버·온도·전원 점검, 재시작 전에 exception.log·덤프 확보
@@ -42,10 +44,17 @@ actions:
   restore_run_mode: 시뮬레이션 모드를 운영(검사) 모드로 되돌림
   review_error_log: 반복 에러 원문을 확인해 담당 모듈 지목
   escalate_to_human: 판단 불가 — 근거를 붙여 담당자에게 넘김
+  collect_memory_snapshot: 재시작 전에 프로세스 메모리 상태(힙·핸들, VMMap 스냅샷이나 덤프) 확보 — 원인 모듈 확인용
+  report_dev_team: 그룹별 점유 시간 추세와 단계별 증가표를 붙여 알고리즘·플랫폼 개발팀에 보고
+  check_result_delivery: 설비(PLC·상위 시스템)가 검사 결과를 받고 있는지 먼저 확인 — 못 받으면 미검사로 처리된다
+  check_comm_log: comm.log 가 계속 기록되는지(파일 크기·수정 시각, 회전, comm_fail.log, 디스크) 확인
+  check_stuck_inspection: 남은 inner id 의 seq·알고리즘 로그로 어느 단계에서 멈췄는지 확인하고, 설비에서 그 제품이 미검사로 처리됐는지 확인
 
 # 경보 룰 → 분석 계열. system 계열은 '룰 = 원인' 이라 원인 id 까지 적는다.
 alert_family:
   no_insp_thread: reject
+  capacity_drift: reject             # 처리 여유 감소 (유휴 스레드·일시 지연 내성) — 거부 전 조기 경보
+  tact_drift: reject                 # 처리 시간 증가 (기동 기준 대비)
   insp_stall: reject
   img_timeout: reject
   reject_notready: reject
@@ -74,16 +83,17 @@ families:
       throughput_saturation:
         name: 처리량 포화 — 검사 소요가 투입 간격보다 길어 Seq 스레드 고갈
         description: >-
-          검사 한 건의 소요 시간이 투입 간격보다 길어져 진행 중 검사가 Seq 스레드(그룹당 2개)를
-          모두 점유한 상태다. 근거: inspections.duration_over_interval 이 1 이상(검사 소요가 투입
-          간격보다 김), inspections.slowdown_ratio 가 1.5 이상(최근 완료 소요가 평소 중앙값보다
-          김 — 느려진 지 30분이 넘었으면 1 근처일 수 있음), 경보 순간 inspections.inflight 가 2
-          이상(슬롯을 모두 점유)이고
-          oldest_inflight_s 가 평소 소요보다 김, inspections.wait_threads_recent 가 0 으로 줄어듦,
-          gpu_log.exec_slowdown_ratio 상승(동시 인퍼런스로 GPU 커널 시간이 늘어남, 없을 수도 있음).
-          GPU 치명 오류와 타임아웃은 없다. PC3 2026-07-27 사례: 라인 휴지
-          뒤 약 100초 간격 연속 투입에서 인퍼런스가 중첩되며 채널 소요가 21초에서 60~166초로 늘어
-          NoInspThread 가 났다. 이때 재시작하면 진행 중 검사 결과가 소실된다.
+          투입이 갑자기 몰리거나(휴지 뒤 연속 투입, 투입 간격 단축) 동시 인퍼런스가 겹쳐 GPU 커널
+          시간이 늘면서, 검사 한 건의 소요가 그룹의 Seq 스레드 수 × 투입 간격을 넘어 스레드를 모두
+          점유한 상태다. 근거: inspections.threads_needed_over_pool 이 1 에 가까움(소요 ÷ 투입 간격 ÷
+          스레드 수 — 스레드 수를 모르면 duration_over_interval 이 1 이상), inspections.slowdown_ratio
+          가 1.5 이상(최근 완료 소요가 평소보다 김), 경보 순간 inspections.inflight 가 많음,
+          trend.interval_change_pct 가 -10% 보다 작음(투입이 빨라짐) 또는 gpu_log.exec_slowdown_ratio
+          상승. GPU 치명 오류와 타임아웃은 없다. 투입 간격·GPU 커널이 그대로인데 점유 시간이 기동 뒤
+          서서히 늘어 온 경우(trend.monotonic)는 이 원인이 아니라 progressive_slowdown 이다.
+          PC3 2026-07-27 사례: 라인 휴지 뒤 약 100초 간격 연속 투입에서 인퍼런스가 중첩되며 채널
+          소요가 21초에서 60~166초로 늘어 NoInspThread 가 났다. 이때 재시작하면 진행 중 검사 결과가
+          소실된다.
         actions: [avoid_restart_now, check_gpu_load, adjust_cadence]
         notify: [vision_engineer]
       gpu_context_fault:
@@ -108,6 +118,53 @@ families:
           GPU 치명 오류 없음. 재시작 전까지 회복되지 않으므로 투입이 없는 휴지 시점에 계획
           재시작하고 플랫폼 팀에 보고한다.
         actions: [planned_restart, report_platform]
+        notify: [vision_engineer]
+      progressive_slowdown:
+        name: 시간 경과형 처리 열화 — 기동 뒤 점유 시간이 누적 증가해 스레드 여유 소진
+        description: >-
+          투입 간격과 일의 양은 그대로인데 프로세스가 기동(또는 기종 교체)된 뒤 시간이 지날수록 검사
+          한 건이 Seq 스레드를 잡고 있는 시간(점유)이 계속 늘어 예비(유휴) 스레드가 줄어든 상태다.
+          근거: trend.hold_ratio 가 기준선보다 큼(1.2 이상) 또는 capacity.idle_median 이
+          capacity.idle_baseline 보다 작음, trend.monotonic 이 true(꾸준한 증가),
+          trend.interval_change_pct 가 ±10% 안(부하 변화 아님), gpu_log.exec_slowdown_ratio 가 1.5
+          미만(GPU 경합 아님). trend.groups_rising 에 여러 그룹이 있으면 특정 알고리즘 하나보다
+          프로세스 전체가 같이 쓰는 자원(힙·할당자, 스레드 공유 자원)이 느려진 공통 원인이다.
+          capacity.tolerance_s(한계 − p99 점유)가 작을수록 transient(여러 그룹 동시 일시 지연) 한
+          번에 NoInspThread 가 난다. 재시작하면 회복되므로 다음 정지 시점(쉬는 시간이 없는 라인은
+          라인과 협의한 계획 정지)에 재시작하고, 그 전에 메모리 상태를 확보해 원인 모듈을 찾는다.
+          phases 의 단계별 증가를 개발팀 보고에 붙인다. 투입 간격 조정·GPU 점검은 이 원인과 무관하다.
+          경보 순간 진행 중 검사가 있으면 지금 바로 재시작하지 않는다. 풍산 2호기 2026-10-12 사례:
+          기동 5일 뒤 측면 그룹 점유가 기준의 2배를 넘고 유휴 스레드가 4→3개로 줄어든 상태에서 30초간
+          전 그룹 동시 지연이 겹쳐 그룹 10~12 가 거부됐다.
+        actions: [planned_restart, collect_memory_snapshot, report_dev_team]
+        notify: [vision_engineer]
+      completion_signal_lost:
+        name: 완료 신호 끊김 — 처리는 끝나는데 결과 회신(INSPECT_END)이 안 보임
+        description: >-
+          검사 요청은 계속 들어오고 최근 도착 순간 유휴 스레드도 스레드 수에 가까우며(처리가 막혔다면
+          0 쪽으로 떨어진다) seq 점유도 평소대로인데, 결과 회신(V2M_INSPECT_END)만 들어오지 않아 진행
+          중 검사가 쌓인 상태다. 근거: inspections.last_end_age_s(마지막 완료 뒤 경과)가 60초 이상이고
+          그 뒤 inspections.starts_since_last_end 가 20건 이상(또는 ends_10min 이 starts_10min 의 절반
+          미만), inspections.wait_threads_recent 가 스레드 수(capacity.pool) − 1 이상. 이때 진행 중 수와 소요
+          배율(duration_over_interval)은 회신이 끊겨 부푼 값이라 처리량 포화의 근거가 아니다. comm 로그
+          기록이 멈췄거나(회전·디스크·로거) 설비로 결과 송신이 끊긴 경우다 — 설비가 결과를 못 받으면
+          미검사로 처리되므로 송신 여부부터 확인한다. 재시작이나 투입 간격 조정은 이 원인과 무관하다.
+          Tenneco 2026-07-30 13:55 사례: comm.log 기록이 InspStarter·seq 보다 10분 먼저 끝나 검사 정체
+          경보가 났고, 그동안 도착 순간 유휴 스레드는 3개 중 2~3개, seq 점유는 0.61초로 평소대로였다.
+        actions: [check_result_delivery, check_comm_log]
+        notify: [vision_engineer]
+      isolated_stall:
+        name: 단건 정체 — 검사 몇 건만 완료 신호 없이 남음 (스레드는 남아 있음)
+        description: >-
+          검사 정체 경보(insp_stall)인데 완료 신호(INSPECT_END) 없이 남은 검사가 한두 건뿐이고(스레드 수의
+          절반 이하, 스레드 수를 모르면 2건 이하) 최근 도착 순간 유휴 스레드도 남아 있는 상태다. 근거:
+          inspections.inflight 가 작음, inspections.wait_threads_recent 에 1 이상이 있음, 다른 검사는
+          끝나거나(recent_durations_s) 라인이 멈춤. 스레드가 모자란 것이 아니므로 처리량 포화가 아니다 —
+          duration_over_interval 은 남은 한 건의 경과라 부푼 값이다. 그 검사의 처리(특정 이미지·알고리즘)가
+          멈췄거나 그 건의 회신만 빠진 경우다. 남은 inner id(inspections.inflight_ids)의 seq·알고리즘
+          로그로 어느 단계에서 멈췄는지 보고, 설비에서 그 제품이 미검사로 처리됐는지 확인한다. Tenneco
+          2026-07-28 15:53 사례: 재시작 10분 뒤 라인이 멈춘 상태에서 그룹 3 검사 1건이 491초째 남았다.
+        actions: [check_stuck_inspection, check_result_delivery]
         notify: [vision_engineer]
       not_initialized:
         name: 기동·모델 로드 직후 미초기화

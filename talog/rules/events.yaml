@@ -176,10 +176,11 @@ console:
   - kind: GPU_MODEL_LOAD
     msg: '\[Success\] Load (?P<model>\S+) Model On GPU #(?P<value>\d+)'
 
-# 프로세스 리소스 사용량 (5초 주기): value=RAM(MB), status=CPU%, name=스레드 수
+# 프로세스 리소스 사용량 (5초 주기): value=RAM(MB), status=CPU%, name=스레드 수,
+#   extra=장비 전체 CPU%(같은 줄의 'Total CPU Usage' — 신규 빌드에만 있다)
 processusage:
   - kind: USAGE
-    msg: 'CPU Usage : (?P<status>[\d.]+)%\s+Memory Usage : (?P<value>[\d.]+)Mb\s+thread count : (?P<name>\d+)'
+    msg: 'CPU Usage : (?P<status>[\d.]+)%\s+Memory Usage : (?P<value>[\d.]+)Mb\s+thread count : (?P<name>\d+)(?:\s*\|\s*Total CPU Usage : (?P<extra>[\d.]+)%)?'
 
 # 종속성 그래프: 검사별 alg 노드 비활성(=레시피 조건에 의한 정상 스킵) 판정
 relgraph:

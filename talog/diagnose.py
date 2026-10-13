@@ -29,10 +29,90 @@ def _fmt_t(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+def _reject_finding(out: list, events: list, bad: list) -> int:
+    acks = [e for e in events if e.kind == "COMM_MSG" and "INSPECT_START_ACK" in e.name
+            and e.status == "NoInspThread"]
+    lines = [e for e in events if e.kind == "INSP_REJECT"]
+    n = max(len(acks), len(lines))
+    if not n or any(i.status == "rejected" for i in bad):
+        return n
+    if acks:
+        groups = sorted({int(e.value) for e in acks if e.value})
+        ev = [f"{_fmt_t(e.ts_text)} inner {e.inner_id}"
+              + (f" — 그룹 {int(e.value)}" if e.value else "") for e in acks[:8]]
+        title = f"검사 시작 거부(NoInspThread) {n}건" + (
+            f" — 그룹 {', '.join(map(str, groups))}" if groups else "")
+    else:
+        ev = [f"{_fmt_t(e.ts_text)} 시작 거부 (가용 Seq 스레드 0)" for e in lines[:8]]
+        title = f"검사 시작 거부(NoInspThread) {n}건"
+    if n > 8:
+        ev.append(f"… 외 {n - 8}건")
+    out.append(Finding("crit", title, ev,
+                       "거부된 검사는 설비에서 미검사로 처리됩니다. 아래 '처리 여유' 소견과 함께 "
+                       "점유 시간이 늘어 온 것인지(시간 경과형), 투입이 몰린 것인지 확인하십시오."))
+    return n
+
+
+def _hms(ts) -> str:
+    import datetime as _dt
+    return _dt.datetime.fromtimestamp(ts).strftime("%H:%M:%S") if ts else ""
+
+
+def _capacity_finding(out: list, cap: dict | None) -> bool:
+    """그룹별 처리 여유 소견 (watch.capacity_review 결과). 경보가 있었으면 True."""
+    if not cap or not cap.get("groups"):
+        return False
+    alerts = cap.get("alerts") or []
+    with_base = {g: s for g, s in cap["groups"].items() if s.get("baseline")}
+    if not with_base:
+        return False
+    ranked = sorted(with_base.items(), key=lambda kv: -(kv[1].get("hold_ratio") or 0))
+    lines = []
+    for g, s in ranked[:4]:
+        b = s["baseline"]
+        im = s.get("idle_median")
+        lines.append(
+            f"그룹 {g}: 유휴 스레드 중앙값 {b.get('idle_median'):g}→{'-' if im is None else f'{im:g}'}개, "
+            f"점유 p50 {b.get('hold_p50')}→{s.get('hold_p50')}초({s.get('hold_ratio')}배), "
+            f"투입 {b.get('interval_s')}→{s.get('interval_s')}초"
+            + (f", 일시 지연 내성 {s['tolerance_s']}초/한계 {s['limit_s']}초"
+               if s.get("tolerance_s") is not None else ""))
+    rising = [g for g, s in with_base.items() if (s.get("hold_ratio") or 0) >= 1.1]
+    if len(with_base) >= 2:
+        common = len(rising) >= 2 and len(rising) * 2 >= len(with_base)
+        lines.append(f"기준선이 있는 {len(with_base)}개 그룹 중 {len(rising)}개 그룹의 점유가 10% 이상 "
+                     f"늘었다" + (" — 여러 그룹이 함께 늘어 프로세스 공통 원인 쪽" if common else ""))
+    first = {}
+    for a in alerts:
+        first.setdefault((a.rule, a.severity), a)
+    for (_rule, sev), a in sorted(first.items(), key=lambda kv: kv[1].ts):
+        lines.append(f"{_hms(a.ts)} 첫 {'심각' if sev == 'crit' else '주의'} — {a.title}")
+    ph = (cap.get("evidence") or {}).get("phases")
+    if ph and any(ph.get("share_of_increase_pct") or []):
+        lines.append(f"그룹 {ph['group']} 늘어난 점유의 단계별 몫: " + ", ".join(
+            f"{n} {v:g}%" for n, v in zip(ph["names"], ph["share_of_increase_pct"]) if v)
+            + " (각 단계는 여러 처리의 합)")
+    if not alerts:
+        out.append(Finding("ok", "처리 여유 안정 (그룹별 기준선 대비)", lines[:3], ""))
+        return False
+    sev = "crit" if any(a.severity == "crit" for a in alerts) else "warn"
+    chg = [s.get("interval_change_pct") for s in with_base.values()
+           if s.get("interval_change_pct") is not None]
+    load = any(abs(c) > 10 for c in chg)
+    advice = ("투입 간격이 바뀌었습니다 — 부하(투입) 변화부터 확인하십시오." if load else
+              "투입 간격은 그대로인데 점유가 늘었습니다 — 기동 뒤 누적되는 시간 경과형 열화로 보고, "
+              "다음 정지 시점에 계획 재시작하고 그 전에 프로세스 메모리 상태(VMMap·덤프)를 확보해 "
+              "단계별 증가와 함께 개발팀에 보고하십시오.")
+    out.append(Finding(sev, "처리 여유 감소 — 그룹별 기준선 대비" + (
+        f" (그룹 {', '.join(str(g) for g, _ in ranked[:3])})" if ranked else ""), lines[:10], advice))
+    return True
+
+
+# ---------------------------------------------------------------------------
 def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
              gens: list[ProcessGen], events: list[Event],
              model_loads: list[ModelLoad], log_start: float, log_end: float,
-             usage_result=None, recipe=None) -> list[Finding]:
+             usage_result=None, recipe=None, capacity: dict | None = None) -> list[Finding]:
     out: list[Finding] = []
     prod = [i for i in inspections if not i.status.startswith("sim")]
     bad = [i for i in prod if i.status in
@@ -86,6 +166,13 @@ def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
                   "권장합니다.")
         out.append(Finding("crit", f"검사 미완료 {len(bad)}건", ev, advice))
 
+    # 1.5) 시작 거부 — 검사 조립과 따로 센다. 한 제품(inner id)이 여러 존을 시차를 두고 지나는
+    #      설비는 뒤 존의 거부가 앞 존의 '완료' 기록에 묻힌다 (풍산 2호기 10/12)
+    n_rej = _reject_finding(out, events, bad)
+
+    # 1.6) 처리 여유·처리 시간 추세 (실시간 감시와 같은 규칙 — watch.capacity_review)
+    cap_bad = _capacity_finding(out, capacity)
+
     # 2) 재시작/크래시 패턴 ----------------------------------------------------
     restarts = max(0, len(gens) - 1)
     crashes = sum(1 for e in events if e.kind == "CRASH")
@@ -136,7 +223,9 @@ def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
                                "해당 채널이 파이프라인 슬롯을 장기 점유하면 연속 투입 시 "
                                "스레드 고갈로 이어질 수 있습니다. 모델 경량화 또는 GPU "
                                "분산 배치를 검토하십시오."))
-        elif takt:
+        elif takt and not any(s.get("baseline") for s in ((capacity or {}).get("groups") or {}).values()):
+            # 채널 평균 처리 시간만 본 값이라 스레드 점유(저장·DB 포함)를 모른다 — 그룹별 처리 여유
+            # 소견이 있으면 그쪽이 맞다 (풍산 10/12: 채널 평균 0.27초 '여유' 인데 처리 여유는 심각)
             out.append(Finding("ok", "처리량 여유",
                                [f"투입 주기(중앙값) {takt:.1f}초, 최다 소요 채널 평균 "
                                 f"{max(statistics.mean(v) for v in by_ch.values()) / 1000:.2f}s"],
@@ -364,7 +453,8 @@ def diagnose(inspections: list[Inspection], runs: list[ChannelRun],
                             "불가이며, 해당 일자 로그를 다시 수집하면 완료로 "
                             "확정됩니다 (익일 로그가 있으면 자동 스티칭)."], ""))
 
-    if prod and not bad and not crashes and restarts < 3 and not eof_n:
+    if (prod and not bad and not crashes and restarts < 3 and not eof_n and not n_rej
+            and not cap_bad):
         out.insert(0, Finding("ok", "이 날은 특기할 이상이 없습니다",
                               [f"양산 검사 {len(prod)}건 전수 완료 신호 확인"], ""))
     return out

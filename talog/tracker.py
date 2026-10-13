@@ -1,7 +1,7 @@
 """talog watch 추적 대상 선택 + 사용자 정의 로그 패턴 경보.
 
 추적 모드(`tracking.mode`):
-  default — 소형 핵심 로그 9종 (기존 동작, 저부하)
+  default — 소형 핵심 로그 6종 + 그룹별 seq_N.log (저부하)
   select  — 사용자가 고른 파일/와일드카드만 (예: Comm.log, seq_*.log, DLInfer.log)
   auto    — 일자 폴더의 *.log/*.txt 전체 (exclude 제외, 선택적으로 alg\\ 하위 포함)
 select/auto 에서 처음 보는 큰 파일은 끝부분부터 읽는다(과거분 재파싱 방지).
@@ -21,8 +21,16 @@ from fnmatch import fnmatch
 
 # 기본 모드의 감시 대상 (소형·핵심만 — 저부하 원칙)
 DEFAULT_FILES = ("inspstarter.log", "comm.log", "workerthreadpoolmng.log",
-                 "exception.log", "processusage.log", "batchrunlog.txt",
-                 "seq_1.log", "seq_2.log", "seq_3.log")
+                 "exception.log", "processusage.log", "batchrunlog.txt")
+# 번호 붙은 seq 로그는 그룹(존)마다 하나다 — 사이트마다 수가 다르다(PC3 1개, Tenneco 4개,
+# 풍산 2호기 12개). 점유 시간(CheckFinish)·타임아웃을 그룹별로 보려면 전부 읽어야 한다
+DEFAULT_PATTERNS = ("seq_[0-9]*.log",)
+_SEQ_NUM = re.compile(r"^seq_(\d+)\.log$", re.I)
+
+
+def is_default_file(name: str) -> bool:
+    low = name.lower()
+    return low in DEFAULT_FILES or bool(_SEQ_NUM.match(low))
 
 _AUTO_EXT = (".log", ".txt")
 
@@ -78,11 +86,13 @@ def resolve_targets(day_dir: str, tcfg: dict | None) -> list[str]:
                     continue
                 out.append(fpath)
         return out
-    # default: 핵심 9종 (대소문자 변형 대응)
+    # default: 핵심 로그 + 그룹별 seq_N (대소문자 변형 대응)
     lower = {n.lower(): n for n in names}
     for want in DEFAULT_FILES:
         if want in lower:
             out.append(os.path.join(day_dir, lower[want]))
+    seqs = sorted(((int(m.group(1)), n) for n in names for m in [_SEQ_NUM.match(n)] if m))
+    out += [os.path.join(day_dir, n) for _i, n in seqs]
     return out
 
 

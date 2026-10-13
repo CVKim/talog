@@ -38,7 +38,8 @@ _SEV_RANK = {"info": 0, "warn": 1, "crit": 2}
 _FAMILY_RANK = {"reject": 0, "defect": 1, "system": 2}
 _DEFAULT_PARAMS = {"gpu_fault_window_s": 300, "not_init_after_restart_s": 300,
                    "slowdown_ratio": 1.5, "exec_slowdown_ratio": 1.5,
-                   "recipe_change_window_min": 60, "restart_merge_s": 30}
+                   "recipe_change_window_min": 60, "restart_merge_s": 30,
+                   "drift_ratio": 1.2, "interval_tol_pct": 10}
 _ERROR_KINDS = ("ERROR", "EXC_REDIRECT", "MODEL_FAIL", "CRASH", "COMM_FAIL",
                 "RECIPE_FAIL", "EXC_SAFE")
 
@@ -236,12 +237,22 @@ class EvidenceBuilder:
         self.gpu = gpu
         self.rb = runbook or Runbook()
 
-    def capture(self) -> dict:
+    def capture(self, alert=None) -> dict:
         """경보 시점의 검사 상태 사본 — 마감(+batch_seconds) 전에 재시작이 끼면
-        진행 중 목록이 비워지므로, 경보가 들어온 순간의 상태를 근거로 쓴다."""
+        진행 중 목록이 비워지므로, 경보가 들어온 순간의 상태를 근거로 쓴다.
+        경보에 그룹이 실려 있으면(meta.group) 그 그룹 기준으로 처리 여유 근거도 떠 둔다."""
         eng = self.engine
-        return {"pending": dict(eng.pending), "done": list(eng.done),
-                "durations": list(eng.durations)}
+        g = (getattr(alert, "meta", None) or {}).get("group") if alert is not None else None
+        st = {"pending": dict(eng.pending), "pgroup": dict(getattr(eng, "_pgroup", {}) or {}),
+              "done": list(eng.done), "durations": list(eng.durations), "group": g}
+        cap = getattr(eng, "cap", None)
+        if cap is not None and alert is not None:
+            try:
+                st["cap"] = cap.evidence(alert.ts, g)
+            except Exception as e:                # 근거 보강 실패가 사건 분석을 막지 않게
+                print(f"  ! 처리 여유 근거 수집 실패(계속): {type(e).__name__}: {e}")
+                st["cap"] = {}
+        return st
 
     def snapshot(self, alerts: list, t_close: float, state: dict | None = None) -> dict:
         eng = self.engine
@@ -271,24 +282,42 @@ class EvidenceBuilder:
         if pats:
             ev["patterns"] = pats[:4]
 
-        # 검사 흐름 (경보 시점 상태) -------------------------------------------
-        done = [x for x in st["done"] if x[0] <= t_trig]
-        base_l = [d for t, _i, d in done if t < t_trig - 1800]    # 30분 이전 = 평소
-        recent_d = [d for t, _i, d in done if t >= t_trig - 1800][-3:]
+        # 검사 흐름 (경보 시점 상태) — 그룹을 알면 그 그룹만 -----------------------
+        capev = st.get("cap") or {}
+        g = st.get("group")
+        if g is None:
+            g = (capev.get("capacity") or {}).get("group")
+        pg = st.get("pgroup") or {}
+
+        def same_group(key):
+            return not g or pg.get(key, 0) in (g, 0)
+
+        done = [x for x in st["done"] if x[0] <= t_trig and
+                (not g or len(x) < 4 or x[3] in (g, 0))]
+        base_l = [x[2] for x in done if x[0] < t_trig - 1800]    # 30분 이전 = 평소
+        recent_d = [x[2] for x in done if x[0] >= t_trig - 1800][-3:]
         if len(base_l) < 5:
-            base_l = [d for _t, _i, d in done][:-3] or list(st["durations"])
+            base_l = [x[2] for x in done][:-3] or list(st["durations"])
         base = statistics.median(base_l) if len(base_l) >= 5 else None
         starts = within({"INSP_START"}, t0 - 1800, t_trig)
         gaps = [b.ts - a.ts for a, b in zip(starts, starts[1:]) if 0.5 < b.ts - a.ts < 1800]
         ends = [e for e in within({"COMM_MSG"}, t0 - 600) if "INSPECT_END" in e.name]
+        last_end = max((e.ts for e in ends if e.ts <= t_trig), default=None)
         # 1시간 넘게 남은 항목은 소실된 검사(END 미송신)라 진행 중으로 세지 않는다.
         # 거부된 검사도 뺀다 — InspStarter 의 도착 줄이 설비 회신(ACK)보다 먼저 읽히면
         # 경보 순간 사본에 '시작된 검사'로 남아 있기 때문 (실시간 종단 시험 9/29: 3건 → 2건)
-        rejected = {e.inner_id for e in within({"COMM_MSG"}, t0 - 1800)
+        rejected = {(e.inner_id, int(e.value or 0)) for e in within({"COMM_MSG"}, t0 - 1800)
                     if "INSPECT_START_ACK" in e.name and e.status and e.status != "OK"}
+
+        def was_rejected(key):
+            inner, gg = key.split("@", 1)[0], pg.get(key, 0)
+            return (inner, gg) in rejected or (gg == 0 and any(r[0] == inner for r in rejected))
+
         pend = {k: s for k, s in st["pending"].items()
-                if 0 <= t_trig - s < 3600 and k not in rejected}
-        interval = statistics.median(gaps) if gaps else None
+                if 0 <= t_trig - s < 3600 and same_group(k) and not was_rejected(k)}
+        cap_c = capev.get("capacity") or {}
+        interval = cap_c.get("interval_s") or (statistics.median(gaps) if gaps else None)
+        pool = cap_c.get("pool")
         # '지금 한 건에 걸리는 시간' = 최근 완료 중앙값과 경보 순간 진행 중 최장 경과 중 큰 값
         cands = []
         if recent_d:
@@ -297,19 +326,30 @@ class EvidenceBuilder:
             cands.append(max(t_trig - s for s in pend.values()))
         cur = max(cands) if cands else None
         ev["inspections"] = {
+            "group": g or None,
             "baseline_duration_s": _r(base),
             "recent_durations_s": [_r(d) for d in recent_d],
             "slowdown_ratio": (_r(statistics.median(recent_d) / base, 2)
                                if base and recent_d else None),
             "inflight": len(pend),
-            "inflight_ids": sorted(pend, key=pend.get)[:4],
+            "inflight_ids": [k.split("@", 1)[0] for k in sorted(pend, key=pend.get)[:4]],
             "oldest_inflight_s": _r(max(t_trig - s for s in pend.values())) if pend else None,
-            "recent_interval_s": _r(interval),
+            "recent_interval_s": _r(interval, 3),
             "duration_over_interval": _r(cur / interval, 2) if cur and interval else None,
+            "pool": pool,
+            "threads_needed_over_pool": (_r(cur / interval / pool, 2)
+                                         if cur and interval and pool else None),
             "wait_threads_recent": [int(e.value) for e in starts[-4:]],
             "starts_10min": sum(1 for e in starts if e.ts >= t_trig - 600),
-            "ends_10min": len({e.inner_id for e in ends if e.ts <= t_trig}),
+            "ends_10min": len({(e.inner_id, int(e.value or 0)) for e in ends if e.ts <= t_trig}),
+            # 완료 신호가 끊겼는가 — 마지막 완료(INSPECT_END) 뒤 경과와 그 뒤 들어온 검사 시작 수
+            "last_end_age_s": _r(t_trig - last_end) if last_end is not None else None,
+            "starts_since_last_end": sum(1 for e in starts if last_end is None or e.ts > last_end),
         }
+        # 처리 여유·추세·단계·일시 지연·자원 (talog/capacity.py) — 기준선 대비
+        for k in ("capacity", "trend", "phases", "transient", "resources"):
+            if capev.get(k):
+                ev[k] = capev[k]
 
         # 시작 거부 -------------------------------------------------------------
         rj = [e for e in within({"INSP_REJECT", "COMM_MSG"}, t0 - 1800)
@@ -494,7 +534,8 @@ def interpret(ev: dict, p: dict, family: str = "") -> list[str]:
                 "기종", "사용자 패턴")
     elif family == "reject":
         keep = ("GPU", "인퍼런스", "SEH", "크래시", "진행 중", "소요", "커널", "타임아웃",
-                "재시작", "모델 로드", "사용자 패턴", "비상 정지")
+                "재시작", "모델 로드", "사용자 패턴", "비상 정지", "유휴", "점유", "투입",
+                "그룹", "CPU", "메모리", "단계", "지연", "한계")
     else:
         return facts
     return [f for f in facts if any(k in f for k in keep)]
@@ -525,18 +566,37 @@ def _interpret_all(ev: dict, p: dict) -> list[str]:
         out.append("같은 구간에 프로세스 크래시가 있다.")
     i = ev.get("inspections") or {}
     if i.get("inflight"):
-        out.append(f"경보 순간 진행 중인 검사가 {i['inflight']}건이다 (가장 오래된 것 "
-                   f"{i.get('oldest_inflight_s')}초 경과).")
+        out.append(f"경보 순간 진행 중인 검사가 {i['inflight']}건이다"
+                   + (f" (가장 오래된 것 {i['oldest_inflight_s']}초 경과)."
+                      if i.get("oldest_inflight_s") is not None else "."))
     else:
         out.append("경보 순간 진행 중인 검사가 없다.")
     doi = i.get("duration_over_interval")
-    if doi is not None:
+    pool = i.get("pool")
+    gap = completion_gap(i, ev.get("capacity") or {})
+    if gap:
+        w = i.get("wait_threads_recent") or []
+        out.append(f"{_gap_text(i)} — 그런데 최근 도착 순간 유휴 스레드는 "
+                   f"{', '.join(str(x) for x in w)}개(스레드 {pool or (ev.get('capacity') or {}).get('pool')}개)"
+                   f"로 스레드는 놀고 있다. 처리가 막힌 것이 아니라 완료 신호만 안 보인다.")
+    if doi is not None and gap:
+        out.append(f"검사 한 건의 소요가 투입 간격의 {doi}배로 계산되지만, 완료 신호 없이 진행 중 "
+                   f"경과만 늘어난 값이라 처리 시간으로 보기 어렵다.")
+    elif doi is not None and pool:
+        # 스레드가 여럿이면 소요가 투입 간격보다 긴 게 정상 — 스레드 수로 나눈 몫으로 말한다
+        # ('투입이 처리보다 빠르다' 는 스레드 1개일 때의 해석이라 LLM 을 처리량 포화로 끈다)
+        out.append(f"지금 검사 한 건의 소요는 투입 간격({i.get('recent_interval_s')}초)의 {doi}배로, "
+                   f"스레드 {pool}개가 감당하는 한계의 {doi / pool * 100:.0f}%다"
+                   + (" — 한계에 닿았다." if doi >= pool * 0.95 else "."))
+    elif doi is not None:
         out.append(f"지금 검사 한 건의 소요가 투입 간격({i.get('recent_interval_s')}초)의 {doi}배다"
                    f" — 투입이 처리보다 {'빠르다' if doi >= 1 else '느리다'}.")
     sd, base = i.get("slowdown_ratio"), i.get("baseline_duration_s")
     if sd is not None and base:
+        # 급변 기준(1.5배)에 못 미쳐도 점진 증가 기준(1.2배) 이상이면 '비슷하다'고 하지 않는다
         out.append(f"최근 완료 소요는 30분 이전 평소({base}초)의 {sd}배다 — "
-                   f"{'느려졌다' if sd >= p['slowdown_ratio'] else '평소와 비슷하다'}.")
+                   + ("느려졌다." if sd >= p["slowdown_ratio"] else
+                      "조금 늘었다." if sd >= p["drift_ratio"] else "평소와 비슷하다."))
     ed = g.get("exec_slowdown_ratio")
     if ed is not None:
         out.append(f"GPU 커널 시간(executeV2)은 직전 구간의 {ed}배다 — "
@@ -580,6 +640,73 @@ def _interpret_all(ev: dict, p: dict) -> list[str]:
     for pt in ev.get("patterns") or []:
         if pt.get("lines"):
             out.append(f"사용자 패턴 '{pt['name']}' 원문: {pt['lines'][-1][:160]}")
+    out += _interpret_capacity(ev)
+    return out
+
+
+def _gname(g) -> str:
+    return f"그룹 {g}" if g not in (None, 0, "0") else "검사 그룹"
+
+
+def _interpret_capacity(ev: dict) -> list[str]:
+    """처리 여유(talog/capacity.py) 근거 → 문장. 원인 이름은 쓰지 않는다.
+
+    풍산 2호기 시험에서 qwen2.5:7b 가 '증가분의 65%는 알고리즘 단계'를 '특정 알고리즘이 늘었다'로 읽어
+    결론을 바꿨다. 단계 이름은 '처리(시작~판정)'처럼 쓰고 '여러 처리의 합'임을 밝힌다."""
+    out: list[str] = []
+    c, t = ev.get("capacity") or {}, ev.get("trend") or {}
+    g = _gname(c.get("group"))
+    if c.get("idle_median") is not None and c.get("idle_baseline") is not None:
+        im, ib = c["idle_median"], c["idle_baseline"]
+        out.append(f"{g}의 도착 순간 유휴 스레드는 최근 30분 중앙값 {im:g}개로, 기준선 {ib:g}개"
+                   + ("보다 줄었다" if im < ib else "와 같다" if im == ib else "보다 많다")
+                   + (f" (최소 {c['idle_min']}개)." if c.get("idle_min") is not None else "."))
+    if c.get("limit_s") and c.get("hold_p99") is not None:
+        out.append(f"{g}의 처리 한계는 스레드 {c['pool']}개 × 투입 간격 {c['interval_s']}초 = "
+                   f"{c['limit_s']}초이고, 최근 60분 점유 p99 는 {c['hold_p99']}초다 — 일시 지연을 "
+                   f"{c['tolerance_s']}초까지만 견딘다.")
+    if t.get("hold_ratio") is not None:
+        mono = t.get("monotonic")
+        tail = (f" — {t.get('hours')}시간 동안 꾸준히 늘었다" if mono else
+                " — 꾸준히 늘어난 것은 아니다" if mono is False else "")
+        out.append(f"{g}의 스레드 점유 시간(중앙값)은 기준선({t.get('since')}부터) "
+                   f"{t.get('hold_p50_baseline')}초에서 지금 {t.get('hold_p50_now')}초로 "
+                   f"{t['hold_ratio']}배다{tail}.")
+    chg = t.get("interval_change_pct")
+    if chg is not None:
+        out.append(f"같은 기간 투입 간격은 {t.get('interval_baseline_s')}초에서 {t.get('interval_now_s')}초"
+                   + (" 그대로다 — 투입(부하)이 늘어난 것이 아니다." if abs(chg) <= 10 else
+                      f"로 {abs(chg):.0f}% 짧아졌다 — 투입(부하)이 늘었다." if chg < 0 else
+                      f"로 {chg:.0f}% 길어졌다 — 투입이 줄었다."))
+    nb = t.get("groups_with_baseline") or 0
+    if nb >= 2:
+        nr = len(t.get("groups_rising") or [])
+        out.append(f"기준선이 있는 {nb}개 그룹 중 {nr}개 그룹의 점유 시간이 10% 이상 늘었다"
+                   + (" — 여러 그룹이 함께 늘어 특정 알고리즘 하나보다 프로세스 공통 원인을 가리킨다."
+                      if nr >= 2 and nr * 2 >= nb else " — 일부 그룹에 국한된다." if nr else "."))
+    ph = ev.get("phases") or {}
+    if ph.get("share_of_increase_pct") and any(ph["share_of_increase_pct"]):
+        parts = ", ".join(f"{n} {v:g}%" for n, v in zip(ph.get("names") or [], ph["share_of_increase_pct"])
+                          if v)
+        out.append(f"{_gname(ph.get('group'))}에서 늘어난 점유 시간은 단계별로 {parts} 로 나뉜다 "
+                   f"(각 단계는 여러 처리의 합이다).")
+    tr = ev.get("transient") or {}
+    if tr.get("groups"):
+        det = tr.get("detail") or {}
+        txt = ", ".join(f"{_gname(k)} 최대 {v['max_last_60s']}초(그 앞 60분 p99 {v['p99_prev_60min']}초)"
+                        for k, v in list(det.items())[:3])
+        out.append(f"경보 직전 60초 동안 {tr.get('n_groups')}개 그룹의 점유가 평소 최대치를 넘었다: {txt}"
+                   + (" — 여러 그룹이 동시에 느려진 일시 지연이 겹쳤다." if (tr.get("n_groups") or 0) >= 2
+                      else " — 일시 지연이 겹쳤다."))
+    r = ev.get("resources") or {}
+    if r.get("total_cpu_now_pct") is not None:
+        out.append(f"장비 전체 CPU 는 최근 1시간 평균 {r['total_cpu_now_pct']}%다"
+                   + (" — CPU 여유가 적어 일시 지연에 취약하다." if r["total_cpu_now_pct"] >= 85 else "."))
+    if r.get("mem_slope_mb_per_h") is not None:
+        m = r["mem_slope_mb_per_h"]
+        out.append(f"프로세스 메모리는 시간당 {m}MB 변한다"
+                   + (" — 누수 경보 기준(시간당 100MB)보다 작다." if abs(m) < 100 else
+                      " — 누수 경보 기준(시간당 100MB) 이상이다."))
     return out
 
 
@@ -600,12 +727,12 @@ class RuleDiagnoser:
 
     def diagnose(self, family: str, ev: dict, alerts: list, sys_cause: str = "") -> dict:
         if family == "reject":
-            return self._reject(ev)
+            return self._reject(ev, alerts)
         if family == "defect":
             return self._defect(ev, alerts)
         return self._system(ev, sys_cause, alerts)
 
-    def _reject(self, ev: dict) -> dict:
+    def _reject(self, ev: dict, alerts: list = ()) -> dict:
         p = self.rb.params
         g, r, t, i = ev["gpu_log"], ev["restarts"], ev["timeouts"], ev["inspections"]
         m, er = ev["model_load"], ev["errors"]
@@ -633,12 +760,35 @@ class RuleDiagnoser:
             return self._out("reject", "slot_leak_timeout", [
                 f"30분 내 이미지 처리 타임아웃 {t['img_timeout_30min']}건(마지막 "
                 f"{t.get('last')}) 뒤 거부", f"진행 중 검사 {inflight}건뿐인데 스레드 없음"])
+        if completion_gap(i, ev.get("capacity") or {}):
+            c = ev.get("capacity") or {}
+            w = i.get("wait_threads_recent") or []
+            f = [_gap_text(i),
+                 f"최근 도착 순간 유휴 스레드 {', '.join(str(x) for x in w)}개 / 스레드 "
+                 f"{c.get('pool') or i.get('pool')}개 — 스레드는 놀고 있음"]
+            if c.get("hold_source") == "seq" and c.get("hold_p50") is not None:
+                f.append(f"seq 점유 p50 {c['hold_p50']}초 · p99 {c.get('hold_p99')}초 — 처리는 평소대로")
+            f.append(f"진행 중 {inflight}건(가장 오래된 것 {i.get('oldest_inflight_s')}초)은 완료 신호가 "
+                     f"없어 쌓인 것")
+            return self._out("reject", "completion_signal_lost", f)
+        iso = self._isolated(ev, alerts)
+        if iso:
+            return self._out("reject", "isolated_stall", iso)
+        slow = self._progressive(ev)
+        if slow:
+            return self._out("reject", "progressive_slowdown", slow)
         f = []
         sd, ed = i.get("slowdown_ratio"), g.get("exec_slowdown_ratio")
         doi = i.get("duration_over_interval")
+        pool = i.get("pool")
         if doi and doi >= 1.0:
-            f.append(f"검사 소요가 투입 간격({i.get('recent_interval_s')}초)의 {doi}배 — "
-                     f"투입이 처리보다 빠름")
+            if pool:
+                # 스레드가 여럿인 그룹은 소요가 투입 간격보다 긴 게 정상 — 스레드 수로 나눠 본다
+                f.append(f"검사 소요가 투입 간격({i.get('recent_interval_s')}초)의 {doi}배 — "
+                         f"스레드 {pool}개로 감당할 수 있는 한계의 {doi / pool * 100:.0f}%")
+            else:
+                f.append(f"검사 소요가 투입 간격({i.get('recent_interval_s')}초)의 {doi}배 — "
+                         f"투입이 처리보다 빠름")
         if sd and sd >= p["slowdown_ratio"]:
             f.append(f"최근 완료 소요 {i.get('recent_durations_s')}초 — 평소 중앙값 "
                      f"{i.get('baseline_duration_s')}초의 {sd}배")
@@ -655,6 +805,68 @@ class RuleDiagnoser:
             return self._out("reject", "throughput_saturation", f)
         return self._out("reject", "unknown", ["거부 전후로 느려짐·GPU 오류·타임아웃·"
                                                "재시작 근거가 없음"])
+
+    @staticmethod
+    def _isolated(ev: dict, alerts) -> list[str]:
+        """단건 정체 — 정체 경보인데 남은 검사가 스레드 수의 절반 이하이고 최근 도착에 유휴 스레드가
+        있다. 스레드가 모자란 것이 아니므로 처리량 포화가 아니다(소요 배율은 남은 건의 경과라 부푼 값)."""
+        rules = {getattr(a, "rule", "") for a in alerts}
+        if "insp_stall" not in rules or "no_insp_thread" in rules:
+            return []
+        i, c = ev.get("inspections") or {}, ev.get("capacity") or {}
+        n = i.get("inflight") or 0
+        pool = c.get("pool") or i.get("pool")
+        w = i.get("wait_threads_recent") or []
+        if n < 1 or n > (max(1, pool // 2) if pool else 2) or (w and max(w) < 1):
+            return []
+        f = [f"진행 중 {n}건만 완료 신호 없이 남음 (가장 오래된 것 {i.get('oldest_inflight_s')}초)",
+             (f"최근 도착 순간 유휴 스레드 {', '.join(str(x) for x in w)}개"
+              + (f" / 스레드 {pool}개" if pool else "") + " — 스레드는 남아 있음") if w else "최근 도착 없음"]
+        if i.get("recent_durations_s"):
+            f.append(f"다른 검사의 최근 완료 소요 {i['recent_durations_s']}초")
+        if i.get("inflight_ids"):
+            f.append(f"남은 inner id {', '.join(i['inflight_ids'][:2])}")
+        return f
+
+    def _progressive(self, ev: dict) -> list[str]:
+        """시간 경과형 처리 열화 판정 — 근거 문장 목록 (아니면 빈 목록).
+
+        기준선 대비 점유 시간이 늘었거나 예비(유휴) 스레드가 줄었고, 투입 간격은 그대로이고
+        (부하 변화 아님) GPU 커널 시간도 그대로이며(경합 아님) 증가가 꾸준할 때."""
+        p = self.rb.params
+        t, c = ev.get("trend") or {}, ev.get("capacity") or {}
+        hr = t.get("hold_ratio")
+        if hr is None:
+            return []
+        im, ib = c.get("idle_median"), c.get("idle_baseline")
+        drop = im is not None and ib is not None and im <= ib - 1
+        chg = t.get("interval_change_pct")
+        ed = (ev.get("gpu_log") or {}).get("exec_slowdown_ratio")
+        if not (hr >= p["drift_ratio"] or drop):
+            return []
+        if chg is not None and abs(chg) > p["interval_tol_pct"]:
+            return []                                   # 투입이 바뀌었다 — 부하 변화
+        if ed is not None and ed >= p["exec_slowdown_ratio"]:
+            return []                                   # GPU 커널이 느려졌다 — 경합 쪽
+        if t.get("monotonic") is False:
+            return []                                   # 오르내림 — 시간 경과형이 아니다
+        g = c.get("group")
+        f = [f"그룹 {g} 점유 시간 {t.get('hold_p50_baseline')}→{t.get('hold_p50_now')}초 "
+             f"({hr}배, 기준선 {t.get('since')}부터"
+             + (f", 순위상관 {t.get('spearman_hourly')})" if t.get("spearman_hourly") is not None else ")")]
+        if ib is not None and im is not None:
+            f.append(f"유휴 스레드 중앙값 {ib:g}→{im:g}개"
+                     + (f", 일시 지연 내성 {c['tolerance_s']}초(한계 {c['limit_s']}초)"
+                        if c.get("tolerance_s") is not None else ""))
+        f.append(f"투입 간격 {t.get('interval_baseline_s')}→{t.get('interval_now_s')}초"
+                 + (f", GPU 커널 {ed}배" if ed is not None else ""))
+        nr, nb = len(t.get("groups_rising") or []), t.get("groups_with_baseline") or 0
+        if nb >= 2:
+            f.append(f"기준선 있는 {nb}개 그룹 중 {nr}개 동반 증가")
+        tr = ev.get("transient") or {}
+        if tr.get("groups"):
+            f.append(f"직전 60초 {tr.get('n_groups')}개 그룹 동시 지연")
+        return f
 
     def _defect(self, ev: dict, alerts: list) -> dict:
         p = self.rb.params
@@ -804,13 +1016,76 @@ def fact_check(message: str, evidence: dict, extra: tuple = ()) -> dict:
             "hanzi": hanzi_count(msg)}
 
 
+def completion_gap(i: dict, c: dict) -> bool:
+    """완료 신호만 끊긴 모양인가 — 마지막 완료(INSPECT_END) 뒤 60초 넘게 검사 시작만 20건 이상
+    들어왔거나 10분 완료가 시작의 절반 미만인데, 최근 도착 순간 유휴 스레드는 스레드 수에 가깝다
+    (처리가 막혔다면 유휴가 0 쪽으로 떨어진다). comm 로그 기록이 멈췄거나(회전·디스크·로거) 설비로
+    결과 송신이 끊긴 경우다."""
+    pool = c.get("pool") or i.get("pool")
+    w = i.get("wait_threads_recent") or []
+    if not pool or not w or min(w) < 1 or statistics.median(w) < max(1, pool - 1):
+        return False
+    age, since = i.get("last_end_age_s"), i.get("starts_since_last_end") or 0
+    stopped = since >= 20 and (age is None or age >= 60)
+    st, en = i.get("starts_10min") or 0, i.get("ends_10min")
+    return stopped or (en is not None and st >= 20 and en < 0.5 * st)
+
+
+def _gap_text(i: dict) -> str:
+    age, since = i.get("last_end_age_s"), i.get("starts_since_last_end") or 0
+    if since >= 20 and (age is None or age >= 60):
+        return (f"마지막 완료 신호(INSPECT_END)는 경보 {age:.0f}초 전이고 그 뒤로 검사 시작만 {since}건이다"
+                if age is not None else f"10분 넘게 완료 신호(INSPECT_END)가 없는데 검사 시작은 {since}건이다")
+    return (f"최근 10분 검사 시작 {i.get('starts_10min')}건에 완료 신호(INSPECT_END)는 "
+            f"{i.get('ends_10min')}건이다")
+
+
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
+# 조치·계획 문장 — 조치는 런북 문장으로 따로 붙으므로 LLM 문구에서는 뺀다
+_DIRECTIVE = re.compile(r"하십시오|해\s?주세요|하세요|하겠습니다|않겠습니다|지속합니다|필요합니다|"
+                        r"바랍니다|해야\s?합니다|해야\s?한다|권장|권고|감시\s?지속|감시를\s?지속|재시작하지\s?않|"
+                        r"(확인|점검|조치)\s?필요|(보고|점검|조치|재시작|감시)(합니다|한다)")
+# JSON 키가 문장에 새어 나온 꼴 — "(root_cause: progressive_slowdown)"
+_KEY_LEAK = re.compile(r"\s*\((?:root_cause|cause|actions?|원인)\s*[:=][^)]*\)")
+_CLAIM_LIMIT = re.compile(r"한계[를에]?\s?(초과|넘)")
+_CLAIM_LOAD = re.compile(r"(처리량|투입량?|부하)[이가은는]?\s?(꾸준히\s?|계속\s?)?(증가|늘)")
+_NEGATION = re.compile(r"아니|아닙|아님|않|없")
+
+
+def clean_message(text: str, ev: dict, rb, family: str, tol_pct: float = 10.0) -> tuple[str, list]:
+    """LLM 담당자 문구를 다듬는다 → (남은 문구, 뺀 문장).
+
+    원인·조치 id 는 한국어 이름으로 바꾸고, 조치·계획 문장과 근거에 어긋나는 용량 주장
+    (일시 지연 내성이 남았는데 '한계 초과', 투입 간격이 그대로인데 '처리량·투입 증가')은 뺀다.
+    다 빠지면 빈 문자열 — gate 가 룰 문구로 대신한다."""
+    s = _KEY_LEAK.sub("", text or "")
+    names = {**{c: rb.cause_name(family, c).split(" — ")[0] for c in rb.causes(family)},
+             **{a: rb.action_ko(a).split(" — ")[0].split(" (")[0] for a in rb.actions}}
+    for k, v in names.items():                  # 런북 문장에 경로가 있어 치환 문자열은 함수로 넘긴다
+        s = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(k)}(?![A-Za-z0-9_])", lambda _m, v=v: v, s)
+    cap = ev.get("capacity") or {}
+    chg = (ev.get("trend") or {}).get("interval_change_pct")
+    tol = cap.get("tolerance_s")
+    keep, drop = [], []
+    for sent in _SENT_SPLIT.split(s.strip()):
+        if not sent:
+            continue
+        neg = bool(_NEGATION.search(sent))
+        bad = (bool(_DIRECTIVE.search(sent))
+               or (tol is not None and tol > 0 and not neg and bool(_CLAIM_LIMIT.search(sent)))
+               or (chg is not None and abs(chg) <= tol_pct and not neg and bool(_CLAIM_LOAD.search(sent))))
+        (drop if bad else keep).append(sent)
+    return " ".join(keep), drop
+
+
 # ---------------------------------------------------------------------------
 _ANALYSIS_PROMPT = ("판단하기 전에 분석을 먼저 짧게 써라(6문장 이내): 핵심 관찰과 그 수치, "
                     "그것이 어느 원인을 지지하거나 배제하는지. 아직 JSON 은 쓰지 마라.")
 _FINAL_PROMPT = ("이제 최종 판단을 JSON 으로만 답하라. evidence 에는 수치를 넣은 짧은 근거 "
                  "문장(최대 4개), root_cause 는 원인 id, confidence 는 0~1, actions 는 조치 id "
                  "1~3개, notify 는 역할 id, severity 는 info|warn|crit, message_ko 는 담당자에게 "
-                 "보낼 한국어 3문장 이내(한글만, 한자 금지, 근거 JSON 에 있는 숫자와 시각만 인용).")
+                 "보낼 한국어 3문장 이내로 원인과 근거만 쓴다(조치·권고 문장은 쓰지 마라 — 조치는 "
+                 "런북 문장으로 따로 붙는다. 한글만, 한자 금지, 근거 JSON 에 있는 숫자와 시각만 인용).")
 
 
 class LLMAnalyst:
@@ -912,6 +1187,11 @@ class LLMAnalyst:
             return out
         causes = list(self.rb.causes(family)) + ["unknown"]
         rc = d.get("root_cause")
+        raw = str(d.get("message_ko", ""))[:400]
+        msg, dropped = clean_message(raw, ev, self.rb, family,
+                                     float(self.rb.params.get("interval_tol_pct", 10)))
+        if dropped:
+            out["message_raw"], out["message_dropped"] = raw, dropped
         out.update(
             ok=True,
             root_cause=rc if rc in causes else "unknown",
@@ -922,7 +1202,7 @@ class LLMAnalyst:
             confidence=d.get("confidence") if isinstance(d.get("confidence"),
                                                          (int, float)) else None,
             evidence=[str(x)[:200] for x in (d.get("evidence") or [])][:4],
-            message_ko=str(d.get("message_ko", ""))[:400])
+            message_ko=msg)
         out["fact"] = fact_check(out["message_ko"], ev, extra=(self.rb.params,))
         return out
 
@@ -962,7 +1242,10 @@ def gate(family: str, rule: dict, llm: dict | None, alerts: list, rb: Runbook) -
     if mode == "agree":
         f = llm.get("fact") or {}
         if llm.get("message_ko") and f.get("ok") and not f.get("hanzi"):
-            msg, msg_src = llm["message_ko"], "llm"
+            # 7B 모델은 원인을 맞혀도 조치를 엉뚱하게 쓰곤 한다(풍산 2호기 시험 6회 중 5회)
+            # — LLM 문구는 원인 설명으로만 쓰고 조치는 런북 문장을 붙인다
+            acts = ", ".join(rb.action_ko(x).split(" — ")[0].split(" (")[0] for x in actions[:3])
+            msg, msg_src = f"{llm['message_ko'].strip()} 권고: {acts}.", "llm"
     elif mode in ("disagree", "llm_only"):
         msg += (f" LLM 의견: {rb.cause_name(family, llm['root_cause'])}"
                 f" — 두 의견을 함께 확인하십시오.")
@@ -1034,7 +1317,7 @@ class IncidentAgent:
             self._imm_at = a.ts                  # 심각 등급: 묶음을 기다리지 않는다
         if len(self._batch) < 60:
             self._batch.append(a)
-            self._states[id(a)] = self.builder.capture()   # 경보 순간의 검사 상태
+            self._states[id(a)] = self.builder.capture(a)  # 경보 순간의 검사 상태
         else:
             self._dropped += 1
 
