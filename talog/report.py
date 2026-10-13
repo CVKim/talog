@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import statistics
 from collections import Counter
 from dataclasses import dataclass, field
@@ -806,13 +807,31 @@ def _gpu_model_section(ctx: ReportContext) -> str:
     return "".join(out)
 
 
+def _ico(*paths: str) -> str:
+    """콘솔과 같은 선 아이콘 (24×24) — 글꼴에 따라 모양이 바뀌는 기호 문자 대신 쓴다."""
+    return ("<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.6' "
+            "stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>"
+            + "".join(f"<path d='{d}'/>" for d in paths) + "</svg>")
+
+
 # severity -> (액센트 색, 아이콘 배경, 라벨, 아이콘)
 _SEV_STYLE = {
-    "crit": ("var(--crit-text)", "var(--crit)", "심각", "✕"),
-    "warn": ("var(--serious-text)", "var(--serious)", "주의", "!"),
-    "info": ("var(--muted)", "var(--muted)", "참고", "i"),
-    "ok":   ("var(--good-text)", "var(--good)", "정상", "✓"),
+    "crit": ("var(--crit-text)", "var(--crit)", "심각", _ico("M18 6 6 18", "m6 6 12 12")),
+    "warn": ("var(--serious-text)", "var(--serious)", "주의", _ico("M12 6v8", "M12 18h.01")),
+    "info": ("var(--muted)", "var(--muted)", "참고", _ico("M12 11v6", "M12 7h.01")),
+    "ok":   ("var(--good-text)", "var(--good)", "정상", _ico("M20 6 9 17l-5-5")),
 }
+
+
+def _wordmark() -> str:
+    """AIVEX 워드마크 (assets 의 SVG 를 그대로 싣는다 — 리포트는 파일 하나로 열린다)."""
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "assets", "aivex_wordmark.svg"),
+                  encoding="utf-8") as f:
+            svg = f.read().strip()
+        return svg.replace("<svg ", "<svg class='wm' ", 1)
+    except OSError:
+        return "<b class='wm-txt'>AIVEX</b>"
 _SEV_ORDER = {"crit": 0, "warn": 1, "info": 2, "ok": 3}
 
 # 설비 응답이 없는 로드 명령 행 표기 (색-단독 신호 방지)
@@ -1436,17 +1455,20 @@ function showTab(name) {
   document.getElementById('btn-' + name).classList.add('on');
 }
 
+const SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
+const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
 function syncThemeBtn() {
   const dark = document.documentElement.dataset.theme !== 'light';
   const b = document.getElementById('themeBtn');
-  if (b) b.textContent = dark ? '☀ 라이트' : '☾ 다크';
+  if (b) { b.innerHTML = (dark ? SUN : MOON) + (dark ? '라이트' : '다크');
+           b.setAttribute('aria-label', dark ? '밝은 화면으로 바꾸기' : '어두운 화면으로 바꾸기'); }
 }
 
 function toggleTheme() {
   const cur = document.documentElement.dataset.theme !== 'light';
   const next = cur ? 'light' : 'dark';
   document.documentElement.dataset.theme = next;
-  try { localStorage.setItem('talog-theme', next); } catch (e) {}
+  try { localStorage.setItem('talog.theme', next); } catch (e) {}   // 콘솔과 같은 설정
   syncThemeBtn();
 }
 
@@ -1799,6 +1821,12 @@ def render(ctx: ReportContext) -> str:
 
     n_sim = n.get("sim_complete", 0) + n.get("sim_partial", 0)
     n_bad = sum(n.get(k, 0) for k in _BAD_STATUSES)
+    # 여러 존이 inner 를 나눠 쓰는 설비는 뒤 존의 거부(NoInspThread)가 앞 존의 '완료' 검사에 묶인다 —
+    # 소견(diagnose._reject_finding)과 같은 방식으로 세어 조립에 안 잡힌 거부만 더한다 (풍산 10/12: 이상 0 → 3)
+    n_rej_ev = max(sum(1 for e in ctx.events if e.kind == "COMM_MSG" and "INSPECT_START_ACK" in e.name
+                       and e.status == "NoInspThread"),
+                   sum(1 for e in ctx.events if e.kind == "INSP_REJECT"))
+    n_bad += max(0, n_rej_ev - n.get("rejected", 0))
     n_ng = sum(1 for i in ctx.inspections if i.end_result == "NG")
     n_err = sum(1 for e in ctx.events
                 if e.kind in ("ERROR", "MODEL_FAIL", "CRASH", "COMM_FAIL",
@@ -1876,10 +1904,13 @@ def render(ctx: ReportContext) -> str:
     return f"""<!DOCTYPE html>
 <html lang="ko" data-theme="dark"><head><meta charset="utf-8">
 <title>talog — {_esc(ctx.title)}</title>
-<script>try{{var t=localStorage.getItem('talog-theme');
-if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
+<script>try{{var t=localStorage.getItem('talog.theme')||localStorage.getItem('talog-theme');
+if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;
+else if(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)document.documentElement.dataset.theme='light';
+}}catch(e){{}}</script>
 <style>
  :root {{
+   --brand: #ff5900;
    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink2: #c3c2b7;
    --muted: #898781; --grid: #2c2c2a; --line: rgba(255,255,255,.09);
    --blue: #3987e5; --blue-soft: #256abf; --blue-100: rgba(57,135,229,.35);
@@ -1917,22 +1948,20 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
    --good-text: #006300; --track: #f0efec; --shadow: none;
  }} }}
  * {{ box-sizing: border-box; }}
- body {{ font-family: "Pretendard", system-ui, -apple-system, "Segoe UI",
-         "Malgun Gothic", sans-serif; margin: 0; color: var(--ink);
+ body {{ font-family: "Pretendard Variable", Pretendard, "Segoe UI Variable Text", "Segoe UI",
+         -apple-system, "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+         margin: 0; color: var(--ink); word-break: keep-all; overflow-wrap: break-word;
          background: var(--page); font-size: 13px; line-height: 1.5; }}
  body::before {{ content: ""; position: fixed; top: 0; left: 0; right: 0;
-   height: 3px; z-index: 20; background:
-   linear-gradient(90deg, var(--blue), var(--aqua)); }}
+   height: 3px; z-index: 20; background: var(--brand); }}
  header {{ position: sticky; top: 0; z-index: 10; padding: 13px 28px 0;
    background: color-mix(in srgb, var(--page) 82%, transparent);
    backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }}
  .topbar {{ display: flex; align-items: center; gap: 14px; }}
- .brand {{ display: flex; align-items: center; gap: 9px; }}
- .mark {{ width: 24px; height: 24px; border-radius: 7px; flex: none;
-   background: linear-gradient(135deg, var(--blue), var(--aqua));
-   box-shadow: 0 2px 8px -2px var(--blue); position: relative; }}
- .mark::after {{ content: ""; position: absolute; left: 6px; right: 6px;
-   bottom: 6px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.9); }}
+ .brand {{ display: flex; align-items: center; gap: 10px; }}
+ .brand .wm {{ height: 14px; width: auto; flex: none; }}
+ .brand .wm-txt {{ color: var(--brand); letter-spacing: .5px; }}
+ .brand .bsep {{ width: 1px; height: 20px; background: var(--line); }}
  .word {{ font-size: 16px; font-weight: 800; letter-spacing: -.3px; }}
  .ver {{ font-size: 10px; font-weight: 700; color: var(--muted);
    border: 1px solid var(--line); border-radius: 999px; padding: 1.5px 8px; }}
@@ -1944,7 +1973,8 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
  .tspacer {{ flex: 1; }}
  .themebtn {{ border: 1px solid var(--line); background: var(--surface);
    color: var(--ink2); border-radius: 999px; padding: 5px 14px; cursor: pointer;
-   font-family: inherit; font-size: 12px; }}
+   font-family: inherit; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }}
+ .themebtn svg {{ width: 14px; height: 14px; }}
  .themebtn:hover {{ border-color: var(--blue); color: var(--ink); }}
  nav {{ display: inline-flex; background: var(--track); border-radius: 10px;
         padding: 3px; margin: 12px 0 10px; gap: 2px; }}
@@ -2010,6 +2040,8 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
    font-weight: 800; font-size: 13px; margin-top: 1px; }}
  .finding.slim .fico {{ width: 21px; height: 21px; font-size: 11px;
                         margin-top: 0; }}
+ .fico svg {{ width: 14px; height: 14px; }}
+ .finding.slim .fico svg {{ width: 12px; height: 12px; }}
  .finding ul {{ margin: 6px 0 0 16px; padding: 0; font-size: 12.5px;
                 color: var(--ink2); line-height: 1.6; }}
  .finding li {{ max-width: 96ch; }}
@@ -2097,13 +2129,13 @@ if(t)document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
 </style></head><body>
 <header>
 <div class="topbar">
- <div class="brand"><span class="mark"></span><span class="word">talog</span>
+ <div class="brand">{_wordmark()}<span class="bsep"></span><span class="word">talog</span>
   <span class="ver">v{_VER}</span></div>
  <div class="crumb">{_esc(ctx.title)} 진단 리포트
   <span class="meta">{_esc(ctx.day_dir)}{stitch_note}
   {('· ' + recipe_html) if recipe_html else ''}</span></div>
  <div class="tspacer"></div>
- <button class="themebtn" id="themeBtn" onclick="toggleTheme()">☀ 라이트</button>
+ <button class="themebtn" id="themeBtn" type="button" onclick="toggleTheme()">라이트</button>
 </div>
 <nav>
  <button class="tabbtn" id="btn-main" onclick="showTab('main')">종합</button>

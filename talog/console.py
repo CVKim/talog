@@ -28,7 +28,9 @@ import os
 import re
 import secrets
 import sqlite3
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
@@ -42,6 +44,8 @@ from .fileclass import classify
 from .tracker import PRESETS, compile_patterns, resolve_targets
 
 _PAGE = os.path.join(os.path.dirname(__file__), "console.html")
+_ASSETS = os.path.join(os.path.dirname(__file__), "assets")
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _TAG_RE = re.compile(r"^[\w.#\- ()가-힣]{1,120}$")
 
 
@@ -146,6 +150,9 @@ class Console:
         self._thread = None
         self._lock = threading.RLock()
         self.job: dict = {"state": "idle"}
+        self.ask_job: dict = {"state": "idle"}     # Claude 에게 바로 묻기 — 지금(또는 마지막) 질문 하나
+        self.ask_thread: dict = {"session": "", "turns": []}   # 한 대화 (이어 묻기는 같은 Claude 세션을 이어 간다)
+        self.claude_usage: dict = {}               # 마지막으로 본 구독 사용량 (rate_limit_event)
         self._dbs: dict[str, sqlite3.Connection] = {}
         self._db_lock = threading.Lock()
         self._llm_alive = (0.0, False)
@@ -321,6 +328,7 @@ class Console:
             "alerts": snap.get("alerts", [])[:40],
             "incidents": incs[:20],
             "files": files, "gpu": snap.get("gpu", []), "gpu_free": gfree,
+            "capacity": snap.get("capacity", []),
             "job": {k: v for k, v in self.job.items() if k != "log"}}
 
     def _day_dir(self) -> str:
@@ -398,6 +406,72 @@ class Console:
         rows.sort(key=lambda r: (r["day"], r["time"] or ""), reverse=True)
         return rows[:limit]
 
+    def timeline(self, days: int = 7) -> dict:
+        """날짜별·시간별 경보(심각·주의·정보 수)와 처리량·거부·최저 일시 지연 내성 — 운영 현황의 상태 띠와 추세.
+        실시간 감시 기록과 경보 재현 기록을 따로 줄로 낸다. 줄마다 마지막 기록 시간의 그룹별 값(last)도 붙인다
+        — 실시간 처리 여유가 아직 없을 때 화면이 최근 기록으로 그룹별 여유를 보여 준다."""
+        rows: dict[tuple[str, bool], dict] = {}
+        hours: dict[tuple[str, bool], dict[int, list]] = {}
+
+        def row(day: str, rep: bool) -> dict:
+            return rows.setdefault((day, rep), {
+                "day": day, "replay": rep, "alerts": [[0, 0, 0] for _ in range(24)],
+                "n": [None] * 24, "groups": [0] * 24, "rejects": [None] * 24, "tol_pct": [None] * 24,
+                "last": None})
+        sev_i = {"crit": 0, "warn": 1, "info": 2}
+        for p in glob.glob(os.path.join(self.data_dir, "alerts_*.jsonl")):
+            m = re.search(r"alerts_(\d{8})(_replay)?\.jsonl$", os.path.basename(p))
+            if not m:
+                continue
+            r = row(m.group(1), bool(m.group(2)))
+            try:
+                with open(p, encoding="utf-8") as f:
+                    for ln in f:
+                        try:
+                            a = json.loads(ln)
+                            h = int(str(a.get("ts", ""))[11:13])
+                        except (ValueError, TypeError):
+                            continue
+                        if 0 <= h < 24 and a.get("severity") in sev_i:
+                            r["alerts"][h][sev_i[a["severity"]]] += 1
+            except OSError:
+                continue
+        for p in glob.glob(os.path.join(self.data_dir, "kpi_*.jsonl")):
+            m = re.search(r"kpi_(\d{8})(_replay)?\.jsonl$", os.path.basename(p))
+            if not m:
+                continue
+            r = row(m.group(1), bool(m.group(2)))
+            try:
+                with open(p, encoding="utf-8") as f:
+                    for ln in f:
+                        try:
+                            k = json.loads(ln)
+                            h = int(str(k.get("hour", ""))[11:13])
+                        except (ValueError, TypeError):
+                            continue
+                        if not 0 <= h < 24 or not isinstance(k.get("group"), int):
+                            continue
+                        # 한 검사가 모든 Seq 그룹을 지나므로 검사 수는 그룹 합이 아니라 그룹 중 최대
+                        r["n"][h] = max(r["n"][h] or 0, int(k.get("n") or 0))
+                        r["groups"][h] += 1
+                        r["rejects"][h] = (r["rejects"][h] or 0) + int(k.get("rejects") or 0)
+                        lim = (k.get("pool") or 0) * (k.get("interval_s") or 0)
+                        if lim > 0 and k.get("hold_p99") is not None:
+                            pct = round(100 * (lim - k["hold_p99"]) / lim, 1)
+                            r["tol_pct"][h] = pct if r["tol_pct"][h] is None else min(r["tol_pct"][h], pct)
+                        hours.setdefault((r["day"], r["replay"]), {}).setdefault(h, []).append(
+                            {x: k.get(x) for x in ("group", "n", "idle_median", "hold_p50", "hold_p99",
+                                                   "pool", "interval_s", "rejects")})
+            except OSError:
+                continue
+        for key, by_h in hours.items():
+            h = max(by_h)
+            rows[key]["last"] = {"hour": h, "groups": sorted(by_h[h], key=lambda g: g["group"])}
+        today = dt.datetime.now().strftime("%Y%m%d")
+        row(today, False)                                  # 오늘 줄은 기록이 없어도 보인다
+        out = sorted(rows.values(), key=lambda r: (r["day"], not r["replay"]), reverse=True)
+        return {"today": today, "hour": dt.datetime.now().hour, "days": out[:max(1, min(int(days or 7), 31))]}
+
     def incident(self, iid: str, replay: bool) -> dict | None:
         pat = "incidents_*_replay.jsonl" if replay else "incidents_[0-9]*[0-9].jsonl"
         for p in sorted(glob.glob(os.path.join(self.data_dir, pat)), reverse=True):
@@ -407,13 +481,21 @@ class Console:
                         if f'"id": "{iid}"' in ln:
                             d = json.loads(ln)
                             day = (d.get("id") or "")[:8]
-                            if not replay and day.isdigit():
-                                d["day_dir"] = os.path.join(
-                                    self.cfg["watch_root"], f"{day[:4]}_{day[4:6]}", day[6:])
+                            if day.isdigit():
+                                d["day_dir"] = self._find_day_dir(day)
                             return d
             except (OSError, ValueError):
                 continue
         return None
+
+    def _find_day_dir(self, day: str) -> str:
+        """사건 날짜(YYYYMMDD)의 원본 로그 폴더 — 설정의 로그 루트와 콘솔에서 고른 폴더에서 찾는다(재현 사건 포함). 없으면 ''."""
+        from . import logread
+        roots = [self.cfg.get("watch_root", "")] + [r for r in self._log_cfg().get("roots", []) if isinstance(r, str)]
+        try:
+            return logread.resolve_day([r for r in roots if r], day)
+        except ValueError:
+            return ""
 
     def mail_html(self, iid: str, replay: bool, which: str = "initial") -> str:
         from .mailer import Mailer
@@ -478,26 +560,50 @@ class Console:
             return {"ok": False, "error": f"폴더가 없습니다: {target}"}
         if kind not in ("report", "replay"):
             return {"ok": False, "error": f"알 수 없는 작업: {kind}"}
-        cfg = copy.deepcopy(self.cfg)
         out = self.report_dir
         job = {"state": "running", "kind": kind, "target": target, "started": time.time(),
                "log": deque(maxlen=400), "reports": []}
         self.job = job
+        # 분석은 별도 프로세스(낮은 우선순위)에서 돌린다. 같은 프로세스의 스레드로 돌리면 GIL 때문에 수 분 동안
+        # 콘솔 응답이 수십 초씩 늦어지고(풍산 12일 리포트 중 /api/claude 13.8초), 검사 PC 의 우선순위도 못 낮춘다.
+        user = copy.deepcopy(self.settings)                 # 지금 적용 중인 설정 그대로 (메일 비밀은 빼고)
+        (user.get("mail") or {}).pop("secret", None)
+        fd, cfg_path = tempfile.mkstemp(prefix="talog_job_", suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(user, f, ensure_ascii=False, default=str)
+        cmd = _self_command() + ["_job", kind, target, "--config", cfg_path, "--out", out]
+        if recipe:
+            cmd += ["--recipe", recipe]
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1", PYTHONUNBUFFERED="1")
+        flags = (getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
+                 if os.name == "nt" else 0)
 
         def work():
             buf = job["log"]
             try:
-                if kind == "replay":
-                    from .watch import run_replay
-                    rc = _run_captured(run_replay, (cfg, target), buf)
-                else:
-                    rc = _run_captured(self._report_work, (target, recipe, out, job), buf)
-                job["state"] = "done" if rc == 0 else "error"
+                p = subprocess.Popen(cmd, cwd=None if getattr(sys, "frozen", False) else _REPO, env=env,
+                                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                     creationflags=flags)
+                job["pid"] = p.pid
+                for raw in p.stdout:
+                    ln = raw.decode("utf-8", "replace").rstrip()
+                    if ln.startswith(_JOB_TAGS):
+                        try:
+                            job["reports"] = json.loads(ln[len(_JOB_TAGS):])
+                        except ValueError:
+                            pass
+                    elif ln.strip():
+                        buf.append(ln)
+                job["state"] = "done" if p.wait() == 0 else "error"
             except Exception as e:
                 buf.append(f"오류: {type(e).__name__}: {e}")
                 job["state"] = "error"
             finally:
                 job["elapsed_s"] = round(time.time() - job["started"], 1)
+                try:
+                    os.remove(cfg_path)
+                except OSError:
+                    pass
 
         threading.Thread(target=work, name=f"talog-{kind}", daemon=True).start()
         return {"ok": True}
@@ -627,6 +733,479 @@ class Console:
                           for n, a, r in be.trace][:12]}
 
     # ── 시험 ────────────────────────────────────────────────────
+    # ── Claude 연동 (talog MCP 서버) ──────────────────────────
+    def mcp_command(self) -> list[str]:
+        """이 콘솔 설정으로 talog MCP 서버를 띄우는 명령 — Claude Code·데스크톱 설정에 그대로 넣는다."""
+        from .mcp_server import server_command
+        return server_command([self.config_path])
+
+    @property
+    def workspace_default(self) -> str:
+        return os.path.join(self.data_dir, "claude_agent")
+
+    def claude_workspace(self, target: str = "") -> dict:
+        """에이전트 폴더 만들기 — Claude 에서 이 폴더 하나만 열면 talog RCA 에이전트가 된다."""
+        from .mcp_server import init_workspace
+        r = init_workspace(target.strip() or self.workspace_default, [self.config_path])
+        return {"ok": True, **r}
+
+    @staticmethod
+    def open_folder(path: str) -> dict:
+        path = os.path.abspath(path or "")
+        if not os.path.isdir(path):
+            return {"ok": False, "error": f"폴더가 없습니다: {path}"}
+        try:
+            os.startfile(path)                     # Windows 탐색기
+        except (AttributeError, OSError) as e:
+            return {"ok": False, "error": f"열지 못했습니다: {e}"}
+        return {"ok": True}
+
+    def claude_info(self) -> dict:
+        from .mcp_server import PROMPTS, TOOLS
+        cmd = self.mcp_command()
+
+        def q(x: str) -> str:
+            return f'"{x}"' if (not x or any(c in x for c in ' &()')) else x
+
+        server = {"command": cmd[0], "args": cmd[1:]}
+        appdata = os.environ.get("APPDATA", "")
+        desk = (os.path.join(appdata, "Claude", "claude_desktop_config.json") if appdata
+                else r"%APPDATA%\Claude\claude_desktop_config.json")
+        skill = os.path.join(_REPO, ".claude", "skills", "talog-rca", "SKILL.md")
+        incs = self.incidents(days=3650, replay=True, limit=100000)
+        crit = [r for r in incs if r.get("severity") == "crit"]
+        reps = self.reports()
+        ws = self.workspace_default
+        cli = self.claude_cli()
+        ci = self.claude_cli_info(cli)
+        return {"command": cmd, "workspace_default": ws, "cli": cli, "cli_version": ci["version"],
+                "cli_login": ci["login"], "ask": self.claude_ask_status(),
+                "workspace_exists": os.path.exists(os.path.join(ws, "CLAUDE.md")),
+                "claude_code": "claude mcp add --scope user talog -- " + " ".join(q(c) for c in cmd),
+                "mcp_json": json.dumps({"mcpServers": {"talog": {"type": "stdio", **server}}}, ensure_ascii=False, indent=2),
+                "desktop_json": json.dumps({"mcpServers": {"talog": server}}, ensure_ascii=False, indent=2),
+                "desktop_path": desk, "desktop_exists": os.path.exists(desk) if appdata else False,
+                "skill": os.path.exists(skill), "skill_path": skill,
+                "tools": [{"name": t["name"], "title": t.get("title", ""), "description": t["description"],
+                           "write": not (t.get("annotations") or {}).get("readOnlyHint", True),
+                           "ask": f"mcp__talog__{t['name']}" in self.ASK_TOOLS.split(",")} for t in TOOLS],
+                "prompts": [{"name": x["name"], "title": x.get("title", ""), "description": x["description"]}
+                            for x in PROMPTS],
+                "data": {"incidents": len(incs), "crit": len(crit), "reports": len(reps),
+                         "site": self.settings.get("site") or "이 설비", "data_dir": self.data_dir},
+                "models": [{"v": "", "label": "기본 (구독 설정)"}, {"v": "sonnet", "label": "Sonnet — 빠르고 가벼움"},
+                           {"v": "opus", "label": "Opus — 깊은 분석"}, {"v": "haiku", "label": "Haiku — 가장 가벼움"}],
+                "efforts": [{"v": "", "label": "기본"}, {"v": "low", "label": "낮음"}, {"v": "medium", "label": "보통"},
+                            {"v": "high", "label": "높음"}, {"v": "xhigh", "label": "매우 높음"}, {"v": "max", "label": "최대"}],
+                "actions": self.claude_actions(incs, crit, reps), "logs": self.claude_log_dirs()}
+
+    def claude_actions(self, incs: list, crit: list, reps: list) -> list[dict]:
+        """빠른 작업 — MCP 프롬프트(Claude 앱의 슬래시 명령과 같은 문장)와 자주 하는 질문."""
+        from .mcp_server import prompt_messages
+
+        def text(name, args):
+            return prompt_messages(name, args)["messages"][0]["content"]["text"]
+        site = self.settings.get("site") or "이 설비"
+        pick = (crit or incs or [{}])[0]
+        logs = self.claude_log_dirs()
+        out = [{"key": "log", "title": "원본 로그 조사", "icon": "file-search", "prompt": "log_investigation",
+                "desc": "선택한 로그 폴더를 Claude 가 직접 읽고 시간순 경과·원인·근거를 정리",
+                "needs": "log", "text": text("log_investigation", {"day": "선택" if logs["selected"] else "",
+                                                                  "symptom": "그날 가장 심각한 이상 (예: NoInspThread)"})}]
+        if pick.get("id"):
+            out.append({"key": "rca", "title": "사건 RCA", "icon": "siren", "prompt": "incident_rca",
+                        "desc": f"가장 최근 {'심각 ' if crit else ''}사건을 근거 → 원인 → 조치 → 보고서까지",
+                        "text": text("incident_rca", {"incident_id": pick["id"]})})
+        out.append({"key": "daily", "title": "하루 검토", "icon": "list", "prompt": "daily_review",
+                    "desc": "하루치 경보·사건을 훑고 놓친 징후·오경보를 담당별 할 일로", "text": text("daily_review", {})})
+        out.append({"key": "site", "title": "현장 점검", "icon": "gauge", "prompt": "site_health",
+                    "desc": "기준선·재시작·규칙이 이 현장에 맞는지와 개선 제안", "text": text("site_health", {})})
+        out.append({"key": "cap", "title": "처리 여유 추세", "icon": "activity", "prompt": "",
+                    "desc": "여유가 가장 많이 줄어든 Seq 그룹과 시작 시점",
+                    "text": f"{site}에서 처리 여유가 가장 많이 줄어든 Seq 그룹 3개를 찾아, 기준선 대비 언제부터 줄었는지 시간별 표로 보여 줘"})
+        if reps:
+            out.append({"key": "rep", "title": "리포트 교차 확인", "icon": "database", "prompt": "",
+                        "desc": f"{reps[0]['tag']} 소견을 리포트 DB 로 검증",
+                        "text": f"talog 리포트 {reps[0]['tag']} 의 자동 진단 소견을 리포트 DB 로 교차 확인해 줘 (거부 직전 분 단위 검사 수·소요·유휴)"})
+        return out
+
+    @staticmethod
+    def claude_prompt(name: str, args: dict) -> dict:
+        """MCP 프롬프트 문장 (사건 화면의 'Claude 로 분석'·'원본 로그로 확인'이 같은 문장을 쓴다)."""
+        from .mcp_server import PROMPTS, prompt_messages
+        if name not in {p["name"] for p in PROMPTS}:
+            return {"ok": False, "error": f"모르는 프롬프트: {name}"}
+        return {"ok": True, "text": prompt_messages(name, args)["messages"][0]["content"]["text"]}
+
+    # ── Claude: 분석할 원본 로그 폴더 ──────────────────────────────
+    def _log_roots_path(self, ws: str = "") -> str:
+        return os.path.join(ws or self.workspace_default, "mcp_jobs", "log_roots.json")
+
+    def _log_cfg(self) -> dict:
+        try:
+            with open(self._log_roots_path(), encoding="utf-8") as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            return {}
+        return d if isinstance(d, dict) else {}
+
+    def claude_log_dirs(self) -> dict:
+        """바로 묻기에서 고를 원본 로그 폴더: 설정의 로그 루트 아래 일자 폴더 + 전에 고른 폴더."""
+        from . import logread
+        root = self.cfg.get("watch_root", "")
+        cfg = self._log_cfg()
+        days = logread.day_dirs([root] + [r for r in cfg.get("roots", []) if isinstance(r, str)], 24)
+        sel = cfg.get("selected", "")
+        return {"root": root, "days": days, "selected": sel if sel and os.path.isdir(sel) else ""}
+
+    def _log_selected(self) -> str:
+        sel = self._log_cfg().get("selected", "")
+        return sel if isinstance(sel, str) and sel and os.path.isdir(sel) else ""
+
+    def claude_select_log(self, path: str) -> dict:
+        """원본 로그 폴더를 고른다 — talog MCP 가 읽을 수 있게 등록하고, Claude 에게는 경로 대신 '선택'으로 알린다."""
+        from . import logread
+        ws = self._ask_ws()
+        path = (path or "").strip().strip('"')
+        p = self._log_roots_path(ws)
+        cur = self._log_cfg()
+        if not path:
+            cur.pop("selected", None)
+        else:
+            path = os.path.abspath(path)
+            if not os.path.isdir(path):
+                return {"ok": False, "error": f"폴더가 없습니다: {path}"}
+            if not (logread._looks_like_day(path) or logread.day_dirs([path], 1)):
+                return {"ok": False, "error": "talos 로그 폴더가 아닙니다 — InspStarter.log·comm.log·alg 가 있는 일자 폴더나 그 상위 폴더를 고르십시오"}
+            roots = [r for r in cur.get("roots", []) if isinstance(r, str) and os.path.isdir(r) and r != path]
+            cur = {"selected": path, "roots": (roots + [path])[-20:]}
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(cur, f, ensure_ascii=False, indent=1)
+        return {"ok": True, **self.claude_log_dirs()}
+
+    # ── Claude 에게 바로 묻기 ───────────────────────────────────
+    # 이 PC 의 Claude Code CLI 를 화면 없이(-p) 실행한다. 구독 로그인만 쓰도록 API 키·게이트웨이·클라우드 과금 변수와
+    # 이 콘솔을 띄운 다른 Claude 세션의 변수를 빼고 띄운다(추가 과금 없음, 구독 사용량에는 포함).
+    # talog 도구는 읽기 전용(원본 로그 읽기 포함)만, 파일 쓰기는 에이전트 폴더의 reports 안만 허용한다(.mcp.json·CLAUDE.md 보호).
+    # 이어 묻기는 --resume 으로 같은 Claude 세션을 이어 간다.
+    ASK_TOOLS = ("mcp__talog__overview,mcp__talog__list_incidents,mcp__talog__get_incident,"
+                 "mcp__talog__capacity_trend,mcp__talog__list_reports,mcp__talog__get_report,"
+                 "mcp__talog__query_report,mcp__talog__runbook,mcp__talog__search_cases,mcp__talog__rediagnose,"
+                 "mcp__talog__job_status,mcp__talog__log_days,mcp__talog__log_files,mcp__talog__read_log,"
+                 "mcp__talog__search_logs,mcp__talog__trace_inspection,Read,Glob,Skill,Edit(reports/**)")
+    ASK_MODELS = ("", "sonnet", "opus", "haiku")
+    ASK_EFFORTS = ("", "low", "medium", "high", "xhigh", "max")
+    ASK_MAX_TURNS = 60
+    ASK_TIMEOUT_S = 1200
+    _ENV_DROP = {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDECODE", "CLAUDE_PID",
+                 "CLAUDE_EFFORT", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"}
+    _ENV_KEEP = {"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_GIT_BASH_PATH"}
+    _cli_ver: dict = {}
+    ASK_STEPS = {"mcp__talog__overview": "talog 개요", "mcp__talog__list_incidents": "사건 목록",
+                 "mcp__talog__get_incident": "사건 상세", "mcp__talog__capacity_trend": "처리 여유 추세",
+                 "mcp__talog__list_reports": "진단 리포트 목록", "mcp__talog__get_report": "리포트 소견",
+                 "mcp__talog__query_report": "리포트 DB 조회", "mcp__talog__runbook": "원인·조치 사전",
+                 "mcp__talog__search_cases": "과거 사례", "mcp__talog__rediagnose": "사건 재진단",
+                 "mcp__talog__job_status": "재현 작업", "mcp__talog__log_days": "원본 로그 폴더",
+                 "mcp__talog__log_files": "로그 파일 목록", "mcp__talog__read_log": "원본 로그 읽기",
+                 "mcp__talog__search_logs": "원본 로그 찾기", "mcp__talog__trace_inspection": "검사 추적",
+                 "Skill": "RCA 절차 불러오기", "Read": "파일 읽기", "Glob": "파일 찾기", "Write": "보고서 쓰기",
+                 "Edit": "보고서 고치기"}
+
+    @classmethod
+    def claude_env(cls) -> dict:
+        """구독 로그인만 쓰는 Claude Code 실행 환경 — API 키·과금 경로와 부모 Claude 세션 변수를 뺀다."""
+        out = {}
+        for k, v in os.environ.items():
+            u = k.upper()
+            if u in cls._ENV_DROP or u.startswith(("CLAUDE_AGENT_SDK", "CLAUDE_PREVIEW")):
+                continue
+            if u.startswith("CLAUDE_CODE_") and u not in cls._ENV_KEEP:
+                continue
+            out[k] = v
+        return out
+
+    def claude_cli_info(self, cli: str) -> dict:
+        """Claude Code 판(경로별 한 번만 묻는다)과 로그인 흔적. macOS 는 키체인이라 로그인을 모른다(None)."""
+        if not cli:
+            return {"version": "", "login": None}
+        ver = self._cli_ver.get(cli)
+        if ver is None:
+            ver = ""
+            try:
+                p = subprocess.run([cli, "--version"], capture_output=True, timeout=15, env=self.claude_env(),
+                                   stdin=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                m = re.search(r"\d+\.\d+\.\d+", (p.stdout or b"").decode("utf-8", "replace"))
+                ver = m.group(0) if m else ""
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            self._cli_ver[cli] = ver
+        if sys.platform == "darwin":
+            return {"version": ver, "login": None}
+        login = bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")) or os.path.exists(
+            os.path.join(os.path.expanduser("~"), ".claude", ".credentials.json"))
+        return {"version": ver, "login": login}
+
+    @staticmethod
+    def claude_cli() -> str:
+        """이 PC 의 Claude Code CLI 경로 (없으면 "")."""
+        import shutil
+        cands = [shutil.which("claude") or "", os.path.join(os.path.expanduser("~"), ".local", "bin", "claude.exe")]
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:                                # 데스크톱 앱이 내려받은 판 (새 판부터)
+            cands += sorted(glob.glob(os.path.join(appdata, "Claude", "claude-code", "*", "*", "claude.exe")),
+                            reverse=True)
+        return next((c for c in cands if c and os.path.exists(c)), "")
+
+    def _ask_ws(self) -> str:
+        ws = self.workspace_default
+        if not os.path.exists(os.path.join(ws, ".mcp.json")):
+            from .mcp_server import init_workspace
+            init_workspace(ws, [self.config_path])
+        return ws
+
+    def _reports_in(self, ws: str) -> dict:
+        out = {}
+        for p in glob.glob(os.path.join(ws, "reports", "**", "*"), recursive=True):
+            if os.path.isfile(p) and p.lower().endswith((".html", ".md")):
+                out[p] = os.path.getmtime(p)
+        return out
+
+    def claude_ask(self, question: str, model: str = "", effort: str = "", new: bool = False) -> dict:
+        q = (question or "").strip()
+        if not q:
+            return {"ok": False, "error": "질문이 비었습니다"}
+        model, effort = (model or "").strip().lower(), (effort or "").strip().lower()
+        if model not in self.ASK_MODELS:
+            return {"ok": False, "error": f"모르는 모델입니다: {model}"}
+        if effort not in self.ASK_EFFORTS:
+            return {"ok": False, "error": f"모르는 effort 입니다: {effort}"}
+        cli = self.claude_cli()
+        if not cli:
+            return {"ok": False, "error": "이 PC 에 Claude Code 가 없습니다 — '복사'로 Claude 데스크톱에 붙여 넣으십시오"}
+        with self._lock:
+            if self.ask_job.get("state") == "running":
+                return {"ok": False, "error": "Claude 가 앞 질문에 답하는 중입니다 — 끝난 뒤 다시 보내십시오"}
+            ws = self._ask_ws()
+            if new or not self.ask_thread.get("session"):
+                self.ask_thread = {"session": "", "turns": []}
+            sel = self.claude_log_dirs()["selected"]
+            prompt = (("[이 콘솔에서 분석할 원본 로그 폴더가 선택돼 있다 — log_files·search_logs·read_log·trace_inspection 에 "
+                       "day='선택' 으로 읽는다]\n\n" if sel else "") + q)
+            turn = {"state": "running", "q": q, "t0": time.time(), "steps": [], "answer": "", "live": "",
+                    "reports": [], "error": "", "model_req": model, "effort": effort, "log_selected": bool(sel),
+                    "resumed": bool(self.ask_thread.get("session"))}
+            self.ask_thread["turns"].append(turn)
+            self.ask_job = turn
+            resume = self.ask_thread.get("session", "")
+        threading.Thread(target=self._ask_work, args=(cli, ws, prompt, self._reports_in(ws), model, effort, resume),
+                         name="talog-claude", daemon=True).start()
+        return {"ok": True}
+
+    @staticmethod
+    def _what(name: str, arg: dict) -> str:
+        """진행 단계에 붙일 짧은 대상 (사건 id·파일·문구·시각)."""
+        if name.endswith(("search_logs",)):
+            rng = "~".join(x for x in (arg.get("time_from"), arg.get("time_to")) if x)
+            return f"'{arg.get('query', '')}'" + (f" {rng}" if rng else "")
+        if name.endswith("read_log"):
+            return " ".join(str(x) for x in (arg.get("file"), arg.get("at") or ("끝" if arg.get("tail") else "")) if x)
+        if name.endswith("query_report"):
+            return re.sub(r"\s+", " ", str(arg.get("sql", "")))[:70]
+        if name == "Skill":
+            return str(arg.get("skill") or arg.get("command") or "")
+        return str(arg.get("incident_id") or arg.get("inspection_id") or arg.get("tag") or arg.get("day")
+                   or arg.get("source") or os.path.basename(str(arg.get("file_path", ""))) or "")
+
+    @staticmethod
+    def _result_text(c: dict) -> str:
+        v = c.get("content")
+        if isinstance(v, list):
+            v = "\n".join(x.get("text", "") for x in v if isinstance(x, dict))
+        return str(v or "")
+
+    def _ask_work(self, cli: str, ws: str, prompt: str, before: dict, model: str = "", effort: str = "",
+                  resume: str = ""):
+        J, TH = self.ask_job, self.ask_thread
+        cmd = [cli, "-p", prompt, "--mcp-config", os.path.join(ws, ".mcp.json"), "--strict-mcp-config",
+               "--allowedTools", self.ASK_TOOLS, "--permission-mode", "dontAsk",
+               "--max-turns", str(self.ASK_MAX_TURNS), "--output-format", "stream-json", "--verbose",
+               "--include-partial-messages", "-n", "talog · " + J["q"][:40]]
+        if model:
+            cmd += ["--model", model]
+        if effort:
+            cmd += ["--effort", effort]
+        if resume:
+            cmd += ["--resume", resume]
+        errf = tempfile.TemporaryFile()               # stderr 는 파일로 (파이프가 차서 멈추지 않게)
+        try:
+            p = subprocess.Popen(cmd, cwd=ws, env=self.claude_env(), stdout=subprocess.PIPE, stderr=errf,
+                                 stdin=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except OSError as e:
+            errf.close()
+            J.update(state="failed", error=f"Claude Code 를 실행하지 못했습니다: {e}")
+            return
+        J["pid"] = p.pid
+        self._ask_proc = p
+
+        def _timeout():
+            J["error"] = f"{self.ASK_TIMEOUT_S // 60}분이 지나 끊었습니다 — 질문을 좁혀 다시 보내십시오"
+            _kill_tree(p)
+        timer = threading.Timer(self.ASK_TIMEOUT_S, _timeout)
+        timer.start()
+        by_id: dict[str, dict] = {}
+        pending: list[str] = []                       # 아직 도구 호출이 뒤따르지 않은 글
+        try:
+            for raw in p.stdout:
+                try:
+                    d = json.loads(raw.decode("utf-8", "replace"))
+                except ValueError:
+                    continue
+                t = d.get("type")
+                if t == "system" and d.get("subtype") == "init":
+                    mcp = {m.get("name"): m.get("status") for m in d.get("mcp_servers") or []}
+                    J["model"] = d.get("model", "")
+                    J["mcp"] = mcp.get("talog", "없음")
+                    J["auth"] = d.get("apiKeySource", "")    # "none" = 구독 로그인
+                    J["session_id"] = d.get("session_id", "")
+                    TH["session"] = J["session_id"] or TH.get("session", "")
+                elif t == "rate_limit_event":
+                    info = d.get("rate_limit_info") or {}
+                    self.claude_usage = {"type": info.get("rateLimitType", ""), "utilization": info.get("utilization"),
+                                         "status": info.get("status", ""), "resets_at": info.get("resetsAt"),
+                                         "overage": bool(info.get("isUsingOverage")), "at": time.time()}
+                elif t == "stream_event":
+                    ev = d.get("event") or {}
+                    if ev.get("type") == "message_start":
+                        J["live"] = ""
+                    elif ev.get("type") == "content_block_delta" and (ev.get("delta") or {}).get("type") == "text_delta":
+                        J["live"] += ev["delta"].get("text", "")
+                elif t == "assistant":
+                    # 내용 블록이 한 이벤트에 같이 오든 블록마다 따로 오든, 도구를 부르기 전에 쓴 말은 진행 메모가 된다
+                    # (마지막 답은 result 로 따로 온다)
+                    for c in (d.get("message") or {}).get("content") or []:
+                        if c.get("type") == "text" and c.get("text", "").strip():
+                            pending.append(c["text"].strip())
+                            continue
+                        if c.get("type") != "tool_use":
+                            continue
+                        for x in pending:
+                            J["steps"].append({"t": round(time.time() - J["t0"]), "kind": "note", "label": x[:400]})
+                        pending.clear()
+                        J["live"] = ""                # 흐르던 글은 메모로 옮겨졌다
+                        name = c.get("name", "")
+                        label = self.ASK_STEPS.get(name)
+                        if not label:
+                            continue                  # 내부 도구(할 일 목록·도구 검색)는 보이지 않는다
+                        step = {"t": round(time.time() - J["t0"]), "kind": "tool", "tool": name.split("__")[-1],
+                                "label": label, "what": self._what(name, c.get("input") or {})[:90], "done": False}
+                        J["steps"].append(step)
+                        by_id[c.get("id", "")] = step
+                elif t == "user":
+                    for c in (d.get("message") or {}).get("content") or []:
+                        if isinstance(c, dict) and c.get("type") == "tool_result" and c.get("tool_use_id") in by_id:
+                            st = by_id[c["tool_use_id"]]
+                            st.update(done=True, error=bool(c.get("is_error")),
+                                      preview=self._result_text(c)[:900],
+                                      ms=round((time.time() - J["t0"] - st["t"]) * 1000))
+                elif t == "result":
+                    J["answer"] = d.get("result") or ""
+                    J["live"] = ""
+                    J["turns"] = d.get("num_turns")
+                    J["is_error"] = bool(d.get("is_error"))
+                    J["denied"] = sorted({x.get("tool_name", "") for x in d.get("permission_denials") or []} - {""})
+            p.wait(timeout=30)
+        except Exception as e:                       # 콘솔은 죽지 않는다
+            J["error"] = f"{type(e).__name__}: {e}"
+        finally:
+            timer.cancel()
+            self._ask_proc = None
+        try:
+            errf.seek(0)
+            err = errf.read().decode("utf-8", "replace").strip()
+        finally:
+            errf.close()
+        after = self._reports_in(ws)
+        J["reports"] = sorted((os.path.relpath(f, ws) for f, m in after.items() if before.get(f) != m),
+                              key=lambda r: (not r.lower().endswith(".html"), r))
+        J["elapsed_s"] = round(time.time() - J["t0"])
+        if J.get("cancelled"):
+            J["state"], J["error"] = "cancelled", "사용자가 멈췄습니다 — 그때까지 쓴 보고서는 남아 있습니다"
+        elif p.returncode == 0 and J.get("answer") and not J.get("is_error"):
+            J["state"] = "done"
+        else:
+            msg = J.get("error") or err[-800:] or (J.get("answer") or "")[:800] or f"종료 코드 {p.returncode}"
+            if re.search(r"\blog ?in\b|/login|invalid api key|authenticat|credentials?\b", msg, re.I):
+                msg = ("Claude Code 에 로그인되어 있지 않습니다 — 명령 프롬프트에서 claude 를 한 번 실행해 "
+                       "구독 계정(Pro·Max)으로 로그인한 뒤 다시 보내십시오.\n\n" + msg[-300:])
+            J["state"], J["error"] = "failed", msg
+
+    def claude_ask_cancel(self) -> dict:
+        p = getattr(self, "_ask_proc", None)
+        if self.ask_job.get("state") != "running" or p is None or p.poll() is not None:
+            return {"ok": False, "error": "진행 중인 질문이 없습니다"}
+        self.ask_job["cancelled"] = True
+        _kill_tree(p)
+        return {"ok": True}
+
+    def claude_new_thread(self) -> dict:
+        with self._lock:
+            if self.ask_job.get("state") == "running":
+                return {"ok": False, "error": "Claude 가 답하는 중입니다 — 멈추거나 끝난 뒤 새 대화를 여십시오"}
+            self.ask_thread = {"session": "", "turns": []}
+            self.ask_job = {"state": "idle"}
+        return {"ok": True}
+
+    def claude_ask_status(self) -> dict:
+        now = time.time()
+        turns = []
+        for t in self.ask_thread.get("turns", []):
+            x = dict(t)
+            if x.get("state") == "running":
+                x["elapsed_s"] = round(now - x.get("t0", now))
+            turns.append(x)
+        return {"state": self.ask_job.get("state", "idle"), "turns": turns,
+                "can_continue": bool(self.ask_thread.get("session")), "usage": self.claude_usage,
+                "log_selected": self._log_selected()}
+
+    def claude_file(self, rel: str) -> tuple[bytes, str]:
+        """에이전트 폴더 reports 안의 보고서만 내준다."""
+        ws = os.path.abspath(self.workspace_default)
+        base = os.path.join(ws, "reports")
+        p = os.path.abspath(os.path.join(ws, rel or ""))
+        if not p.startswith(base + os.sep) or not os.path.isfile(p) or not p.lower().endswith((".html", ".md")):
+            raise FileNotFoundError(rel)
+        with open(p, "rb") as f:
+            data = f.read()
+        return data, ("text/html; charset=utf-8" if p.lower().endswith(".html") else "text/plain; charset=utf-8")
+
+    def claude_test(self) -> dict:
+        """연결 시험 — Claude 가 띄울 명령 그대로 talog MCP 서버를 띄워 자가 점검(JSON)을 돌린다."""
+        cmd = self.mcp_command() + ["--self-test", "--json"]
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        t0 = time.time()
+        try:
+            p = subprocess.run(cmd, capture_output=True, timeout=120, env=env, cwd=_REPO,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "output": "120초 안에 끝나지 않았습니다 — 데이터 폴더가 네트워크 드라이브인지 확인하십시오",
+                    "elapsed_s": 120}
+        except OSError as e:
+            return {"ok": False, "output": f"실행 실패: {e}", "elapsed_s": 0}
+        out = (p.stdout or b"").decode("utf-8", "replace")
+        err = (p.stderr or b"").decode("utf-8", "replace")
+        report = None
+        for ln in reversed(out.splitlines()):
+            if ln.strip().startswith("{"):
+                try:
+                    report = json.loads(ln)
+                    break
+                except ValueError:
+                    pass
+        return {"ok": p.returncode == 0 and bool(report and report.get("ok")), "report": report,
+                "output": (out + err)[-14000:], "elapsed_s": round(time.time() - t0, 1), "command": " ".join(cmd)}
+
     def test_llm(self, body: dict) -> dict:
         from .llm import OllamaClient
         lc = copy.deepcopy(self.cfg["llm"])
@@ -739,38 +1318,58 @@ class Console:
         return {"ok": True, "message": f"{a.title} — 실제 경보와 같은 경로로 처리됩니다"}
 
 
-_capture_local = threading.local()
+_JOB_TAGS = "@@talog-reports "
 
 
-def _run_captured(fn, args, buf: deque) -> int:
-    """작업 스레드의 print 를 buf 로 모은다 (다른 스레드 출력은 그대로)."""
-    _capture_local.buf = buf
+def _self_command() -> list[str]:
+    """talog 를 다시 띄우는 명령 — exe 면 exe 그대로, 아니면 이 파이썬으로 -m talog."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+    return [sys.executable, "-u", "-m", "talog"]
+
+
+def job_main(argv: list[str]) -> int:
+    """콘솔이 띄우는 분석 작업: talog _job report|replay <폴더> --config <설정 json> [--out] [--recipe]."""
+    import argparse
+    ap = argparse.ArgumentParser(prog="talog _job")
+    ap.add_argument("kind", choices=("report", "replay"))
+    ap.add_argument("target")
+    ap.add_argument("--config", required=True, help="콘솔이 넘긴 사용자 설정(json)")
+    ap.add_argument("--out", default="")
+    ap.add_argument("--recipe", default="")
+    a = ap.parse_args(argv)
     try:
-        return fn(*args)
-    finally:
-        _capture_local.buf = None
-
-
-class _ThreadRouter(io.TextIOBase):
-    """스레드별 출력 분기: 분석 작업 스레드는 작업 기록으로, 나머지는 콘솔 창+화면 로그로."""
-
-    def __init__(self, default):
-        self.default = default
-
-    def write(self, s):
-        buf = getattr(_capture_local, "buf", None)
-        if buf is not None:
-            for line in s.splitlines():
-                if line.strip():
-                    buf.append(line)
-            return len(s)
-        return self.default.write(s)
-
-    def flush(self):
-        self.default.flush()
+        sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
+    except (AttributeError, ValueError):
+        pass
+    with open(a.config, encoding="utf-8") as f:
+        user = json.load(f)
+    if a.kind == "replay":
+        from .watch import run_replay
+        return run_replay(settings.compile(user), a.target)
+    job = {"reports": []}
+    rc = Console._report_work(a.target, a.recipe, a.out or os.path.join(os.getcwd(), "reports"), job)
+    print(_JOB_TAGS + json.dumps(job["reports"], ensure_ascii=False), flush=True)
+    return rc
 
 
 # ---------------------------------------------------------------------------
+def _kill_tree(p: subprocess.Popen) -> None:
+    """프로세스와 그 자식(MCP 서버)까지 끝낸다."""
+    if p.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True, timeout=15,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    try:
+        p.kill()
+    except OSError:
+        pass
+
+
 def _handler_factory(con: Console):
     class H(BaseHTTPRequestHandler):
         server_version = "talog-console"
@@ -813,6 +1412,18 @@ def _handler_factory(con: Console):
                     if sub in ("api/insp", "api/detail", "api/meta"):
                         return self._send(200, con.report_api(tag, sub[4:], q))
                     return self._send(404, {"error": "not found"})
+                if u.path in ("/favicon.ico", "/favicon.svg"):
+                    name = "talog.ico" if u.path.endswith(".ico") else "talog_icon.svg"
+                    with open(os.path.join(_ASSETS, name), "rb") as f:
+                        return self._send(200, f.read(), "image/x-icon" if name.endswith(".ico")
+                                          else "image/svg+xml")
+                if u.path == "/api/claude":
+                    return self._send(200, con.claude_info())
+                if u.path == "/api/claude/ask":
+                    return self._send(200, con.claude_ask_status())
+                if u.path == "/api/claude/file":
+                    data, ct = con.claude_file(q.get("path", ""))
+                    return self._send(200, data, ct)
                 if u.path == "/api/status":
                     return self._send(200, con.status())
                 if u.path == "/api/settings":
@@ -840,6 +1451,8 @@ def _handler_factory(con: Console):
                     j = {k: v for k, v in con.job.items() if k != "log"}
                     j["log"] = list(con.job.get("log") or [])[-250:]
                     return self._send(200, j)
+                if u.path == "/api/timeline":
+                    return self._send(200, con.timeline(int(q.get("days", 7))))
                 if u.path == "/api/reports":
                     return self._send(200, {"rows": con.reports()})
             except FileNotFoundError as e:
@@ -889,6 +1502,23 @@ def _handler_factory(con: Console):
                     return self._send(200, con.ask_incident(body.get("id", ""),
                                                             bool(body.get("replay")),
                                                             body.get("q", "")))
+                if u == "/api/claude/test":
+                    return self._send(200, con.claude_test())
+                if u == "/api/claude/ask":
+                    return self._send(200, con.claude_ask(body.get("q", ""), body.get("model", ""),
+                                                          body.get("effort", ""), bool(body.get("new"))))
+                if u == "/api/claude/ask/cancel":
+                    return self._send(200, con.claude_ask_cancel())
+                if u == "/api/claude/prompt":
+                    return self._send(200, con.claude_prompt(body.get("name", ""), body.get("args") or {}))
+                if u == "/api/claude/thread/new":
+                    return self._send(200, con.claude_new_thread())
+                if u == "/api/claude/log":
+                    return self._send(200, con.claude_select_log(body.get("path", "")))
+                if u == "/api/claude/workspace":
+                    return self._send(200, con.claude_workspace(body.get("dir", "")))
+                if u == "/api/claude/open":
+                    return self._send(200, con.open_folder(body.get("dir", "")))
                 if u == "/api/ask/report":
                     return self._send(200, con.ask_report(body.get("tag", ""),
                                                           body.get("q", "")))
@@ -904,8 +1534,7 @@ def _handler_factory(con: Console):
 def serve(config_path: str, port: int = 8778, open_browser: bool = True,
           autostart: bool = True) -> int:
     con = Console(config_path, port)
-    router = _ThreadRouter(_Tee(sys.stdout, con.log))
-    sys.stdout = router
+    sys.stdout = _Tee(sys.stdout, con.log)        # 콘솔 창 + 화면의 실행 로그 (분석 작업은 별도 프로세스)
     srv = ThreadingHTTPServer(("127.0.0.1", port), _handler_factory(con))
     url = f"http://127.0.0.1:{port}/"
     print(f"[talog] AI 비전 로그 운영 플랫폼 {__version__} — {url}")

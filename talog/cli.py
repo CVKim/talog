@@ -3,6 +3,7 @@
     talog                        콘솔 (감시·사건·분석·설정, http://127.0.0.1:8778)
     talog run                    화면 없이 상주 감시 (자동 시작·서비스용)
     talog analyze <로그 폴더>     일자·설비·여러 설비 폴더 진단 리포트
+    talog mcp                    Claude(구독) 연동 MCP 서버 — Claude Code·데스크톱이 talog 산출물을 도구로 읽는다
 
 옛 명령(talog <폴더>, watch, ask, view, fleet, kb)은 그대로 동작한다.
 """
@@ -162,7 +163,10 @@ def _llm_overview(findings, tag: str, model: str = "qwen2.5:7b") -> str:
 
 
 def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
-             fast: bool = False, detail_cap: int = 60, llm: bool = False) -> str:
+             fast: bool = False, detail_cap: int = 60, llm: bool = False,
+             carry: dict | None = None) -> str:
+    """일자 폴더 하나 → 리포트. carry 를 넘기면 여러 날을 이어 분석할 때 처리 여유 기준선이
+    날짜를 넘어 이어진다 (talog/capacity.py)."""
     t0 = time.time()
     files = scan_day_folder(day_dir)
     if fast:
@@ -353,9 +357,16 @@ def scan_day(day_dir: str, recipe: Recipe | None, out_dir: str, tag: str,
                         stitched=stitched, detail_cap=detail_cap,
                         model_loads=model_loads,
                         gpu_watch=_load_gpu_watch(day_dir))
+    try:
+        from .watch import capacity_review
+        cap = capacity_review(all_events, carry)
+    except Exception as e:                        # 부가 소견 실패가 리포트를 막지 않게
+        print(f"  ! 처리 여유 분석 실패(계속): {type(e).__name__}: {e}")
+        cap = None
     ctx.findings = diagnose(inspections, runs, gens, all_events, model_loads,
                             log_start, log_end,
-                            usage_result=_usage_analysis(ctx), recipe=recipe)
+                            usage_result=_usage_analysis(ctx), recipe=recipe,
+                            capacity=cap)
     # 사례 KB: 심각/주의 소견이 있으면 유사 과거 사례를 첨부한다
     if any(f.severity in ("crit", "warn") for f in ctx.findings):
         try:
@@ -461,6 +472,8 @@ USAGE = f"""talog {__version__} — AI 비전 로그 운영 플랫폼
                                --once · --check(설치 점검) · --replay <일자 폴더> · --test-email
   talog analyze <로그 폴더>     일자 / 설비 / 여러 설비 폴더의 진단 리포트
                                --recipe <레시피> --open --llm --fast --out <폴더>
+  talog mcp                    Claude 연동 MCP 서버 (stdio, API 키 없음 — 구독 그대로)
+                               --config <talog.yaml>(여러 개) · --work-dir · --no-mask · --self-test
 """
 
 _LEGACY = ("ask", "watch", "kb", "fleet", "view")
@@ -488,6 +501,12 @@ def main(argv=None):
         return watch_main(argv[1:], prog="talog run")
     if cmd == "analyze":
         return analyze_main(argv[1:])
+    if cmd == "_job":                     # 콘솔이 띄우는 분석 작업 (별도 프로세스)
+        from .console import job_main
+        return job_main(argv[1:])
+    if cmd == "mcp":
+        from .mcp_server import main as mcp_main
+        return mcp_main(argv[1:])
     if cmd in _LEGACY:
         return _legacy(cmd, argv[1:])
     return analyze_main(argv)             # 옛 사용법: talog <로그 폴더> [--recipe ...]
@@ -596,6 +615,7 @@ def analyze_main(argv) -> int:
         return 2
     out_dir = args.out or os.path.join(args.logs, "talog_out")
     outputs = []
+    carry: dict = {}                  # 여러 날을 한 번에 분석하면 처리 여유 기준선이 이어진다
     for d in days:
         base = os.path.basename(os.path.normpath(args.logs))
         tag = f"{base}_{os.path.basename(os.path.normpath(d))}" if d != args.logs else base
@@ -603,7 +623,7 @@ def analyze_main(argv) -> int:
         try:
             outputs.append(scan_day(d, recipe, out_dir, tag,
                                     fast=args.fast, detail_cap=args.detail,
-                                    llm=args.llm))
+                                    llm=args.llm, carry=carry))
         except Exception as err:      # 일자 하나의 실패가 전체를 막지 않는다
             print(f"[talog] 오류: {d} 분석 실패 — {err}", file=sys.stderr)
     if not outputs:
