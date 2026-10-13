@@ -43,6 +43,7 @@ FAKE = textwrap.dedent('''
     out({"type": "assistant", "message": {"content": [
         {"type": "tool_use", "id": "tu1", "name": "mcp__talog__get_incident", "input": {"incident_id": "X1"}},
         {"type": "tool_use", "id": "tu2", "name": "TodoWrite", "input": {}}]}})
+    time.sleep(0.3)                            # 도구가 0.3초 걸린 셈 — 걸린 ms 가 음수로 나오면 안 된다
     out({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "tu1",
          "content": [{"type": "text", "text": "# 사건 X1\\n원인: 처리 여유 고갈"}]}]}})
     os.makedirs("reports", exist_ok=True)
@@ -126,7 +127,7 @@ def test_ask_runs_clean_and_reports_progress(con, monkeypatch):
     # 도구를 부르기 전에 쓴 글은 진행 메모, 내부 도구(TodoWrite)는 숨김, 도구 결과는 미리보기로
     assert [(s["kind"], s["label"]) for s in j["steps"]] == [("note", "먼저 사건을 읽겠습니다."), ("tool", "사건 상세")]
     st = j["steps"][1]
-    assert st["what"] == "X1" and st["done"] and not st["error"] and st["ms"] >= 0
+    assert st["what"] == "X1" and st["done"] and not st["error"] and 250 <= st["ms"] < 5000
     assert st["preview"].startswith("# 사건 X1") and "처리 여유 고갈" in st["preview"]
     assert j["live"] == "" and j["answer"].startswith("## 결론")      # 흐르던 글은 끝나면 비운다
     assert j["reports"] == [os.path.join("reports", "rca_X1.html")]

@@ -1055,6 +1055,7 @@ class Console:
         timer = threading.Timer(self.ASK_TIMEOUT_S, _timeout)
         timer.start()
         by_id: dict[str, dict] = {}
+        started: dict[str, float] = {}                # 도구 호출 시각(초 단위로 반올림한 t 로 빼면 ms 가 음수가 된다)
         pending: list[str] = []                       # 아직 도구 호출이 뒤따르지 않은 글
         try:
             for raw in p.stdout:
@@ -1102,13 +1103,14 @@ class Console:
                                 "label": label, "what": self._what(name, c.get("input") or {})[:90], "done": False}
                         J["steps"].append(step)
                         by_id[c.get("id", "")] = step
+                        started[c.get("id", "")] = time.time()
                 elif t == "user":
                     for c in (d.get("message") or {}).get("content") or []:
                         if isinstance(c, dict) and c.get("type") == "tool_result" and c.get("tool_use_id") in by_id:
                             st = by_id[c["tool_use_id"]]
                             st.update(done=True, error=bool(c.get("is_error")),
                                       preview=self._result_text(c)[:900],
-                                      ms=round((time.time() - J["t0"] - st["t"]) * 1000))
+                                      ms=round((time.time() - started.get(c["tool_use_id"], time.time())) * 1000))
                 elif t == "result":
                     J["answer"] = d.get("result") or ""
                     J["live"] = ""
