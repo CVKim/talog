@@ -782,11 +782,11 @@ def _gpu_model_section(ctx: ReportContext) -> str:
                           f"<div class='legend' style='margin:6px 0 3px'>"
                           f"executeV2 분포 (백분위 마커)</div>"
                           + _dist_svg(vals, "ms", w=352, h=140)
-                          + f"<table style='margin-top:8px'><thead><tr>"
-                          f"<th>스테이지</th>"
-                          f"<th class='r'>avg(ms)</th><th class='r'>p95(ms)</th>"
-                          f"<th class='r'>max(ms)</th>"
-                          f"</tr></thead><tbody>" + "".join(rows_s)
+                          + "<table style='margin-top:8px'><thead><tr>"
+                          "<th>스테이지</th>"
+                          "<th class='r'>avg(ms)</th><th class='r'>p95(ms)</th>"
+                          "<th class='r'>max(ms)</th>"
+                          "</tr></thead><tbody>" + "".join(rows_s)
                           + "</tbody></table>"
                           f"<div class='legend'>스테이지별 N={len(vals):,} "
                           f"(인퍼런스 실행 횟수와 동일)</div></div>")

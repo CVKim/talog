@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""talog MCP 서버(talog/mcp_server.py) 테스트 — Claude(구독)가 talog 산출물을 도구로 읽는 연동.
+"""talog MCP 서버(talog/mcp/) 테스트 — Claude(구독)가 talog 산출물을 도구로 읽는 연동.
 
 실제 산출물 모양을 본뜬 가상 데이터(사건·KPI·기준선·진단 리포트 DB)를 tmp 에 만들고, JSON-RPC 요청을 그대로
 넣어 프로토콜·도구·마스킹·SQL 차단·재현 작업·stdio 통신·에이전트 폴더를 확인한다.
@@ -18,7 +18,7 @@ import time
 
 import pytest
 
-from talog import mcp_server as M
+from talog import mcp as M
 
 INNER = "2000026101205024639"
 INNER2 = "2000026101205024640"
@@ -349,6 +349,10 @@ def test_start_replay_runs_in_background_and_reports(site):
     srv = _srv(site)
     text, err = _call(srv, "start_replay", {"source": "시험", "day": "..\\etc"})
     assert err
+    sibling = site["logs"] + "_old"                          # 이름 앞부분만 같은 옆 폴더는 로그 루트 밖이다
+    os.makedirs(os.path.join(sibling, "12"))
+    text, err = _call(srv, "start_replay", {"source": "시험", "day": os.path.join(sibling, "12")})
+    assert err and "로그 루트 밖" in text
     text, err = _call(srv, "start_replay", {"source": "시험", "day": "99"})
     assert err and "12" in text                          # 있는 폴더를 알려 준다
     text, err = _call(srv, "start_replay", {"source": "시험", "day": "12", "carry_baseline": False})

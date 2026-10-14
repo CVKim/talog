@@ -1,7 +1,5 @@
 """NG 결함 분포 파싱과 fleet 인덱스 빌더 테스트."""
 
-import os
-
 from talog.assemble import _parse_ng_defects, build_inspections
 from talog.events import Event
 from talog.fleetindex import render
@@ -67,9 +65,8 @@ def test_fleet_index_render_contains_rows():
 
 def test_viewer_queries(tmp_path):
     """talog view 의 페이지/상세 쿼리 — SUMMARY/DETAIL 포맷 계약 검증."""
-    import sqlite3
     from talog import store
-    from talog.assemble import ChannelRun, Inspection
+    from talog.assemble import Inspection
     from talog.viewer import query_insp, query_detail, query_meta
     db = str(tmp_path / "v.sqlite")
     con = store.open_db(db)

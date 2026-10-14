@@ -15,13 +15,10 @@ import os
 import socketserver
 import sys
 import threading
-import urllib.error
-import urllib.request
 from email import policy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-import yaml
 
 from talog import watch
 from talog.agent import IncidentAgent, LLMAnalyst, RuleDiagnoser, Runbook, fact_check, gate

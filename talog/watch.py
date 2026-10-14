@@ -31,7 +31,7 @@ import threading
 import time
 import urllib.request
 from collections import Counter, OrderedDict, deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import yaml
 

@@ -505,7 +505,7 @@ def main(argv=None):
         from .console import job_main
         return job_main(argv[1:])
     if cmd == "mcp":
-        from .mcp_server import main as mcp_main
+        from .mcp import main as mcp_main
         return mcp_main(argv[1:])
     if cmd in _LEGACY:
         return _legacy(cmd, argv[1:])

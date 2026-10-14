@@ -233,7 +233,7 @@ def test_claude_info_lists_skills_models_and_efforts(con):
     assert [t["name"] for t in info["tools"] if t["card"]] == ["start_replay"]                 # 비교 카드에서 확인 후
     assert [m["v"] for m in info["models"]] == ["", "sonnet", "opus", "haiku"]
     assert tuple(e["v"] for e in info["efforts"]) == Console.ASK_EFFORTS
-    from talog.mcp_server import SKILLS
+    from talog.mcp import SKILLS
     sk = info["skills"]
     assert [k["key"] for k in sk] == ["rca", "logs", "daily", "site", "rules"]
     assert [k["command"] for k in sk] == ["/" + n for n in SKILLS]
@@ -339,7 +339,7 @@ def test_skill_card_runs_slash_command_in_new_thread(con):
     assert a[a.index("-p") + 1] == "/talog-rca 20261012-050228-capacity_drift" and "--resume" not in a
     assert "mcp__talog__start_replay" not in a[a.index("--allowedTools") + 1]
     # 스킬 파일이 에이전트 폴더에 깔린다 (고친 스킬도 다시 깔린다)
-    from talog.mcp_server import SKILLS
+    from talog.mcp import SKILLS
     for n in SKILLS:
         assert os.path.exists(os.path.join(con.workspace_default, ".claude", "skills", n, "SKILL.md")), n
     # 답의 수치 대조 — 4.0(4.043)·05:02 는 도구 결과에 있고 9.9 는 없다
