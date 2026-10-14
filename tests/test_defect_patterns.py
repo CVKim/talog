@@ -214,8 +214,10 @@ def test_resolve_targets_modes(tmp_path):
         _touch(d, n)
     _touch(d, os.path.join("alg", "alg_dl_0(x).log"))
     base = lambda ps: sorted(os.path.relpath(p, d) for p in ps)   # noqa: E731
+    # 기본 모드는 그룹별 seq_N 을 번호와 상관없이 모두 읽는다 (Tenneco 4존·풍산 12그룹)
     assert base(resolve_targets(d, {"mode": "default"})) == ["InspStarter.log",
-                                                              "comm.log", "seq_1.log"]
+                                                              "comm.log", "seq_1.log",
+                                                              "seq_4.log"]
     sel = base(resolve_targets(d, {"mode": "select", "files": ["SEQ_*.log", "alg\\alg_dl_*"]}))
     assert sel == sorted([os.path.join("alg", "alg_dl_0(x).log"), "seq_1.log", "seq_4.log"])
     auto = base(resolve_targets(d, {"mode": "auto",

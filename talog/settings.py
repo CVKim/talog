@@ -24,7 +24,7 @@ import re
 
 import yaml
 
-from .tracker import DEFAULT_FILES
+from .tracker import DEFAULT_FILES, DEFAULT_PATTERNS, is_default_file
 
 SEVERITIES = ("crit", "warn", "info")
 
@@ -63,6 +63,10 @@ BUILTIN = [
     ("error_repeat", "동일 에러 반복", "warn", "repeat", {"count": 5, "window_min": 10}),
     ("insp_stall", "검사 정체 (평소 소요의 N배)", "warn", "stall", {"factor": 2.0}),
     ("memory_trend", "메모리 증가 추세 (릭 의심)", "crit", "memory", {"mb_per_hour": 100}),
+    # 그룹별 처리 여유 (talog/capacity.py) — 기동·기종 교체 뒤 스스로 잡은 기준선과 비교
+    ("capacity_drift", "처리 여유 감소 (유휴 스레드·일시 지연 내성)", "warn", "capacity",
+     {"idle_drop": 1, "tolerance_pct": 40}),
+    ("tact_drift", "처리 시간 증가 (기동 기준 대비)", "warn", "drift", {"ratio": 1.25}),
     ("gpu_temp", "GPU 과열", "crit", "gpu", {"celsius": 85}),
     ("ng_streak", "연속 NG", "crit", "streak", {"enabled": False, "count": 10}),
     ("ng_rate", "NG 비율 급증 (최근 N검사)", "warn", "rate",
@@ -167,6 +171,11 @@ def compile(user: dict | None) -> dict:
             r[name]["factor_x_median"] = float(v["factor"])
         elif kind == "memory":
             r[name]["mb_per_hour"] = v["mb_per_hour"]
+        elif kind == "capacity":
+            r["capacity"]["idle_drop"] = int(v.get("idle_drop", 1) or 1)
+            r["capacity"]["tolerance_warn"] = round(float(v.get("tolerance_pct", 40)) / 100, 3)
+        elif kind == "drift":
+            r["capacity"]["drift_warn"] = float(v.get("ratio", 1.25) or 1.25)
         elif kind == "gpu":
             r[name]["celsius"] = v["celsius"]
         elif kind == "streak":
@@ -189,7 +198,7 @@ def compile(user: dict | None) -> dict:
         else:
             pats.append(it)
             for f in it.get("files") or []:
-                if str(f).lower() not in DEFAULT_FILES:
+                if not is_default_file(str(f)):
                     extra_files.append(str(f))
     r["patterns"] = pats
     r["defect_watch"]["rules"] = defs
@@ -206,10 +215,10 @@ def compile(user: dict | None) -> dict:
                  "workerthreadpoolmng.log": "WorkerThreadPoolMng.log",
                  "exception.log": "exception.log", "processusage.log": "ProcessUsage.log",
                  "batchrunlog.txt": "BatchRunLog.txt"}
-        base = [names.get(f, f) for f in DEFAULT_FILES]
+        base = [names.get(f, f) for f in DEFAULT_FILES] + list(DEFAULT_PATTERNS)
         cfg["tracking"]["mode"] = "select"
         cfg["tracking"]["files"] = base + [f for f in dict.fromkeys(extra_files)
-                                           if f.lower() not in DEFAULT_FILES]
+                                           if not is_default_file(f)]
 
     a = s["ai"]
     cfg["agent"]["enabled"] = True
@@ -341,6 +350,17 @@ def from_engine(engine_cfg: dict) -> dict:
             v["factor"] = r[name]["factor_x_median"]
         elif kind == "memory" and r[name]["mb_per_hour"] != d["mb_per_hour"]:
             v["mb_per_hour"] = r[name]["mb_per_hour"]
+        elif kind == "capacity":
+            cp = r.get("capacity") or {}
+            if int(cp.get("idle_drop", 1)) != d["idle_drop"]:
+                v["idle_drop"] = int(cp["idle_drop"])
+            pct = round(float(cp.get("tolerance_warn", 0.4)) * 100)
+            if pct != d["tolerance_pct"]:
+                v["tolerance_pct"] = pct
+        elif kind == "drift":
+            ratio = float((r.get("capacity") or {}).get("drift_warn", 1.25))
+            if ratio != d["ratio"]:
+                v["ratio"] = ratio
         elif kind == "gpu" and r[name]["celsius"] != d["celsius"]:
             v["celsius"] = r[name]["celsius"]
         elif kind == "streak" and int(r["defect_watch"].get("ng_streak", 0) or 0):

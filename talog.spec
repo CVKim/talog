@@ -7,7 +7,9 @@ a = Analysis(
     binaries=[],
     datas=[('talog\\rules\\events.yaml', 'talog/rules'),
            ('talog\\rules\\runbook.yaml', 'talog/rules'),
-           ('talog\\console.html', 'talog')],
+           ('talog\\console.html', 'talog'),
+           ('talog\\assets', 'talog/assets'),            # 로고·아이콘 (콘솔 파비콘)
+           ('talog\\claude_kit', 'talog/claude_kit')],   # Claude 에이전트 폴더 원본 (CLAUDE.md·스킬)
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -37,4 +39,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='talog\\assets\\talog.ico',
 )
