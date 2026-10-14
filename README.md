@@ -74,5 +74,8 @@ pytest 163개.
 ## 문서
 
 - [USAGE.md](USAGE.md) — 시작하기 · 콘솔 화면 · 설정 · 판단 결과 · 리포트 읽는 법 · 설치
+- [docs/DEV_PC_MANUAL.md](docs/DEV_PC_MANUAL.md) — 개발자 PC 매뉴얼 · 현장 로그 복사본과 Claude 구독으로 원인 찾기
 - [docs/INTERNALS.md](docs/INTERNALS.md) — 모듈 구조 · 설정 두 층 · 사건 분석 흐름 · 파싱 명세
+- [design-system/talog/MASTER.md](design-system/talog/MASTER.md) — 콘솔 디자인 시스템
+- [CLAUDE.md](CLAUDE.md) — Claude 로 이 저장소를 작업할 때의 안내
 - [CHANGELOG.md](CHANGELOG.md) — 변경 이력

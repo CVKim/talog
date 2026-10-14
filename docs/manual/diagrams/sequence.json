@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Claude 에게 한 번 물을 때",
+    "output": "sequence.html",
+    "viewBox": [
+      1080,
+      580
+    ],
+    "column_fit": "spread",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "emphasis": {
+          "label": "주요 호출"
+        },
+        "default": {
+          "label": "요청"
+        },
+        "security": {
+          "label": "PC 밖으로"
+        },
+        "return": {
+          "label": "돌려줌"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "dev",
+      "type": "external",
+      "label": "개발자",
+      "sublabel": "콘솔 화면"
+    },
+    {
+      "id": "console",
+      "type": "frontend",
+      "label": "talog 콘솔",
+      "sublabel": "Claude 화면"
+    },
+    {
+      "id": "cc",
+      "type": "backend",
+      "label": "Claude Code",
+      "sublabel": "구독 로그인"
+    },
+    {
+      "id": "claude",
+      "type": "cloud",
+      "label": "Claude",
+      "sublabel": "Anthropic"
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "talog 도구",
+      "sublabel": "MCP 서버"
+    },
+    {
+      "id": "data",
+      "type": "database",
+      "label": "로그 · 작업 데이터",
+      "sublabel": "이 PC"
+    }
+  ],
+  "segments": [
+    {
+      "from": 155,
+      "to": 235,
+      "label": "질문"
+    },
+    {
+      "from": 245,
+      "to": 405,
+      "label": "도구로 확인 (필요한 만큼 반복)"
+    },
+    {
+      "from": 415,
+      "to": 500,
+      "label": "답"
+    }
+  ],
+  "messages": [
+    {
+      "id": "ask",
+      "from": "dev",
+      "to": "console",
+      "y": 165,
+      "label": "질문 · 모델 · effort",
+      "variant": "default"
+    },
+    {
+      "id": "launch",
+      "from": "console",
+      "to": "cc",
+      "y": 193,
+      "label": "claude -p (허용 도구만)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "send-question",
+      "from": "cc",
+      "to": "claude",
+      "y": 221,
+      "label": "질문 + 도구 목록",
+      "variant": "security"
+    },
+    {
+      "id": "tool-request",
+      "from": "claude",
+      "to": "cc",
+      "y": 255,
+      "label": "search_logs 호출",
+      "variant": "default"
+    },
+    {
+      "id": "tool-run",
+      "from": "cc",
+      "to": "mcp",
+      "y": 283,
+      "label": "도구 실행",
+      "variant": "emphasis"
+    },
+    {
+      "id": "read",
+      "from": "mcp",
+      "to": "data",
+      "y": 311,
+      "label": "시각으로 찾아 읽기",
+      "variant": "default"
+    },
+    {
+      "id": "lines",
+      "from": "data",
+      "to": "mcp",
+      "y": 339,
+      "label": "원본 줄",
+      "variant": "return"
+    },
+    {
+      "id": "tool-result",
+      "from": "mcp",
+      "to": "cc",
+      "y": 367,
+      "label": "결과 (검사 id 가림)",
+      "variant": "return"
+    },
+    {
+      "id": "send-result",
+      "from": "cc",
+      "to": "claude",
+      "y": 395,
+      "label": "도구 결과",
+      "variant": "security"
+    },
+    {
+      "id": "answer",
+      "from": "claude",
+      "to": "cc",
+      "y": 429,
+      "label": "답 (흐르는 글)",
+      "variant": "return"
+    },
+    {
+      "id": "stream",
+      "from": "cc",
+      "to": "console",
+      "y": 457,
+      "label": "진행 과정 · 답",
+      "variant": "return"
+    },
+    {
+      "id": "show",
+      "from": "console",
+      "to": "dev",
+      "y": 485,
+      "label": "화면 · 보고서 링크",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "console",
+      "from": 190,
+      "to": 490,
+      "type": "frontend"
+    },
+    {
+      "participant": "cc",
+      "from": 193,
+      "to": 462,
+      "type": "backend"
+    },
+    {
+      "participant": "claude",
+      "from": 221,
+      "to": 434,
+      "type": "cloud"
+    },
+    {
+      "participant": "mcp",
+      "from": 283,
+      "to": 372,
+      "type": "backend"
+    },
+    {
+      "participant": "data",
+      "from": 311,
+      "to": 344,
+      "type": "database"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "talog 도구란",
+      "items": [
+        "Claude 가 질문을 풀면서 스스로 부르는 talog 기능",
+        "이 PC 의 로그 · 사건 · 리포트를 읽어 글로 돌려준다"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "PC 밖으로 나가는 것",
+      "items": [
+        "질문과 도구 결과 글 (검사 id · 경로는 가림)",
+        "로그 파일 자체는 보내지 않는다"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "화면에 보이는 것",
+      "items": [
+        "확인한 과정: 도구 이름 · 대상 · 걸린 시간",
+        "답 · 보고서 링크 · 구독 사용량"
+      ]
+    }
+  ]
+}

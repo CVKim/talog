@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "talog 개발자 PC 구성",
+    "output": "architecture.html",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "frontend": {
+          "label": "화면"
+        },
+        "backend": {
+          "label": "실행 프로그램"
+        },
+        "database": {
+          "label": "파일 · 데이터"
+        },
+        "cloud": {
+          "label": "외부 서비스"
+        },
+        "external": {
+          "label": "사람"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "dev",
+      "type": "external",
+      "label": "개발자",
+      "sublabel": "브라우저",
+      "pos": [
+        40,
+        110
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "console",
+      "type": "frontend",
+      "label": "talog 콘솔",
+      "sublabel": "127.0.0.1:8778",
+      "pos": [
+        260,
+        110
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "cc",
+      "type": "backend",
+      "label": "Claude Code",
+      "sublabel": "구독 로그인 · claude -p",
+      "pos": [
+        780,
+        110
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "cloud",
+      "type": "cloud",
+      "label": "Claude",
+      "sublabel": "Anthropic",
+      "pos": [
+        1040,
+        110
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "job",
+      "type": "backend",
+      "label": "분석 엔진",
+      "sublabel": "진단 리포트 · 경보 재현",
+      "pos": [
+        260,
+        290
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "data",
+      "type": "database",
+      "label": "작업 데이터",
+      "sublabel": "경보 · 사건 · 리포트 DB",
+      "pos": [
+        520,
+        290
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "logs",
+      "type": "database",
+      "label": "로그 복사본",
+      "sublabel": "YYYY_MM\\DD 일자 폴더",
+      "pos": [
+        260,
+        470
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "talog MCP 서버",
+      "sublabel": "도구 18개 · 마스킹",
+      "pos": [
+        520,
+        470
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "읽기 전용"
+    },
+    {
+      "id": "reports",
+      "type": "database",
+      "label": "에이전트 폴더",
+      "sublabel": "CLAUDE.md · 스킬 · reports",
+      "pos": [
+        780,
+        470
+      ],
+      "size": [
+        170,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "개발자 PC",
+      "wraps": [
+        "dev",
+        "console",
+        "cc",
+        "job",
+        "data",
+        "logs",
+        "mcp",
+        "reports"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "dev-console",
+      "from": "dev",
+      "to": "console",
+      "label": "브라우저"
+    },
+    {
+      "id": "console-cc",
+      "from": "console",
+      "to": "cc",
+      "label": "질문 · claude -p",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cc-cloud",
+      "from": "cc",
+      "to": "cloud",
+      "label": "HTTPS · 구독",
+      "variant": "security"
+    },
+    {
+      "id": "console-job",
+      "from": "console",
+      "to": "job",
+      "label": "분석 시작",
+      "labelDy": 71
+    },
+    {
+      "id": "logs-job",
+      "from": "logs",
+      "to": "job",
+      "label": "읽기"
+    },
+    {
+      "id": "job-data",
+      "from": "job",
+      "to": "data",
+      "label": "결과 쓰기"
+    },
+    {
+      "id": "data-mcp",
+      "from": "data",
+      "to": "mcp",
+      "label": "사건 · 리포트",
+      "labelDy": 71
+    },
+    {
+      "id": "logs-mcp",
+      "from": "logs",
+      "to": "mcp",
+      "label": "원본 로그 (가림)"
+    },
+    {
+      "id": "cc-mcp",
+      "from": "cc",
+      "to": "mcp",
+      "label": "도구 호출",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cc-reports",
+      "from": "cc",
+      "to": "reports",
+      "label": "보고서 쓰기",
+      "variant": "dashed",
+      "labelDy": 161
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "개발자 PC 안",
+      "items": [
+        "로그 복사본 · talog · Claude Code 가 모두 이 PC 에 있다",
+        "콘솔은 127.0.0.1 에서만 열린다"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Claude 로 나가는 것",
+      "items": [
+        "질문과 talog 도구가 돌려준 글만",
+        "검사 id · 경로는 가려서 보낸다",
+        "구독 로그인만 쓰고 API 키는 빼고 실행"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "결과가 남는 곳",
+      "items": [
+        "진단 리포트 · 경보 재현 → 작업 데이터",
+        "Claude 보고서 → 에이전트 폴더 reports"
+      ]
+    }
+  ]
+}
