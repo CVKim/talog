@@ -1,6 +1,6 @@
 """talog CLI — AI 비전 로그 운영 플랫폼.
 
-    talog                        콘솔 (감시·사건·분석·설정, http://127.0.0.1:8778)
+    talog                        콘솔 (운영 현황·사건·분석·Claude·설정, http://127.0.0.1:8778)
     talog run                    화면 없이 상주 감시 (자동 시작·서비스용)
     talog analyze <로그 폴더>     일자·설비·여러 설비 폴더 진단 리포트
     talog mcp                    Claude(구독) 연동 MCP 서버 — Claude Code·데스크톱이 talog 산출물을 도구로 읽는다
@@ -466,14 +466,14 @@ def fleet_main(argv=None) -> int:
 
 USAGE = f"""talog {__version__} — AI 비전 로그 운영 플랫폼
 
-  talog                        콘솔 열기 — 감시 현황 · 사건 · 분석 · 설정
+  talog                        콘솔 열기 — 운영 현황 · 사건 · 분석 · Claude · 설정
                                (--config <talog.yaml> --port 8778 --no-open)
   talog run                    화면 없이 상주 감시 (자동 시작·서비스용)
                                --once · --check(설치 점검) · --replay <일자 폴더> · --test-email
   talog analyze <로그 폴더>     일자 / 설비 / 여러 설비 폴더의 진단 리포트
                                --recipe <레시피> --open --llm --fast --out <폴더>
   talog mcp                    Claude 연동 MCP 서버 (stdio, API 키 없음 — 구독 그대로)
-                               --config <talog.yaml>(여러 개) · --work-dir · --no-mask · --self-test
+                               --config <talog.yaml>(여러 개) · --work-dir · --no-mask · --self-test · --init-workspace <폴더>
 """
 
 _LEGACY = ("ask", "watch", "kb", "fleet", "view")
