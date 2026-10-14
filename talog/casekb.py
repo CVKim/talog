@@ -7,7 +7,7 @@
 임베딩 캐시: <kb_dir>/emb_cache.json (텍스트 해시로 무효화)
 
 주의: 사례에는 현장 정보가 포함되므로 kb/ 는 git 에 커밋하지 않는다
-(.gitignore 처리, 템플릿은 kb_template.jsonl 참조).
+(.gitignore 처리, 형식은 docs/kb_template.jsonl 참조).
 """
 
 from __future__ import annotations

@@ -62,21 +62,31 @@ talog/
   events.py        룰 기반 이벤트 추출 엔진
   assemble.py      검사/채널 런 조립 + 미완료 사유 분류 + 프로세스 세대
   store.py         SQLite 스키마
-  report.py        단일 파일 HTML 리포트
+  report/          단일 파일 HTML 리포트 — v2.2 에서 화면 구역별 모듈로 나눔
+    document.py    render(ctx): 타일·구역 HTML + assets/report.css·report.js → 독립 실행 HTML 한 장
+    context.py     ReportContext(입력)·검사 상태 어휘 · charts.py SVG 차트와 요약 문장 · payload.py 페이지 JSON
+    inspections.py · findings.py · errors.py · models.py · resources.py   구역별 HTML
   cli.py           CLI — talog(콘솔) / run(상주) / analyze(리포트), 옛 명령은 별칭
   settings.py      사용자 설정(talog.yaml, 약 20키) ↔ 엔진 설정 변환 (compile / from_engine)
-  watch.py         상주 감시 (LiveWatch: tail → RuleEngine → Notifier → 에이전트),
-                   capacity_review(사후 리포트용 같은 판정)
+  access.py        모드(field·operator·developer) 고르기·순위, 고정 PIN 해시 (아래 '모드')
+  watch/           상주 감시 — v2.2 에서 패키지로 나눔 (`python -m talog.watch` = `talog run`)
+    live.py        LiveWatch: tail.py → rules.py(RuleEngine) → alerts.py(Notifier) → 에이전트, status.py 상태 페이지
+    replay.py      리플레이 · capacity_review(사후 리포트용 같은 판정)
+    config.py · gpu.py · wiring.py(처리 여유 상태·에이전트 연결) · selfcheck.py(설치 점검) · cli.py
   capacity.py      처리 여유 모델 — 그룹별 유휴 스레드·점유·투입 간격·풀·기준선·KPI·상태 저장
   tracker.py       추적 대상 선택(default/select/auto) + 로그 문구 규칙 엔진
-  agent.py         사건 분석: 근거 수집 → 룰 진단 → LLM 2차 의견 → 합의 관문 → 숫자 대조
+  agent/           사건 분석 — v2.2 에서 패키지로 나눔
+    incident.py    IncidentAgent: 묶음 → evidence.py 근거 → diagnoser.py 룰 진단 → analyst.py LLM 2차 의견
+                   → gate.py 합의 관문 → 메일·JSONL. 해석 문장 interpret.py · 숫자 대조 factcheck.py ·
+                   런북 runbook.py · 공통 common.py
   rules/runbook.yaml  원인·조치·담당 런북 (LLM 이 읽는 원인 설명 포함)
   llm.py           Ollama 클라이언트 (cpu/gpu/auto 장치 선택, keep_alive, think)
   mailer.py        SMTP 발송 (즉시/묶음 정책, 역할 라우팅, 후속 메일 스레드, outbox)
   secret.py        SMTP 비밀번호 DPAPI 암호화
   console/         플랫폼 콘솔 서버 (127.0.0.1, 토큰·Host 확인) — v2.2 에서 파일 하나를 패키지로 나눔
-    app.py         Console = 믹스인(ops·incidents·analysis·claude·checks) + 공유 상태(__init__)
-    http.py        GET_ROUTES / POST_ROUTES 표 → Console 메서드, 리포트 서빙(/r/<태그>/ + 뷰어 API)
+    app.py         Console = 믹스인(ops·incidents·analysis·claude·checks·modes) + 공유 상태(__init__)
+    http.py        GET_ROUTES / POST_ROUTES 표 → Console 메서드, 경로마다 oper(…)·dev(…), 리포트 서빙
+    modes.py       모드 바꾸기(위로 올릴 때 PIN, talog.yaml 에 남김), 화면 저장이 모드를 못 바꾸게
     page.py        talog/web 소스 → 페이지 HTML 하나 (소스가 바뀌면 다시 합침)
     claude.py      Claude Code 실행(바로 묻기·스킬 카드·연결 시험), 구독 전용 환경, 답 수치 대조
     jobs.py        진단 리포트·경보 재현을 `talog _job` 하위 프로세스(낮은 우선순위)로
@@ -91,10 +101,34 @@ talog/
   logread.py       원본 talos 로그 읽기 — 줄머리 시각으로 이분 탐색(수 GB 파일도 즉시), 창 읽기·찾기·
                    검사 id 추적, 읽기 예산(300줄·384MB·20초, 160MB 넘는 파일은 시각 범위 필수)
   claude_kit/      에이전트 폴더 원본 (CLAUDE.md·README·작업별 스킬 5개 talog-rca·logs·daily·site·rules,
-                   공통 참고·보고서 템플릿). 저장소의 .claude/skills/talog-* 와 같게 유지 (테스트·tools/check.py)
+                   공통 참고·보고서 템플릿). `talog mcp --init-workspace` 가 에이전트 폴더로 복사한다
   assets/          AIVEX 워드마크·아이콘(svg·ico·png) — tools/brand_assets.py 가
                    docs/brand/aivex_logo.ai 에서 만든다 (콘솔 머리·파비콘·exe·리포트)
 ```
+
+## 모드 (v2.2)
+
+같은 프로그램이 누가·어디서 쓰는지에 따라 다른 기능을 연다. 콘솔 왼쪽 위 전환(휴대폰은 설정의 '모드' 카드)에서 고르고,
+`talog.yaml` 의 `mode` 에 남는다(없으면 field). 실행 인자 `--mode` 는 이번 실행만 덮어쓴다(`access.resolve_mode` — 모르는
+값은 field).
+
+| 모드 | 여는 것 | 경로 |
+|---|---|---|
+| field (현장, 기본) | 보기·리포트 만들기·질문·감시 시작. 설정 칸은 `fieldset[disabled]` | 감싸지 않은 경로 |
+| operator (운영자) | + 설정 저장·시험(LLM·메일 연결·메일·규칙·시험 경보)·감시 정지·경보 재현 | `oper(…)` — 아래면 403 `need: "operator"` |
+| developer (개발자) | + Claude 연동(`/api/claude*`), `.dev-only` 화면 | `dev(…)` — 아래면 403 `need: "developer"` |
+
+- 바꾸기: POST `/api/access/mode` {mode, pin} (`ModeMixin.set_mode`). 위로 올릴 때만 고정 PIN 을 확인한다 — 코드에는
+  `access.PIN_HASH`(PBKDF2-SHA256 20만 번, 소금 16바이트)만 있고 PIN 원문은 저장소에 두지 않는다(테스트는 시험용 PIN
+  해시를 끼워 넣는다). 연속 5번 틀리면 60초 동안 429. 바꾼 모드는 `_write_settings` 로 talog.yaml 에 쓴다(.bak).
+- 설정 저장(`/api/settings`)은 모드를 바꾸지 못한다 — `keep_protected` 가 파일의 mode 를 다시 읽어 그대로 둔다.
+- 상태: `/api/access`·`/api/status`·`/api/settings`(meta) 의 `access` {mode, mode_label, modes}. 화면은 5초마다 받아
+  모드가 바뀌면 다시 그린다(`js/14-access.js` — 사건 상세·리포트 목록의 Claude 버튼, 설정 잠금). 운영자 동작 앞에서는
+  `needMode("operator", …)` 가 PIN 창을 연다. 다른 창에서 모드를 내려 403 `need` 가 오면 상태를 다시 읽는다.
+- 감시는 모드와 상관없이 콘솔과 함께 시작한다(`--no-watch` 로 끔) — 현장 PC 를 개발자 모드로 둔 채 다시 켜도 감시가
+  멈춘 채 남지 않게.
+- 배포: `tools/make_deploy.py` 는 `mode: field` 를 확인하고, `tools/make_dev_kit.py` 는 템플릿의 `mode: field` 를
+  `developer` 로 바꾼다.
 
 ## 설정 두 층 (v2.0)
 
@@ -310,9 +344,9 @@ python -m talog ask <out 폴더|.sqlite> [--backend auto|ollama|claude]
 
 ## 콘솔 디자인 시스템 (v2.1~, talog/web)
 
-기준 문서: `design-system/talog/MASTER.md` (UI/UX Pro Max 의 디자인 시스템 저장 형식 — 근거 행·토큰·부품·금지 점검표).
+기준 문서: `design-system/talog/MASTER.md` (근거 행·토큰·부품·금지 점검표).
 
-- 기준: UI/UX Pro Max 우선순위 규칙(접근성 → 상호작용 → 성능 → 스타일 → 반응형 → 글자·색 → 움직임 → 입력 →
+- 기준: UI/UX 가이드라인 데이터의 우선순위(접근성 → 상호작용 → 성능 → 스타일 → 반응형 → 글자·색 → 움직임 → 입력 →
   탐색 → 차트)과 제품 유형 추천 — 'Status Page / Incident Management'(#166: 실시간 운영 + 데이터 밀집, 상태
   매트릭스·사건 타임라인·심각도 배지·가동 기록, 피할 것: 느린 대시보드·장식 차트·숨은 오류 상태), 'AI/Chatbot
   Platform'(#18: AI 네이티브 + 미니멀, 흐르는 답·입력 중 표시·맥락 인식, 피할 것: 무거운 틀), 차트 추천(목표
@@ -333,15 +367,15 @@ python -m talog ask <out 폴더|.sqlite> [--backend auto|ollama|claude]
 - 토큰: 중립(배경·면·선·글자 4단) + 브랜드 주황(로고·현재 메뉴·초점 링·AI 표시) + 상태(심각·주의·정상·정보,
   각 점/글자/옅은 배경/선). 기본 버튼은 잉크색(#1d1d1d) — 주황 버튼이 빨간 '심각' 배지와 헷갈리지 않게.
   어두운 테마는 같은 이름의 토큰을 따로 정의(시스템 설정을 따르거나 머리 버튼으로 고정, `talog.theme`).
-- 대비: `Result/ui_redesign/contrast_check.py` 로 계산 — 글자 4.5:1, 비텍스트(초점 링·상태 점·입력 테두리) 3:1,
-  두 테마 모두.
+- 대비: `python tools/contrast_check.py` 로 계산(토큰은 `css/00-tokens.css` 에서 직접 읽음) — 글자 4.5:1,
+  비텍스트(초점 링·상태 점·입력 테두리·아이콘) 3:1, 두 테마 모두.
 - 아이콘: Lucide 형식 SVG 한 벌(`<symbol id="i-…">`, 24×24·선 1.8). 이모지·기호 문자 아이콘 없음(테스트로 확인).
 - 상호작용: 주소 해시 라우팅(`#ops`·`#inc/<id>[/replay]`·`#ana`·`#ai`·`#set/<단계>`, 뒤로 가기, 화면 전환 시
   제목으로 초점), 키보드 초점 링·본문 건너뛰기, 표 행 Enter/Space, 버튼 진행 표시(aria-busy), 스켈레톤·빈 상태,
   확인 대화상자(`<dialog>`), 토스트(role=status/alert), prefers-reduced-motion.
-- 반응형: 1024 이상 사이드바 · 768~1023 아이콘 레일 · 768 미만 아래 탭 5개(아이콘 + 이름), 휴대폰은 KPI·단계
-  2열·입력창 한 줄, 터치 기기 44px 대상, 가로 스크롤 없음(375·390·900·1280·1440 에서 확인, 화면은
-  `Result/ui_redesign/v2/screens`).
+- 반응형: 1024 이상 사이드바(왼쪽 위 모드 전환 세 칸) · 768~1023 아이콘 레일(모드 전환 세로) · 768 미만 아래 탭(개발자
+  모드 5개·그 밖 4개, 아이콘 + 이름), 휴대폰은 KPI·단계 2열·입력창 한 줄, 터치 기기 44px 대상, 가로 스크롤 없음(375·390·900·1280·1440 에서
+  확인 — 화면 캡처는 현장 데이터가 보이므로 저장소에 넣지 않는다).
 
 ## 범용성 / 스케일
 

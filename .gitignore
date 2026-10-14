@@ -21,6 +21,8 @@ __pycache__/
 .pytest_cache/
 
 # ── 로컬 설정/환경 ───────────────────────────────────────────
+# Claude Code 로컬 설정(launch.json 등) — 작업 스킬 원본은 talog/claude_kit/skills
+.claude/
 .venv/
 venv/
 .idea/

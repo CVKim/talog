@@ -439,20 +439,6 @@ def test_init_workspace_keeps_user_lessons(site, tmp_path):
     assert r["sources"] == ["시험 설비"]
 
 
-def test_packaged_kit_matches_repo_skill():
-    """저장소의 .claude/skills/talog-* 와 패키지(claude_kit) 사본이 같아야 한다 (exe 로 만든 에이전트 폴더 = 개발판)."""
-    if not os.path.isdir(os.path.join(ROOT, ".claude", "skills", "talog-rca")):
-        pytest.skip("저장소 스킬 사본 없음")
-    for name in M.SKILLS:
-        repo = os.path.join(ROOT, ".claude", "skills", name)
-        kit = os.path.join(ROOT, "talog", "claude_kit", "skills", name)
-        files = sorted(os.path.relpath(os.path.join(r, f), kit) for r, _d, fs in os.walk(kit) for f in fs)
-        assert files and files == sorted(os.path.relpath(os.path.join(r, f), repo) for r, _d, fs in os.walk(repo) for f in fs)
-        for rel in files:
-            with open(os.path.join(repo, rel), encoding="utf-8") as a, open(os.path.join(kit, rel), encoding="utf-8") as b:
-                assert a.read().replace("\r\n", "\n") == b.read().replace("\r\n", "\n"), f"{name}/{rel}"
-
-
 def test_skills_frontmatter_is_safe():
     """스킬마다 이름·설명·인자 힌트가 있고, allowed-tools 에 쓰는 도구(재현·사례 저장)나 셸이 없다 —
     allowed-tools 는 콘솔의 허용 목록을 넘어 도구를 열 수 있으므로 읽기 도구만 둔다."""

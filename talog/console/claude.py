@@ -61,11 +61,11 @@ class ClaudeMixin:
         appdata = os.environ.get("APPDATA", "")
         desk = (os.path.join(appdata, "Claude", "claude_desktop_config.json") if appdata
                 else r"%APPDATA%\Claude\claude_desktop_config.json")
-        skill = os.path.join(REPO, ".claude", "skills", "talog-rca", "SKILL.md")
         incs = self.incidents(days=3650, replay=True, limit=100000)
         crit = [r for r in incs if r.get("severity") == "crit"]
         reps = self.reports()
         ws = self.workspace_default
+        skill = os.path.join(ws, ".claude", "skills", "talog-rca", "SKILL.md")   # 에이전트 폴더에 스킬이 깔렸나
         cli = self.claude_cli()
         ci = self.claude_cli_info(cli)
         return {"command": cmd, "workspace_default": ws, "cli": cli, "cli_version": ci["version"],

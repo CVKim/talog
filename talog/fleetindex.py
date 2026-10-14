@@ -1,6 +1,6 @@
 """통합 인덱스(index.html) 생성 — 여러 설비-일자 리포트를 한 페이지로.
 
-make_index.py(루트 스크립트)의 본체이며, fleet 모드에서도 사용된다.
+`talog fleet <루트>`(여러 설비 일괄 분석)가 끝에 부른다.
 """
 
 from __future__ import annotations
@@ -178,7 +178,7 @@ NG {ng}건 — 행을 클릭하면 해당 리포트가 열립니다.</div>
 <th>재시작</th><th>크래시</th><th>에러</th></tr></thead>
 <tbody>{''.join(body)}</tbody></table>
 <div class="sum" style="margin-top:18px">재생성:
-<code>talog fleet &lt;루트&gt;</code> 또는 <code>python make_index.py &lt;폴더&gt;</code></div>
+<code>talog fleet &lt;루트&gt;</code></div>
 </body></html>"""
 
 
