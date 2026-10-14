@@ -9,6 +9,7 @@ a = Analysis(
            ('talog\\rules\\runbook.yaml', 'talog/rules'),
            ('talog\\web', 'talog/web'),                  # 콘솔 페이지 소스 (console/page.py 가 합친다)
            ('talog\\assets', 'talog/assets'),            # 로고·아이콘 (콘솔 파비콘)
+           ('talog\\report\\assets', 'talog/report/assets'),  # 진단 리포트 스타일·스크립트 (report/document.py)
            ('talog\\claude_kit', 'talog/claude_kit')],   # Claude 에이전트 폴더 원본 (CLAUDE.md·스킬)
     hiddenimports=[],
     hookspath=[],
