@@ -87,6 +87,7 @@ talog/
     app.py         Console = 믹스인(ops·incidents·analysis·claude·checks·modes) + 공유 상태(__init__)
     http.py        GET_ROUTES / POST_ROUTES 표 → Console 메서드, 경로마다 oper(…)·dev(…), 리포트 서빙
     modes.py       모드 바꾸기(위로 올릴 때 PIN, talog.yaml 에 남김), 화면 저장이 모드를 못 바꾸게
+    feedback.py    사건 마무리(확인·해결·오경보)·해결 기록 → 설비 사례 KB·규칙 피드백 통계 (아래 '사건 마무리·학습')
     page.py        talog/web 소스 → 페이지 HTML 하나 (소스가 바뀌면 다시 합침)
     claude.py      Claude Code 실행(바로 묻기·스킬 카드·연결 시험), 구독 전용 환경, 답 수치 대조
     jobs.py        진단 리포트·경보 재현을 `talog _job` 하위 프로세스(낮은 우선순위)로
@@ -105,6 +106,22 @@ talog/
   assets/          AIVEX 워드마크·아이콘(svg·ico·png) — tools/brand_assets.py 가
                    docs/brand/aivex_logo.ai 에서 만든다 (콘솔 머리·파비콘·exe·리포트)
 ```
+
+## 사건 마무리·학습 (v2.3)
+
+```
+사건 상세 '사건 상태' ─POST /api/incident/state─▶ data_dir/incident_notes.jsonl   (한 줄 = 한 번의 표시, 마지막 줄이 지금 상태)
+   해결 기록 + 사례로 저장 ──▶ data_dir/kb/cases.jsonl (id talog-<사건 id>, 같은 사건은 한 번만)
+에이전트 IncidentAgent._similar ─casekb.search_all─▶ 기본 사례 KB + data_dir/kb  →  incident.similar → 판단 탭·메일
+MCP search_cases ─▶ 기본 사례 KB + 출처마다 data_dir/kb
+GET /api/rules/stats ─▶ 규칙별 {alerts, false} — 실시간(최근 7일)·재현 따로, false = 오경보 사건에 묶인 경보 수
+```
+
+- 상태: open(새 사건) · ack(확인 중) · resolved(해결) · false_alarm(오경보). 모드와 상관없이 표시한다(현장 일상 일).
+  `/api/incidents` 행과 `/api/incident` 상세에 `state`·`notes` 가 붙는다(`FeedbackMixin.incident_detail`).
+- 사례 KB 는 exe 로 돌 때도 남도록 data_dir 아래에 둔다(기본 KB 폴더는 패키지 옆이라 exe 에서는 임시 폴더).
+- 화면: 운영 현황 '에이전트 브리핑'(`js/21-brief.js` — 상태·기록으로 만든 문장, LLM 없음), 사건 '처리 과정' 탭·비슷한 과거
+  사례·사람의 기록·해결 기록 대화상자(`js/31-incident-agent.js`), 설정 규칙 피드백(`js/70-settings.js ruleFeedback`).
 
 ## 모드 (v2.2)
 

@@ -4,9 +4,9 @@ function show(v) { if (v === "ai" && !isDev()) v = "ops";            // 현장 �
   $$("#nav a").forEach(a => { if (a.dataset.v === v) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   $$("section.view").forEach(s => s.classList.toggle("active", s.id === "v-" + v));
   $("#pageTitle").textContent = VIEWS[v][0]; $("#pageSub").textContent = VIEWS[v][1];
-  document.title = `${VIEWS[v][0]} · talog`;
+  setTitle();
   if (v === "ops") loadTimeline(); if (v === "inc") loadInc(); if (v === "ana") { loadReports(); loadDays(); pollJob(); }
-  if (v === "set") { renderGpuFree(); if (!S.folder) loadFolder(); } if (v === "ai") loadClaude();
+  if (v === "set") { renderGpuFree(); if (!S.folder) loadFolder(); loadRuleStats(); } if (v === "ai") loadClaude();
   updateSaveBar(); }
 function go(v, opt = {}) { const same = S.view === v; if (!same || opt.force) show(v);
   if (opt.push !== false) { const h = "#" + v + (opt.sub ? "/" + opt.sub : ""); if (location.hash !== h) history[same ? "replaceState" : "pushState"](null, "", h); }

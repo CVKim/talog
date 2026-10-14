@@ -6,14 +6,15 @@ function renderIncList() {
   const rows = S.incRows || [], q = S.incQ.toLowerCase();
   const cnt = {"": rows.length, crit: 0, warn: 0, info: 0}; rows.forEach(r => { if (cnt[r.severity] != null) cnt[r.severity]++; });
   $$("#incSev button").forEach(b => { $("b", b).textContent = cnt[b.dataset.sev] ?? 0; b.setAttribute("aria-pressed", b.dataset.sev === S.incSev); });
-  const vis = rows.filter(r => (!S.incSev || r.severity === S.incSev) && (!q || `${r.title} ${r.cause} ${r.id}`.toLowerCase().includes(q)));
+  const vis = rows.filter(r => (!S.incSev || r.severity === S.incSev) && (!S.incOpen || OPEN(r)) && (!q || `${r.title} ${r.cause} ${r.id}`.toLowerCase().includes(q)));
   $("#incCount").textContent = `${vis.length}건`;
-  if (!vis.length) { $("#incRows").innerHTML = emptyBox(rows.length ? "맞는 사건이 없습니다" : "기록 없음", rows.length ? "찾는 말이나 심각도 거르기를 바꿔 보십시오." : "기간을 넓히거나 '재현 포함'을 켜 보십시오.", "search"); return; }
+  if (!vis.length) { $("#incRows").innerHTML = emptyBox(rows.length ? "맞는 사건이 없습니다" : "기록 없음", rows.length ? "찾는 말·심각도·'마무리 안 된 것만'을 바꿔 보십시오." : "기간을 넓히거나 '재현 포함'을 켜 보십시오.", "search"); return; }
   const groups = []; vis.forEach(r => { const k = r.day + (r.replay ? "r" : ""); let g = groups.find(x => x.k === k); if (!g) groups.push(g = {k, day: r.day, rep: r.replay, items: []}); g.items.push(r); });
   $("#incRows").innerHTML = groups.map(g => `<div class="day-h">${esc(dayLabel(g.day))}${g.rep ? '<span class="tag">재현</span>' : ""}<span class="spacer"></span>${g.items.length}건</div>`
-    + g.items.map(x => `<button type="button" class="li-item" data-id="${esc(x.id)}" data-rp="${x.replay ? 1 : 0}" ${S.inc && S.inc.id === x.id ? 'aria-current="true"' : ""}><div class="li">${sevTag(x.severity)}<b>${esc(x.title)}${x.n_alerts > 1 ? ` <span class="meta">+${x.n_alerts - 1}</span>` : ""}</b><span class="when">${esc(x.time)}</span><div class="li-sub">${esc(x.cause || "-")}</div><div class="li-meta">${gateTag(x.gate, x.mode)}<span>메일 ${esc(x.mail)}</span></div></div></button>`).join("")).join("");
+    + g.items.map(x => `<button type="button" class="li-item" data-id="${esc(x.id)}" data-rp="${x.replay ? 1 : 0}" ${S.inc && S.inc.id === x.id ? 'aria-current="true"' : ""}><div class="li">${sevTag(x.severity)}<b>${esc(x.title)}${x.n_alerts > 1 ? ` <span class="meta">+${x.n_alerts - 1}</span>` : ""}</b><span class="when">${esc(x.time)}</span><div class="li-sub">${esc(x.cause || "-")}</div><div class="li-meta">${stateTag(x.state)}${gateTag(x.gate, x.mode)}<span>메일 ${esc(x.mail)}</span></div></div></button>`).join("")).join("");
   $$("#incRows .li-item").forEach(b => b.onclick = () => openInc(b.dataset.id, b.dataset.rp === "1")); }
 $("#incDays").onchange = loadInc; $("#incReplay").onchange = loadInc;
+$("#incOpen").onchange = ev => { S.incOpen = ev.target.checked; renderIncList(); };
 $("#btnIncRefresh").onclick = () => busy($("#btnIncRefresh"), loadInc);
 $("#incSearch").oninput = ev => { S.incQ = ev.target.value.trim(); renderIncList(); };
 $$("#incSev button").forEach(b => b.onclick = () => { S.incSev = b.dataset.sev; renderIncList(); });
@@ -52,10 +53,12 @@ async function openInc(id, rp) {
   $("#incDetail").className = "card dcard " + esc(v.severity || "");
   $("#incDetail").innerHTML = `<div class="dhead"><h2>${esc(title)}</h2><div class="dact">${isDev() ? `<button class="btn sm primary" type="button" id="btnIncClaude">${ic("sparkles")}Claude 로 분석</button>${d.day_dir ? `<button class="btn sm" type="button" id="btnIncLog" title="${esc(d.day_dir)}">${ic("file-search")}원본 로그로 확인</button>` : ""}` : ""}</div></div>
     <div class="dmeta">${sevTag(v.severity)}<span>${esc(d.site || "")}</span><span class="num">${esc(d.opened)} – ${esc(d.closed || "")}</span><span>${esc(d.family_title || d.family)}</span><span class="mono">${esc(d.id)}</span>${rp ? '<span class="tag">재현</span>' : ""}</div>
-    <div class="tabs" role="tablist" aria-label="사건 내용">${[["sum", "판단"], ["ev", "근거"], ["al", `경보 <span class="tag">${d.alerts.length}</span>`], ["mail", "메일"], ["qa", "질문"]].map(([k, l], i) => `<button type="button" role="tab" id="tab-${k}" aria-controls="pn-${k}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-tab="${k}">${l}</button>`).join("")}</div>
+    ${stateBar(d)}
+    <div class="tabs" role="tablist" aria-label="사건 내용">${[["sum", "판단"], ["trace", "처리 과정"], ["ev", "근거"], ["al", `경보 <span class="tag">${d.alerts.length}</span>`], ["mail", "메일"], ["qa", "질문"]].map(([k, l], i) => `<button type="button" role="tab" id="tab-${k}" aria-controls="pn-${k}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-tab="${k}">${l}</button>`).join("")}</div>
     <div role="tabpanel" id="pn-sum" aria-labelledby="tab-sum">${incSummary(d, title)}<div class="verdict ${gc}"><div class="vrow"><span class="gate ${gc}">${ic(gc === "agree" ? "check-circle" : gc === "warn" ? "alert" : "info", "sm")}${esc(v.label || "")}</span><b>${esc(v.cause_name || "")}</b>${v.llm_cause_name && v.llm_cause !== v.cause ? `<span class="meta">/ LLM: ${esc(v.llm_cause_name)}</span>` : ""}</div><p>${esc(v.message || "")}</p></div>
       <div class="grid g2 dgrid"><section><h3>${ic("wrench")}권고 조치</h3><ol class="acts">${acts || "<li>-</li>"}</ol><div class="sub" style="margin-top:8px">${ic("user", "sm")} 담당: ${esc(roles || "-")}</div></section>
-        <section><h3>${ic("list")}핵심 사실</h3><ul class="facts">${(ev.key_facts || []).slice(0, 8).map(f => `<li>${esc(f)}</li>`).join("") || "<li>-</li>"}</ul></section></div></div>
+        <section><h3>${ic("list")}핵심 사실</h3><ul class="facts">${(ev.key_facts || []).slice(0, 8).map(f => `<li>${esc(f)}</li>`).join("") || "<li>-</li>"}</ul></section></div>${incSimilar(d)}${incNotes(d)}${traceLine(d)}</div>
+    <div role="tabpanel" id="pn-trace" aria-labelledby="tab-trace" hidden>${incTrace(d)}</div>
     <div role="tabpanel" id="pn-ev" aria-labelledby="tab-ev" hidden><div class="grid g2 dgrid"><section><h3>${ic("check")}룰 진단 근거</h3><ul class="facts small">${(rule.facts || []).map(f => `<li>${esc(f)}</li>`).join("") || "<li>-</li>"}</ul></section>
       <section><h3>${ic("cpu")}LLM 2차 의견 ${llm.ok ? `<span class="meta">${esc(llm.model)} · ${esc(llm.device)} · ${llm.wall_s}초</span>` : ""}</h3>
       ${llm.ok ? `<div><b>${esc(llm.root_cause || "")}</b></div><ul class="facts small">${(llm.evidence || []).map(x => `<li>${esc(x)}</li>`).join("")}</ul>${(llm.fact && !llm.fact.ok) ? `<div class="note warn">${ic("alert")}<span>근거에 없는 수치 ${esc(llm.fact.unsupported.join(", "))} — 메일에는 룰 문구를 썼습니다</span></div>` : ""}<details class="disclosure"><summary>LLM 분석 서술</summary><div class="small" style="white-space:pre-wrap;line-height:1.6">${esc(llm.analysis || "")}</div></details>` : (d.llm ? `<div class="note crit">${ic("x-circle")}<span>응답 실패: ${esc(llm.error)}</span></div>` : '<div class="meta">LLM 미사용 (룰 진단만)</div>')}</section></div></div>
@@ -68,6 +71,9 @@ async function openInc(id, rp) {
   const tabs = $$("#incDetail [role=tab]");
   const sel = t => { tabs.forEach(b => { const on = b === t; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; $("#" + b.getAttribute("aria-controls")).hidden = !on; }); };
   tabs.forEach((t, i) => { t.onclick = () => sel(t); t.onkeydown = e => { const k = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0; if (k) { e.preventDefault(); const n = tabs[(i + k + tabs.length) % tabs.length]; sel(n); n.focus(); } }; });
+  $$("#incDetail [data-st]").forEach(b => b.onclick = () => stateClick(b.dataset.st));
+  $$("#incDetail [data-gotab]").forEach(b => b.onclick = () => { const t = $("#tab-" + b.dataset.gotab); if (t) { t.click(); t.focus(); } });
+  hydrateTerms($("#incDetail"));
   if (fu) $("#mFu").onclick = () => { $("#mFrame").src = `/api/mail?id=${encodeURIComponent(id)}&replay=${rp ? 1 : 0}&which=followup`; };
   if (isDev()) $("#btnIncClaude").onclick = () => busy($("#btnIncClaude"), () => runSkill("rca", {incident: id}));     // 사건 RCA 스킬 (읽기만)
   if (isDev() && d.day_dir) $("#btnIncLog").onclick = () => busy($("#btnIncLog"), () => runSkill("logs", {day: d.day_dir, time: ((String(d.opened || "").match(/\d{1,2}:\d{2}(:\d{2})?/) || [""])[0]), symptom: `${title} (talog 사건 ${id})`}));

@@ -3,6 +3,7 @@
   ops.py        감시 수명·설정 저장·운영 현황·수집 폴더        incidents.py  사건·시간별 기록·메일 미리보기
   analysis.py   리포트·재현 작업·리포트 화면                  claude.py     Claude 연동(바로 묻기·스킬 카드)
   checks.py     설정 화면의 시험                               modes.py      모드(현장·운영자·개발자) 바꾸기
+  feedback.py   사건 마무리(확인·해결·오경보)·해결 기록 → 사례 KB·규칙 피드백 통계
   http.py       HTTP 경로 → 이 메서드들 (경로마다 필요한 모드를 oper(…)·dev(…) 로 적는다)
 
 믹스인끼리 주고받는 상태는 모두 여기 __init__ 에 있다 — 새 상태를 더하면 여기에 적는다.
@@ -20,12 +21,13 @@ from .. import access, settings
 from .analysis import AnalysisMixin
 from .checks import ChecksMixin
 from .claude import ClaudeMixin
+from .feedback import FeedbackMixin
 from .incidents import IncidentsMixin
 from .modes import ModeMixin
 from .ops import OpsMixin
 
 
-class Console(OpsMixin, IncidentsMixin, AnalysisMixin, ClaudeMixin, ChecksMixin, ModeMixin):
+class Console(OpsMixin, IncidentsMixin, AnalysisMixin, ClaudeMixin, ChecksMixin, ModeMixin, FeedbackMixin):
     """talog.yaml 하나의 콘솔. 감시(LiveWatch)는 작업 스레드, 분석 작업·Claude 는 하위 프로세스로 돈다.
 
     mode 를 주면 talog.yaml 의 mode 대신 쓴다 (`talog --mode developer` — 이번 실행만, 파일에는 쓰지 않는다)."""

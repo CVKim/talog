@@ -6,7 +6,7 @@
         <div class="search"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><input type="search" id="incSearch" placeholder="제목·원인·사건 id 찾기" aria-label="사건 찾기"></div>
         <div class="chipset" id="incSev" role="group" aria-label="심각도 거르기"><button type="button" data-sev="" aria-pressed="true">전체<b>0</b></button><button type="button" data-sev="crit" aria-pressed="false">심각<b>0</b></button><button type="button" data-sev="warn" aria-pressed="false">주의<b>0</b></button><button type="button" data-sev="info" aria-pressed="false">정보<b>0</b></button></div>
         <div class="row"><label class="vh" for="incDays">기간</label><select id="incDays" style="height:32px"><option value="1">오늘</option><option value="3" selected>최근 3일</option><option value="7">최근 7일</option><option value="30">최근 30일</option></select>
-          <label class="switch"><input type="checkbox" id="incReplay" checked><span>재현 포함</span></label><span class="spacer"></span><span class="meta" id="incCount"></span>
+          <label class="switch"><input type="checkbox" id="incReplay" checked><span>재현 포함</span></label><label class="switch"><input type="checkbox" id="incOpen"><span>마무리 안 된 것만</span></label><span class="spacer"></span><span class="meta" id="incCount"></span>
           <button class="btn sm icon ghost" id="btnIncRefresh" type="button" aria-label="사건 목록 새로 고침" title="새로 고침"><svg class="ic" aria-hidden="true"><use href="#i-refresh"/></svg></button></div>
       </div>
       <div class="inc-list" id="incRows" aria-label="사건 목록"></div>

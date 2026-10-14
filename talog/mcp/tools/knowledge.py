@@ -53,14 +53,16 @@ def runbook(srv: TalogMCP, a: dict) -> str:
        "inputSchema": schema({"query": {"type": "string"}, "k": {"type": "integer", "minimum": 1, "maximum": 10}}, ["query"]),
        "annotations": READ_ONLY})
 def search_cases(srv: TalogMCP, a: dict) -> str:
-    from ...casekb import CaseKB
+    from ...casekb import CaseKB, search_all, site_kb_dir
     kb = CaseKB(srv.kb_dir)
     k = max(1, min(10, int(a.get("k") or 5)))
-    hits = kb.search(str(a.get("query") or ""), k)
+    # 기본 사례 KB + 출처마다 현장 사람이 콘솔에서 남긴 해결 기록(data_dir/kb)
+    dirs = [kb.dir] + [site_kb_dir(s.data_dir) for s in srv.sources if s.data_dir]
+    hits = search_all(str(a.get("query") or ""), k, dirs)
     if not hits:
-        return f"비슷한 사례 없음 (사례 KB {len(kb.cases)}건)"
+        return f"비슷한 사례 없음 (사례 KB {len(kb.cases)}건 + 현장 해결 기록)"
     rows = [[round(sc, 2), c.id, c.site, c.date, c.title, c.cause, c.action] for sc, c in hits]
-    return srv.mask.text(f"# 비슷한 사례 {len(rows)}건 (사례 KB {len(kb.cases)}건)\n" +
+    return srv.mask.text(f"# 비슷한 사례 {len(rows)}건 (사례 KB {len(kb.cases)}건 + 현장 해결 기록)\n" +
                           table(["점수", "id", "현장", "날짜", "제목", "원인", "조치"], rows, 90))
 
 

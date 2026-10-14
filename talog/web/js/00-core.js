@@ -10,6 +10,9 @@ const VIEWS = {ops: ["운영 현황", "수집 → 탐지 → 판단 → 알림�
   ana: ["분석", "로그 폴더 진단 리포트 · 경보 재현 · 리포트에 질문"], ai: ["Claude", "구독 Claude 가 talog 데이터와 원본 로그를 직접 읽고 답합니다"], set: ["설정", "talog.yaml — 수집 · 탐지 · 판단 · 알림"]};
 const S = {set: null, orig: "", meta: null, st: null, folder: null, secret: "", clearSecret: false, view: "ops", inc: null, rep: null, tests: [], incSev: "", incQ: "", openK: {}};
 const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** 브라우저 탭 제목 — 마무리 안 된 오늘 심각 사건이 있으면 앞에 (건수) — 다른 창을 보고 있어도 알 수 있게 */
+function setTitle() { const n = ((S.st && S.st.incidents) || []).filter(r => r.severity === "crit" && !["resolved", "false_alarm"].includes(r.state || "open")).length;
+  document.title = `${n ? `(${n}) ` : ""}${VIEWS[S.view][0]} · talog`; }
 const WD = ["일", "월", "화", "수", "목", "금", "토"];
 const dayLabel = d => { if (!d || d.length < 8) return d || ""; const dt = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8)); return `${+d.slice(4, 6)}월 ${+d.slice(6, 8)}일 (${WD[dt.getDay()]})`; };
 const mmdd = d => d && d.length >= 8 ? `${d.slice(4, 6)}/${d.slice(6, 8)}` : (d || "");

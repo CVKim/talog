@@ -71,9 +71,17 @@ function condOf(b, v) {
   if (b.kind === "streak") return `${numIn(b.name, "count", v.count, "w-s", "", "연속 건수")}건 연속 NG`;
   if (b.kind === "rate") return `최근 ${numIn(b.name, "count", v.count, "w-s", "", "검사 수")}검사 중 ${numIn(b.name, "percent", v.percent, "w-s", "", "퍼센트")}% 이상 NG`;
   return ""; }
+/* 규칙 피드백 — 최근 경보 수와 오경보로 표시된 사건의 경보 수 (console/feedback.py rule_stats). 오경보가 절반을 넘으면
+   조건 조정을 권한다 — 규칙을 저절로 바꾸지는 않는다(감지 규칙은 사람이 재현으로 확인하고 바꾼다). */
+async function loadRuleStats() { try { S.rstat = await api("/api/rules/stats?days=7"); } catch (e) { return; } if (S.meta && S.set) renderBuiltin(); }
+function ruleFeedback(name) { const R = S.rstat; if (!R) return "";
+  const line = (x, lab) => { const many = x.false >= 2 && x.false / Math.max(1, x.alerts) >= 0.5;
+    return `<div class="rfb${many ? " warn" : ""}">${ic(many ? "lightbulb" : "activity", "sm")}<span>${lab} 경보 ${x.alerts}건${x.false ? ` · 오경보 ${x.false}건` : ""}`
+      + `${many ? " — 오경보가 많습니다. 조건(횟수·문턱)을 높이거나 등급을 낮춰 보십시오" : ""}</span></div>`; };
+  return (R.live[name] ? line(R.live[name], `최근 ${R.days}일`) : "") + (R.replay[name] ? line(R.replay[name], "재현") : ""); }
 function renderBuiltin() {
   $("#biRows").innerHTML = S.meta.builtin.map(b => { const v = biVal(b);
-    return `<tr><td><label class="switch"><input type="checkbox" data-bi="${b.name}" data-k="enabled" aria-label="${esc(b.label)} 사용" ${v.enabled !== false ? "checked" : ""}></label></td><td><b>${esc(b.label)}</b><div class="mono sub">${esc(b.name)}</div></td>
+    return `<tr><td><label class="switch"><input type="checkbox" data-bi="${b.name}" data-k="enabled" aria-label="${esc(b.label)} 사용" ${v.enabled !== false ? "checked" : ""}></label></td><td><b>${esc(b.label)}</b><div class="mono sub">${esc(b.name)}</div>${ruleFeedback(b.name)}</td>
       <td><select data-bi="${b.name}" data-k="severity" aria-label="${esc(b.label)} 등급">${["crit", "warn", "info"].map(s => `<option value="${s}" ${v.severity === s ? "selected" : ""}>${SEVK[s]}</option>`).join("")}</select></td><td class="small">${condOf(b, v)}</td></tr>`; }).join("");
   $$("#biRows [data-bi]").forEach(el => el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", () => {
     const k = el.dataset.k; biSet(el.dataset.bi, k, el.type === "checkbox" ? el.checked : el.tagName === "SELECT" ? el.value : Number(el.value || 0)); })); }

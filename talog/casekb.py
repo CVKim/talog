@@ -169,6 +169,26 @@ class CaseKB:
         return scored[:k]
 
 
+def site_kb_dir(data_dir: str) -> str:
+    """설비 하나의 사례 KB — 콘솔의 '해결 기록'이 쌓이는 곳 (data_dir 아래라 exe 로 돌아도 남는다)."""
+    return os.path.join(data_dir, "kb")
+
+
+def search_all(query: str, k: int, dirs: list[str]) -> list[tuple[float, Case]]:
+    """여러 사례 KB(기본 KB·설비 KB)에서 함께 찾는다 — 같은 폴더·같은 사례는 한 번만, 점수 높은 순으로 k 건."""
+    out, seen = [], set()
+    for d in dict.fromkeys(os.path.abspath(p) for p in dirs if p):
+        kb = CaseKB(d)
+        if not kb.cases:
+            continue
+        for s, c in kb.search(query, k):
+            if (c.id, c.title) not in seen:
+                seen.add((c.id, c.title))
+                out.append((s, c))
+    out.sort(key=lambda x: -x[0])
+    return out[:k]
+
+
 # ── CLI (talog kb ...) ───────────────────────────────────────
 def main(argv=None) -> int:
     import argparse

@@ -52,6 +52,10 @@ class IncidentsMixin:
                     "mode": v.get("label"), "gate": v.get("mode"),
                     "mail": ("발송" if em.get("sent") else "보관" if em.get("eml") else
                              ("실패" if em.get("error") else "-"))})
+        notes = self.incident_notes()                 # 사람이 남긴 상태 (feedback.py)
+        for r in rows:
+            n = notes.get((r["id"], r["replay"]))
+            r["state"] = n[-1].get("state", "open") if n else "open"
         rows.sort(key=lambda r: (r["day"], r["time"] or ""), reverse=True)
         return rows[:limit]
 

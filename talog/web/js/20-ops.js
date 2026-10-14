@@ -6,7 +6,7 @@ async function loadStatus() {
   $("#runText").textContent = st.running ? "감시 중" : "정지"; $("#runPill").className = "live " + (st.running ? "on" : "");
   const rb = $("#btnRun"); if (rb.getAttribute("aria-busy") !== "true") { rb.className = "btn " + (st.running ? "" : "primary");
     rb.innerHTML = `${ic(st.running ? "square" : "play")}<span class="lbl">${st.running ? "감시 정지" : "감시 시작"}</span>`; rb.setAttribute("aria-label", st.running ? "감시 정지" : "감시 시작"); }
-  renderHero(st); renderKpis(st); renderFlow(st); renderOpsLists(st); renderCapacity(); renderGpu(st);
+  renderHero(st); renderBrief(st); renderKpis(st); renderFlow(st); renderOpsLists(st); renderCapacity(); renderGpu(st); setTitle();
   const n = st.incidents.filter(r => r.severity === "crit").length; $("#incCnt").textContent = n; $("#incCnt").classList.toggle("hidden", !n); $("#incCnt").setAttribute("aria-label", `오늘 심각 사건 ${n}건`);
   if (st.detect.pattern_errors && st.detect.pattern_errors.length && !S.patWarned) { S.patWarned = true; toast("규칙 설정 오류: " + st.detect.pattern_errors.join(" / "), "err"); }
   if (S.view === "set") renderGpuFree();
@@ -26,7 +26,7 @@ function liveCapacity(st) {
 /** '지금 할 일' — 상태에서 사람이 할 일을 급한 순서로 (ux #80: 오류·상태에는 다음 단계를) */
 function nextActions(st) {
   const out = [];
-  const crit = st.incidents.filter(r => r.severity === "crit");
+  const crit = st.incidents.filter(r => r.severity === "crit" && OPEN(r));      // 사람이 마무리한 사건은 빼고
   if (!st.running) out.push({cls: "warn", icon: "play", text: "<b>감시가 멈춰 있습니다.</b> 멈춘 동안에는 경보·사건·메일이 나오지 않습니다.", btn: ["감시 시작", "start"]});
   if (crit.length) out.push({cls: "crit", icon: "siren", text: `<b>심각 사건 ${crit.length}건</b> — 원인과 권고 조치를 확인하십시오. 가장 최근: ${esc(crit[0].time)} ${esc(crit[0].title)}`, btn: ["사건 열기", "inc:" + crit[0].id]});
   const low = liveCapacity(st).filter(r => r.pct < 20).sort((a, b) => a.pct - b.pct);
@@ -46,14 +46,15 @@ function runNext(act) {
   else if (act.startsWith("inc:")) { go("inc", {focus: false}); openInc(act.slice(4), false); }
 }
 function renderHero(st) {
-  const D = st.detect, crit = st.incidents.filter(r => r.severity === "crit"), warnN = D.warn;
+  const D = st.detect, crit = st.incidents.filter(r => r.severity === "crit" && OPEN(r)), warnN = D.warn;
+  const critDone = st.incidents.filter(r => r.severity === "crit").length - crit.length;   // 해결·오경보로 마무리한 심각 사건
   const up = st.uptime_s ? (st.uptime_s >= 3600 ? (st.uptime_s / 3600).toFixed(1) + "시간" : Math.round(st.uptime_s / 60) + "분") : "-";
   let cls, icon, title, sub;
   if (!st.running) { cls = "idle"; icon = "square"; title = "감시가 멈춰 있습니다"; sub = "멈춘 동안에는 새 경보·사건·메일이 나오지 않습니다."; }
-  else if (crit.length || D.crit) { cls = "crit"; icon = "alert"; title = `심각 ${crit.length || D.crit}건 — 확인이 필요합니다`; sub = crit[0] ? `${crit[0].time} ${crit[0].title} · ${crit[0].cause || ""}` : (D.last ? D.last.title : ""); }
+  else if (crit.length || (D.crit && !critDone)) { cls = "crit"; icon = "alert"; title = `심각 ${crit.length || D.crit}건 — 확인이 필요합니다`; sub = crit[0] ? `${crit[0].time} ${crit[0].title} · ${crit[0].cause || ""}` : (D.last ? D.last.title : ""); }
   else if (!st.collect.exists) { cls = "warn"; icon = "folder-open"; title = "오늘 로그 폴더가 아직 없습니다"; sub = "로그 루트 아래에 오늘 날짜 폴더가 생기면 자동으로 읽기 시작합니다."; }
   else if (warnN) { cls = "warn"; icon = "alert"; title = `주의 ${warnN}건`; sub = D.last ? `마지막: ${D.last.title}` : ""; }
-  else { cls = "ok"; icon = "check-circle"; title = "정상 감시 중"; sub = "오늘 경보·사건이 없습니다."; }
+  else { cls = "ok"; icon = "check-circle"; title = "정상 감시 중"; sub = critDone ? `오늘 심각 사건 ${critDone}건은 모두 마무리됐습니다.` : "오늘 경보·사건이 없습니다."; }
   const acts = nextActions(st);
   const list = acts.length
     ? acts.map((a, i) => `<li class="${a.cls}">${ic(a.icon)}<span class="nt">${a.text}</span><button class="btn sm${i === 0 && a.cls === "crit" ? " primary" : ""}" type="button" data-next="${esc(a.btn[1])}">${esc(a.btn[0])}${ic("chevron-right", "sm")}</button></li>`).join("")
@@ -167,7 +168,7 @@ function capSummary(rows) {
     html: parts.length ? `${xs.length}개 그룹 중 ${parts.join(" · ")}. 막대가 오른쪽 끝(한계)에 닿으면 그 그룹에 검사 시작 거부가 납니다.`
       : `${xs.length}개 그룹 모두 여유가 있습니다 — 느린 검사도 한계의 60% 안에서 끝납니다.`};
 }
-async function loadTimeline() { try { S.tl = await api("/api/timeline?days=7"); } catch (e) { return; } renderStrip(S.tl); if (S.st) renderKpis(S.st); }
+async function loadTimeline() { try { S.tl = await api("/api/timeline?days=7"); } catch (e) { return; } renderStrip(S.tl); if (S.st) renderKpis(S.st); loadBrief(); }
 function renderStrip(T) {
   const rows = T.days || [];
   $("#opsStrip").innerHTML = rows.map(r => {

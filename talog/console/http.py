@@ -51,7 +51,7 @@ dev = _needs("developer", NEED_DEV)      # 개발자 모드: Claude 연동
 
 # ── GET ─────────────────────────────────────────────────────────────
 def _incident(con: Console, q: dict):
-    d = con.incident(q.get("id", ""), q.get("replay") == "1")
+    d = con.incident_detail(q.get("id", ""), q.get("replay") == "1")
     return (200, d) if d else (404, {"error": "없음"})
 
 
@@ -85,6 +85,7 @@ GET_ROUTES: dict[str, Route] = {
     "/api/mail": lambda con, q: (200, con.mail_html(q.get("id", ""), q.get("replay") == "1",
                                                     q.get("which", "initial")), HTML),
     "/api/timeline": lambda con, q: con.timeline(int(q.get("days", 7))),
+    "/api/rules/stats": lambda con, q: con.rule_stats(int(q.get("days", 7))),
     # 분석
     "/api/reports": lambda con, q: {"rows": con.reports()},
     "/api/job": _job,
@@ -141,6 +142,9 @@ POST_ROUTES: dict[str, Route] = {
     "/api/test/alert": oper(lambda con, b: con.inject(b.get("kind", ""))),
     # 사건·분석
     "/api/job": _job_post,
+    "/api/incident/state": lambda con, b: con.set_incident_state(
+        str(b.get("id") or ""), bool(b.get("replay")), str(b.get("state") or ""), str(b.get("cause") or ""),
+        str(b.get("action") or ""), str(b.get("note") or ""), b.get("save_case") is True),
     "/api/ask/incident": lambda con, b: con.ask_incident(b.get("id", ""), bool(b.get("replay")), b.get("q", "")),
     "/api/ask/report": lambda con, b: con.ask_report(b.get("tag", ""), b.get("q", "")),
     # Claude (개발자 모드)

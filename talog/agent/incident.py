@@ -245,15 +245,13 @@ class IncidentAgent:
         if not self.acfg.get("casekb", True):
             return []
         try:
-            from ..casekb import CaseKB
-            kb = CaseKB()
-            if not kb.cases:
-                return []
+            from ..casekb import default_kb_dir, search_all, site_kb_dir
             q = alerts[0].title + " " + rule.get("name", "") + " " + " ".join(
                 rule.get("facts", [])[:2])
+            # 기본 사례 KB + 이 설비에서 사람이 남긴 해결 기록(콘솔 '해결 기록' → data_dir/kb)
             return [{"score": round(s, 2), "title": c.title, "cause": c.cause,
                      "action": c.action, "site": c.site, "date": c.date}
-                    for s, c in kb.search(q, 2)]
+                    for s, c in search_all(q, 2, [default_kb_dir(), site_kb_dir(self.alert_dir)])]
         except Exception:
             return []
 

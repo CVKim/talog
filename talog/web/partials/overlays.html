@@ -6,6 +6,12 @@
   <div class="pinf"><div class="field"><label for="pinIn">PIN</label><input type="password" id="pinIn" autocomplete="off" spellcheck="false"></div>
     <p class="pin-err" id="pinErr" role="alert"></p></div>
   <div class="dlg-act"><button class="btn" type="button" id="pinNo">취소</button><button class="btn primary" value="ok" id="pinOk"><svg class="ic" aria-hidden="true"><use href="#i-lock-open"/></svg><span>바꾸기</span></button></div></form></dialog>
+<dialog id="resDlg" aria-labelledby="resT" aria-describedby="resD"><form method="dialog" class="dlg" id="resForm"><div class="dlg-h"><svg class="ic" aria-hidden="true"><use href="#i-check-circle"/></svg><div><h2 id="resT">해결 기록</h2><p id="resD"></p></div></div>
+  <div class="resf"><div class="field" id="resCauseBox"><label for="resCause">실제 원인</label><input type="text" id="resCause" maxlength="300"></div>
+    <div class="field" id="resActBox"><label for="resAct">한 조치</label><textarea id="resAct" rows="2" maxlength="500"></textarea></div>
+    <div class="field"><label for="resNote">메모 <span class="opt">(선택)</span></label><textarea id="resNote" rows="2" maxlength="500"></textarea></div>
+    <label class="switch" id="resCaseBox"><input type="checkbox" id="resCase" checked><span>사례로 저장 — 다음에 비슷한 사건이 나면 talog 가 함께 보여 줍니다</span></label></div>
+  <div class="dlg-act"><button class="btn" type="button" id="resNo">취소</button><button class="btn primary" value="ok" id="resOk"><svg class="ic" aria-hidden="true"><use href="#i-save"/></svg><span>저장</span></button></div></form></dialog>
 <dialog id="skDlg" aria-labelledby="skT" aria-describedby="skD"><form method="dialog" class="dlg" id="skForm"><div class="dlg-h sk-h"><span class="ai-ic" id="skIc"></span><div><h2 id="skT"></h2><p id="skD"></p></div></div>
   <div class="skf" id="skFields"></div>
   <p class="sk-run" id="skRun"></p>

@@ -5,7 +5,7 @@ talos vision software. It reads the logs in real time, detects abnormal behaviou
 cause, and alerts the right people. The same console builds diagnostic reports for any log folder. On a
 developer PC it also lets Claude investigate incidents and raw logs through your existing Claude subscription.
 
-![version](https://img.shields.io/badge/version-2.2.0-orange)
+![version](https://img.shields.io/badge/version-2.3.0-orange)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 
@@ -19,6 +19,10 @@ developer PC it also lets Claude investigate incidents and raw logs through your
 
 ## Why it works this way
 
+- **An agent you can watch and teach (v2.3).** The Operations screen opens with an agent briefing (what happened
+  since you last looked, today's work, the tightest capacity group); every incident shows the agent's step-by-step
+  trace; people close incidents as resolved or false alarm, and resolutions become cases the agent attaches to the
+  next similar incident. Rule feedback counts false alarms per rule. All text is built from recorded data.
 - **Rules decide; the LLM only cross-checks.** A local Qwen model (Ollama) gives a second opinion, and an
   incident is reported as *agreed* only when both name the same cause. Numbers and times in any LLM text are
   checked against the evidence before they reach a person.
@@ -103,7 +107,7 @@ talog/
   mailer.py, graphmail.py, secret.py
                       SMTP / Microsoft 365 Graph / Gmail; secrets stored only as Windows DPAPI ciphertext
   console/            local web console (127.0.0.1)
-    app.py            Console = mixins: ops · incidents · analysis · claude · checks · modes
+    app.py            Console = mixins: ops · incidents · analysis · claude · checks · modes · feedback
     http.py           declarative GET/POST route tables; oper(…) and dev(…) mark the mode each route needs
     page.py           assembles talog/web into one offline HTML page
   web/                console sources: console.html shell · views/ · partials/ · css/NN-*.css · js/NN-*.js
