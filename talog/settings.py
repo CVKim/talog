@@ -2,6 +2,7 @@
 
 사용자 설정은 에이전트 흐름(수집 → 탐지 → 판단 → 알림) 순서의 약 20개 키다:
 
+    mode                                       모드(현장·운영자·개발자) — 콘솔 왼쪽 위에서 바꾼다(talog/access.py)
     site / log_root / data_dir / tracking      수집
     rules.builtin / rules.custom               탐지 (경보 규칙 한 표)
     ai.llm / ai.url / ai.model / ai.device     판단 (룰 진단 + LLM 교차 확인)
@@ -24,12 +25,14 @@ import re
 
 import yaml
 
+from .access import DEFAULT_MODE, MODES
 from .tracker import DEFAULT_FILES, DEFAULT_PATTERNS, is_default_file
 
 SEVERITIES = ("crit", "warn", "info")
 
 # ── 사용자 설정 기본값 ─────────────────────────────────────────────
 DEFAULTS: dict = {
+    "mode": DEFAULT_MODE,
     "site": "",
     "log_root": r"D:\AIV_LOG\Talos",
     "data_dir": r"D:\AIV_LOG\TalogWatch",
@@ -445,6 +448,8 @@ def validate(s: dict) -> list[str]:
     from .tracker import compile_patterns
     errs = []
     s = normalize(s)
+    if str(s.get("mode")) not in MODES:
+        errs.append(f"mode 값 오류: {s.get('mode')} ({' | '.join(MODES)})")
     logs = [dict((k, v) for k, v in it.items() if k != "type")
             for it in s["rules"]["custom"]
             if isinstance(it, dict) and str(it.get("type", "log")) != "defect"]
@@ -478,6 +483,7 @@ def validate(s: dict) -> list[str]:
 
 # ── 저장 (설명 주석 포함) ──────────────────────────────────────────
 _DESC = {
+    "mode": "field = 현장(보기·리포트) | operator = 운영자(+ 설정·시험·재현) | developer = 개발자(+ Claude) — 콘솔 왼쪽 위에서 바꿈",
     "site": "설비 이름 (메일 제목·기록에 표시)",
     "log_root": "talos 로그 루트 — 오늘 YYYY_MM\\DD 폴더를 자동으로 따라감",
     "data_dir": "경보·사건·리포트 저장 폴더",

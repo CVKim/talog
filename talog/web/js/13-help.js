@@ -1,7 +1,8 @@
 /* ── 도움말 · 용어 풀이 · 처음 안내 ───────────────────────────
-   근거(UI/UX Pro Max ux-guidelines): #105 도움은 늘 같은 자리(위 막대의 ? 버튼, ? 키) · #116 용어 풀이는 마우스
+   근거(UI/UX 가이드라인 ux-guidelines): #105 도움은 늘 같은 자리(위 막대의 ? 버튼, ? 키) · #116 용어 풀이는 마우스
    올림 전용이 아니라 누르는 버튼 · #88 처음 안내는 건너뛰기·이전이 있다 · #80 오류·빈 상태에는 다음 할 일.
-   화면 글은 쉬운 말을 먼저 쓰고, 전문 용어에는 term("키") 풀이 버튼을 붙인다. 풀이 글은 여기 GLOSSARY 한 곳에만 둔다. */
+   화면 글은 쉬운 말을 먼저 쓰고, 전문 용어에는 term("키") 풀이 버튼을 붙인다. 풀이 글은 여기 GLOSSARY 한 곳에만 둔다.
+   dev: 1 인 용어, 세 번째 칸이 "dev" 인 안내 줄은 개발자 모드(Claude)에서만 보인다 (14-access.js). */
 
 const GLOSSARY = {
   incident: {t: "사건", d: "비슷한 때 난 경보를 하나로 묶고, 원인 판단과 권고 조치를 붙인 기록입니다. 메일도 사건 단위로 갑니다."},
@@ -22,12 +23,14 @@ const GLOSSARY = {
   replay: {t: "경보 재현", d: "지난 로그를 지금 규칙으로 처음부터 다시 돌려, 그날 경보가 언제·몇 번 났을지 보는 것입니다. 메일은 보내지 않고, 결과에는 '재현' 표시가 붙습니다."},
   report: {t: "진단 리포트", d: "로그 폴더 하루치를 검사 한 건씩 정리한 HTML 보고서입니다. 미완료 원인·타임라인·처리 시간이 들어 있고, 질문하면 로컬 AI 가 리포트 DB 를 조회해 답합니다."},
   progressive: {t: "시간 경과형 처리 열화", d: "기동한 뒤 시간이 갈수록 검사 처리 시간이 조금씩 늘어나는 현상입니다. 계획 정지 때 재시작하면 기준으로 돌아옵니다."},
-  masking: {t: "마스킹", d: "Claude 에 보내기 전에 검사 id 는 ID-xxxxxx 로, 경로는 <로그> 로 가립니다. 원래 값은 이 PC 에만 남습니다."},
-  subscription: {t: "구독 사용량", d: "Claude 구독의 5시간·7일 사용 한도 중 쓴 비율입니다. 추가 과금은 없고, 한도에 가까우면 Sonnet·낮은 effort 를 권합니다."},
-  effort: {t: "effort", d: "Claude 가 생각하는 깊이입니다. 높을수록 깊게 보지만 오래 걸리고 구독 사용량이 늘어납니다."},
-  skill: {t: "작업 스킬", d: "Claude 에게 주는 작업 절차서입니다. 카드를 누르면 그 절차대로 talog 도구를 차례로 부르고 보고서를 남깁니다."},
-  grounding: {t: "수치 근거 확인", d: "답에 적힌 숫자·시각이 그 대화에서 Claude 가 읽은 도구 결과에 실제로 있는지 talog 가 대조한 결과입니다. 없는 값은 계산했거나 지어낸 값일 수 있습니다."},
+  masking: {t: "마스킹", dev: 1, d: "Claude 에 보내기 전에 검사 id 는 ID-xxxxxx 로, 경로는 <로그> 로 가립니다. 원래 값은 이 PC 에만 남습니다."},
+  subscription: {t: "구독 사용량", dev: 1, d: "Claude 구독의 5시간·7일 사용 한도 중 쓴 비율입니다. 추가 과금은 없고, 한도에 가까우면 Sonnet·낮은 effort 를 권합니다."},
+  effort: {t: "effort", dev: 1, d: "Claude 가 생각하는 깊이입니다. 높을수록 깊게 보지만 오래 걸리고 구독 사용량이 늘어납니다."},
+  skill: {t: "작업 스킬", dev: 1, d: "Claude 에게 주는 작업 절차서입니다. 카드를 누르면 그 절차대로 talog 도구를 차례로 부르고 보고서를 남깁니다."},
+  grounding: {t: "수치 근거 확인", dev: 1, d: "답에 적힌 숫자·시각이 그 대화에서 Claude 가 읽은 도구 결과에 실제로 있는지 talog 가 대조한 결과입니다. 없는 값은 계산했거나 지어낸 값일 수 있습니다."},
   tracking: {t: "추적 방식", d: "어떤 로그 파일을 실시간으로 읽을지입니다. '핵심 로그'가 기본이고 검사 PC 부하가 가장 적습니다."},
+  mode: {t: "모드 (현장 · 운영자 · 개발자)", d: "왼쪽 위에서 고릅니다. 현장 모드는 보기와 리포트, 운영자 모드는 여기에 설정 저장·시험·감시 정지·경보 재현, 개발자 모드는 여기에 Claude 분석을 더합니다.",
+    x: "위 모드로 올릴 때만 PIN 을 묻습니다 · 고른 모드는 다음에 열 때도 그대로입니다"},
 };
 
 const HELP_VIEWS = {
@@ -44,13 +47,14 @@ const HELP_VIEWS = {
     steps: [["사건 고르기", "왼쪽 목록에서 고릅니다. 심각 거르기와 찾기로 좁힐 수 있습니다."],
       ["맨 위 요약", "무슨 일 · 왜 · 지금 할 일 · 판단 확신 네 칸을 먼저 읽습니다."],
       ["근거 탭", "룰이 본 수치와 로컬 AI 의 의견을 비교합니다. 판단이 다르면 여기서 확인합니다."],
-      ["더 깊게", "'Claude 로 분석' 은 원본 로그까지 읽고 보고서를 남깁니다. 구독 로그인으로만 돌고 추가 비용이 없습니다."]],
-    faq: [["판단 불일치가 떴어요", "규칙과 로컬 AI 가 다른 원인을 골랐습니다. 근거 탭에서 두 의견을 비교하고, 필요하면 Claude 로 분석하십시오."],
+      ["더 깊게", "'Claude 로 분석' 은 원본 로그까지 읽고 보고서를 남깁니다. 구독 로그인으로만 돌고 추가 비용이 없습니다.", "dev"]],
+    faq: [["판단 불일치가 떴어요", "규칙과 로컬 AI 가 다른 원인을 골랐습니다. 근거 탭에서 두 의견을 비교하고 담당자가 확인하십시오."],
       ["재현 사건은 메일이 갔나요", "아니요. 지난 로그를 다시 돌려 만든 사건이라 메일을 보내지 않습니다."]],
     terms: ["incident", "alert", "gate", "rule_diag", "llm", "replay"]},
-  ana: {title: "분석 화면 쓰는 법", intro: "로그 폴더 하나를 골라 진단 리포트·경보 재현·Claude 조사를 합니다.",
+  ana: {title: "분석 화면 쓰는 법", intro: "로그 폴더 하나를 골라 진단 리포트·경보 재현을 합니다.", devIntro: "로그 폴더 하나를 골라 진단 리포트·경보 재현·Claude 조사를 합니다.",
     steps: [["① 폴더", "일자 폴더(…\\2026_10\\12), 설비 폴더, 여러 설비가 든 폴더 모두 됩니다. 최근 폴더는 칩으로 고릅니다."],
-      ["② 할 일", "진단 리포트(검사별 판정·미완료 원인) · 경보 재현(지금 규칙으로 그날을 다시, 메일 없음) · Claude 로 원본 로그 조사 중에서 고릅니다."],
+      ["② 할 일", "진단 리포트(검사별 판정·미완료 원인) · 경보 재현(지금 규칙으로 그날을 다시, 메일 없음) 중에서 고릅니다. 경보 재현은 운영자 모드에서 돌립니다."],
+      ["Claude 조사", "'Claude 로 원본 로그 조사' 는 Claude 가 이 폴더의 원본 로그를 시각·문구·검사 id 로 직접 찾아 읽고 경과와 원인을 정리합니다.", "dev"],
       ["③ 결과", "진행 상황이 아래에 보이고, 끝나면 리포트 목록에 생깁니다. 재현 결과는 사건 화면의 '재현' 으로 봅니다."],
       ["리포트에 질문", "로컬 AI 가 리포트 DB 를 SQL 로 조회해 답하고, 답의 숫자를 조회 결과와 대조해 다른 값을 알려 줍니다."]],
     faq: [["분석하는 동안 감시는 느려지나요", "아니요. 분석은 낮은 우선순위의 별도 프로세스에서 돕니다."]],
@@ -65,12 +69,14 @@ const HELP_VIEWS = {
       ["재현은 왜 확인을 받나요", "재현은 파일을 쓰고 수 분 걸리기 때문입니다. '규칙 바꾼 뒤 비교' 카드에서 켜고 한 번 더 확인해야 그 질문에만 허용됩니다."]],
     terms: ["skill", "grounding", "masking", "subscription", "effort"]},
   set: {title: "설정 화면 쓰는 법", intro: "talog.yaml 의 값을 단계별로 고칩니다. 저장하면 이전 파일을 .bak 으로 남기고 감시를 새 설정으로 다시 시작합니다.",
-    steps: [["① 수집", "어떤 로그 폴더·파일을 읽을지 정합니다. 오늘 날짜 폴더를 자동으로 따라갑니다."],
+    steps: [["모드", "맨 위 카드에 지금 모드가 있습니다. 설정을 바꾸려면 운영자 모드 이상이어야 합니다(왼쪽 위 또는 이 카드에서 바꾸기, PIN)."],
+      ["① 수집", "어떤 로그 폴더·파일을 읽을지 정합니다. 오늘 날짜 폴더를 자동으로 따라갑니다."],
       ["② 탐지", "경보 규칙 한 표입니다. 켜고 끄기, 등급, 'N분에 M번' 조건을 고칩니다."],
       ["③ 판단", "로컬 AI(LLM) 교차 확인을 켜고 장치(CPU·GPU·자동)를 고릅니다."],
       ["④ 알림", "메일 방식·받는 사람·묶음 발송을 정합니다. '연결 확인' 은 보내지 않고 로그인만 해 봅니다."]],
-    faq: [["저장하지 않고 다른 화면으로 가도 되나요", "아래에 '저장하지 않은 변경' 막대가 남아 있어 다시 돌아와 저장하거나 되돌릴 수 있습니다."]],
-    terms: ["tracking", "llm", "rule_diag"]},
+    faq: [["저장하지 않고 다른 화면으로 가도 되나요", "아래에 '저장하지 않은 변경' 막대가 남아 있어 다시 돌아와 저장하거나 되돌릴 수 있습니다."],
+      ["입력 칸이 회색으로 잠겨 있어요", "현장 모드입니다. 왼쪽 위에서 운영자 모드로 바꾸면(PIN) 고칠 수 있습니다. 끝나면 현장 모드로 되돌려 두십시오."]],
+    terms: ["mode", "tracking", "llm", "rule_diag"]},
 };
 
 /** 용어 풀이 버튼 HTML — 화면 글 옆에 붙인다(버튼 안에는 넣지 않는다). */
@@ -141,20 +147,21 @@ function helpTab(name) {
   });
   $("#helpDlg .drawer-b").scrollTop = 0;              // 탭마다 맨 위부터 (스크롤 칸을 함께 쓴다)
 }
+const forMode = rows => rows.filter(r => r[2] !== "dev" || isDev());     // ["제목", "글", "dev"] 는 개발자 모드에서만
 function renderHelpView(v) {
   const H = HELP_VIEWS[v] || HELP_VIEWS.ops;
   $("#helpScreen").textContent = VIEWS[v] ? VIEWS[v][0] : "";
-  $("#helpPnView").innerHTML = `<p class="help-intro">${esc(H.intro)}</p>
-    <ol class="help-steps">${H.steps.map(([t, d]) => `<li><b>${esc(t)}</b><span>${esc(d)}</span></li>`).join("")}</ol>
+  $("#helpPnView").innerHTML = `<p class="help-intro">${esc(isDev() && H.devIntro || H.intro)}</p>
+    <ol class="help-steps">${forMode(H.steps).map(([t, d]) => `<li><b>${esc(t)}</b><span>${esc(d)}</span></li>`).join("")}</ol>
     <h3 class="help-h">${ic("lightbulb", "sm")}자주 묻는 것</h3>
-    <dl class="help-faq">${H.faq.map(([q, a]) => `<dt>${esc(q)}</dt><dd>${esc(a)}</dd>`).join("")}</dl>
+    <dl class="help-faq">${forMode(H.faq).map(([q, a]) => `<dt>${esc(q)}</dt><dd>${esc(a)}</dd>`).join("")}</dl>
     <h3 class="help-h">${ic("book", "sm")}이 화면의 용어</h3>
-    <div class="help-chips">${H.terms.map(k => `<button type="button" class="chip" data-goterm="${k}">${esc(GLOSSARY[k].t)}</button>`).join("")}</div>`;
+    <div class="help-chips">${H.terms.filter(k => !GLOSSARY[k].dev || isDev()).map(k => `<button type="button" class="chip" data-goterm="${k}">${esc(GLOSSARY[k].t)}</button>`).join("")}</div>`;
   $$("#helpPnView [data-goterm]").forEach(b => b.onclick = () => { helpTab("terms"); showTerm(b.dataset.goterm); });
 }
 function renderGlossary(q = "") {
   const s = q.trim().toLowerCase();
-  const keys = Object.keys(GLOSSARY).filter(k => !s || `${GLOSSARY[k].t} ${GLOSSARY[k].d}`.toLowerCase().includes(s));
+  const keys = Object.keys(GLOSSARY).filter(k => (!GLOSSARY[k].dev || isDev()) && (!s || `${GLOSSARY[k].t} ${GLOSSARY[k].d}`.toLowerCase().includes(s)));
   $("#helpTerms").innerHTML = keys.length
     ? keys.map(k => `<div class="gl" id="gl-${k}"><dt>${esc(GLOSSARY[k].t)}</dt><dd>${esc(GLOSSARY[k].d)}${GLOSSARY[k].x ? `<span class="gl-x">${esc(GLOSSARY[k].x)}</span>` : ""}</dd></div>`).join("")
     : emptyBox("맞는 용어가 없습니다", "다른 말로 찾아보십시오.", "search");
@@ -210,10 +217,12 @@ const TOUR = [
   {view: "", hl: "#btnHelp", t: "도움말은 늘 오른쪽 위에", d: "어느 화면에서든 (?) 버튼이나 ? 키로 이 화면 읽는 법과 용어 사전을 엽니다. 이 안내도 거기서 다시 볼 수 있습니다."},
 ];
 const TOUR_KEY = "talog.tour";
+const tourSteps = () => TOUR.filter(s => s.view !== "ai" || isDev());   // 현장 모드에는 Claude 화면이 없다
 let tourAt = 0, tourEl = null, tourTick = null;
 function tourShow(i) {
-  tourAt = Math.max(0, Math.min(TOUR.length - 1, i));
-  const s = TOUR[tourAt];
+  const T = tourSteps();
+  tourAt = Math.max(0, Math.min(T.length - 1, i));
+  const s = T[tourAt];
   if (s.view && S.view !== s.view) go(s.view, {focus: false});
   if (tourEl) tourEl.classList.remove("tour-hl");
   tourEl = $(s.hl);
@@ -221,12 +230,12 @@ function tourShow(i) {
     tourEl.classList.add("tour-hl");
     tourEl.scrollIntoView({block: "center", behavior: reduceMotion() ? "auto" : "smooth"});
   }
-  $("#tourN").textContent = `${tourAt + 1} / ${TOUR.length}`;
+  $("#tourN").textContent = `${tourAt + 1} / ${T.length}`;
   $("#tourT").textContent = s.t;
   $("#tourD").textContent = s.d;
   $("#tourBack").disabled = tourAt === 0;
-  $("#tourNext").lastChild.textContent = tourAt === TOUR.length - 1 ? "시작하기" : "다음";
-  $("#tourDots").innerHTML = TOUR.map((_, k) => `<i class="${k === tourAt ? "on" : ""}"></i>`).join("");
+  $("#tourNext").lastChild.textContent = tourAt === T.length - 1 ? "시작하기" : "다음";
+  $("#tourDots").innerHTML = T.map((_, k) => `<i class="${k === tourAt ? "on" : ""}"></i>`).join("");
 }
 function endTour() {
   clearInterval(tourTick);
@@ -251,5 +260,5 @@ function maybeTour() {
 }
 $("#tourSkip").onclick = endTour;
 $("#tourBack").onclick = () => tourShow(tourAt - 1);
-$("#tourNext").onclick = () => { if (tourAt === TOUR.length - 1) endTour(); else tourShow(tourAt + 1); };
+$("#tourNext").onclick = () => { if (tourAt === tourSteps().length - 1) endTour(); else tourShow(tourAt + 1); };
 $("#tourDlg").addEventListener("keydown", ev => { if (ev.key === "Escape") { ev.preventDefault(); endTour(); } });

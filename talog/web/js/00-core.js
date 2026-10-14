@@ -7,7 +7,7 @@ const ic = (n, c = "") => `<svg class="ic ${c}" aria-hidden="true"><use href="#i
 const SEVK = {crit: "심각", warn: "주의", info: "정보"};
 const STK = {ok: "정상", warn: "주의", crit: "심각", "": "대기"};
 const VIEWS = {ops: ["운영 현황", "수집 → 탐지 → 판단 → 알림의 지금 상태"], inc: ["사건", "경보를 묶어 근거·판단·조치를 모은 기록"],
-  ana: ["분석", "로그 폴더 진단 리포트 · 경보 재현 · 원본 로그 조사"], ai: ["Claude", "구독 Claude 가 talog 데이터와 원본 로그를 직접 읽고 답합니다"], set: ["설정", "talog.yaml — 수집 · 탐지 · 판단 · 알림"]};
+  ana: ["분석", "로그 폴더 진단 리포트 · 경보 재현 · 리포트에 질문"], ai: ["Claude", "구독 Claude 가 talog 데이터와 원본 로그를 직접 읽고 답합니다"], set: ["설정", "talog.yaml — 수집 · 탐지 · 판단 · 알림"]};
 const S = {set: null, orig: "", meta: null, st: null, folder: null, secret: "", clearSecret: false, view: "ops", inc: null, rep: null, tests: [], incSev: "", incQ: "", openK: {}};
 const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const WD = ["일", "월", "화", "수", "목", "금", "토"];
@@ -19,7 +19,7 @@ async function api(path, body) {
   const r = await fetch(path, opt);
   const ct = r.headers.get("content-type") || "";
   const data = ct.includes("json") ? await r.json() : await r.text();
-  if (!r.ok && typeof data === "object") data._status = r.status;
+  if (!r.ok && typeof data === "object") { data._status = r.status; if (data.need) refreshAccess(); }   // 다른 창에서 모드를 내렸다
   return data;
 }
 function toast(msg, kind = "") {

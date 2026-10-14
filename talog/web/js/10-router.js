@@ -1,5 +1,6 @@
 /* ── 화면 전환 (주소 #보기/세부 — 뒤로 가기·직접 링크) ─────────────── */
-function show(v) { S.view = v;
+function show(v) { if (v === "ai" && !isDev()) v = "ops";            // 현장 모드에는 Claude 화면이 없다
+  S.view = v;
   $$("#nav a").forEach(a => { if (a.dataset.v === v) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   $$("section.view").forEach(s => s.classList.toggle("active", s.id === "v-" + v));
   $("#pageTitle").textContent = VIEWS[v][0]; $("#pageSub").textContent = VIEWS[v][1];
@@ -13,7 +14,7 @@ function go(v, opt = {}) { const same = S.view === v; if (!same || opt.force) sh
   if (opt.focus && !same) $("#pageTitle").focus({preventScroll: true}); }
 function scrollSec(id) { setTimeout(() => { const el = $("#" + id); if (el) el.scrollIntoView({behavior: reduceMotion() ? "auto" : "smooth", block: "start"}); }, 40); }
 function goSec(id) { go("set", {sub: id, keepScroll: true}); scrollSec(id); }
-function applyHash() { const [v0, a, b] = decodeURIComponent(location.hash.slice(1)).split("/"); const v = VIEWS[v0] ? v0 : "ops";
+function applyHash() { const [v0, a, b] = decodeURIComponent(location.hash.slice(1)).split("/"); const v = VIEWS[v0] && (v0 !== "ai" || isDev()) ? v0 : "ops";
   if (v !== S.view) show(v);
   if (v === "inc" && a && (!S.inc || S.inc.id !== a)) openInc(a, b === "replay");
   if (v === "set" && a) scrollSec(a);

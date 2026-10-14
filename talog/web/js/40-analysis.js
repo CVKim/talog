@@ -21,7 +21,7 @@ async function startJob(kind, btn) { const dir = anaDir();
   if (kind === "replay" && isDirty()) toast("저장하지 않은 규칙 변경은 재현에 반영되지 않습니다 — 저장 후 다시 돌리십시오", "err");
   $("#anaDir").value = dir; const r = await busy(btn, () => api("/api/job", {kind, dir, recipe: $("#anaRecipe").value.trim()}));
   if (!r || !r.ok) { toast((r && r.error) || "시작하지 못했습니다", "err"); return; } pollJob(); }
-$("#btnReport").onclick = () => startJob("report", $("#btnReport")); $("#btnReplay").onclick = () => startJob("replay", $("#btnReplay"));
+$("#btnReport").onclick = () => startJob("report", $("#btnReport")); $("#btnReplay").onclick = async () => { if (await needMode("operator", "경보 재현은 운영자 모드에서 돌립니다")) startJob("replay", $("#btnReplay")); };
 $("#btnAnaClaude").onclick = () => busy($("#btnAnaClaude"), async () => { const dir = anaDir();
   if (!dir) { toast("로그 폴더를 넣으십시오", "err"); return; }
   await ensureClaude(); openSkill(((S.claude && S.claude.skills) || []).find(k => k.key === "logs"), {day: dir}); });
@@ -38,7 +38,7 @@ async function pollJob() { const j = await api("/api/job"); if (j.state === "idl
 async function loadReports() { if (!S.reports) $("#repRows").innerHTML = skRows(4);
   const r = await api("/api/reports"); S.reports = r.rows; $("#repCount").textContent = r.rows.length ? `${r.rows.length}개` : "";
   $("#repRows").innerHTML = r.rows.length ? r.rows.map(x => `<tr class="${S.rep === x.tag ? "sel" : ""}" data-tag="${esc(x.tag)}"><td><div class="rep-t"><b>${esc(x.tag)}</b><span class="meta">${esc(x.mtime)} · 소견 ${x.n_findings}건</span></div>${x.findings.slice(0, 2).map(f => `<div class="sub">${esc(f)}</div>`).join("")}
-      <div class="rowact"><a class="btn sm" href="/r/${encodeURIComponent(x.tag)}/" target="_blank" rel="noopener">${ic("external")}열기</a>${x.db ? `<button class="btn sm" type="button" data-ask="${esc(x.tag)}">${ic("message")}질문</button>` : ""}<button class="btn sm" type="button" data-claude-rep="${esc(x.tag)}">${ic("sparkles", "brand")}Claude 로 확인</button></div></td></tr>`).join("")
+      <div class="rowact"><a class="btn sm" href="/r/${encodeURIComponent(x.tag)}/" target="_blank" rel="noopener">${ic("external")}열기</a>${x.db ? `<button class="btn sm" type="button" data-ask="${esc(x.tag)}">${ic("message")}질문</button>` : ""}${isDev() ? `<button class="btn sm" type="button" data-claude-rep="${esc(x.tag)}">${ic("sparkles", "brand")}Claude 로 확인</button>` : ""}</div></td></tr>`).join("")
     : emptyRow(1, "아직 만든 리포트가 없습니다", '위에서 폴더를 넣고 "진단 리포트 만들기"를 누르십시오.', "file-text");
   $$("#repRows [data-ask]").forEach(b => b.onclick = () => selectReport(b.dataset.ask));
   $$("#repRows [data-claude-rep]").forEach(b => b.onclick = () => askClaude(`talog 리포트 ${b.dataset.claudeRep} 의 자동 진단 소견을 리포트 DB 로 교차 확인하고, 원인과 할 일을 정리해 줘 (talog-rca 절차, 보고서는 reports 폴더에 HTML)`, {fresh: true})); }

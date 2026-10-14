@@ -169,7 +169,7 @@ def _serve(con):
 def test_console_settings_save_and_security(tmp_path):
     from talog.console import Console
     path = os.path.join(str(tmp_path), "talog.yaml")
-    con = Console(path)
+    con = Console(path, mode="operator")            # 설정 저장·시험은 운영자 모드 이상 (test_access.py)
     con.settings["data_dir"] = str(tmp_path / "data")
     con.cfg = settings.compile(con.settings)
     srv, call = _serve(con)

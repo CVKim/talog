@@ -30,7 +30,8 @@ _START = """talog {ver} — 개발자 PC 배포판
 
 1. 이 폴더를 원하는 곳(예: D:\\talog)에 풉니다.
 2. 현장 로그 일자 폴더를 통째로 복사합니다. 예: D:\\AIV_LOG\\설비A\\2026_10\\12
-3. run_talog.bat 을 더블클릭합니다. 브라우저에 콘솔(http://127.0.0.1:8778)이 열립니다.
+3. run_talog.bat 을 더블클릭합니다. 브라우저에 콘솔(http://127.0.0.1:8778)이 개발자 모드로 열립니다
+   (talog.yaml 의 mode: developer — 왼쪽 메뉴에 Claude 가 있습니다. 모드는 콘솔 왼쪽 위에서 바꿉니다).
 4. 콘솔 → 설정 → 1 수집에서 talos 로그 루트(D:\\AIV_LOG\\설비A)와 저장 폴더를 맞추고 '저장하고 적용'을 누릅니다.
 5. Claude 를 쓰려면 이 PC 의 Claude Code 가 구독 계정(Pro·Max)으로 로그인돼 있어야 합니다.
    명령 프롬프트에서 claude 를 실행해 로그인 화면이 나오지 않으면 됩니다. API 키는 필요 없습니다.
@@ -52,6 +53,7 @@ def dev_yaml() -> str:
         y = f.read()
     pairs = [
         (r"^# talog 설정 — .*$", "# talog 설정 — 개발자 PC 용 (현장 로그 복사본 분석 · Claude). 설비마다 이 파일을 하나씩 둘 수 있다"),
+        (r"^mode: field    (\s+#)", r"mode: developer\1"),             # 주석 열을 맞춘다
         (r"^log_root: .*?(\s+#)", r"log_root: D:\\AIV_LOG\\설비A\1"),
         (r"^data_dir: .*?(\s+#)", r"data_dir: D:\\talog_data\\설비A\1"),
         (r"^(\s+)toast: true", r"\1toast: false"),
@@ -62,6 +64,7 @@ def dev_yaml() -> str:
     from talog import settings
     s = settings.normalize(__import__("yaml").safe_load(y))
     assert s["log_root"] == r"D:\AIV_LOG\설비A" and s["notify"]["toast"] is False and s["mail"]["provider"] == "off"
+    assert s["mode"] == "developer", "개발자 PC 배포판은 개발자 모드로 연다 (Claude 연동)"
     return y
 
 

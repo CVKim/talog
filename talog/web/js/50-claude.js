@@ -10,7 +10,7 @@ async function copyText(t, msg = "복사했습니다") {
   catch (e) { const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch (e2) {} ta.remove(); }
   toast(msg, "ok"); }
 document.addEventListener("click", ev => { const c = ev.target.closest("[data-copy]"); if (c) copyText($("#" + c.dataset.copy).textContent); });
-async function ensureClaude() { if (S.claude) return S.claude; try { const c = await api("/api/claude"); if (c && !c.error) { S.claude = c; S.claudeCli = !!c.cli; S.logs = S.logs || c.logs; } } catch (e) {} return S.claude; }
+async function ensureClaude() { if (S.claude) return S.claude; if (!isDev()) return null; try { const c = await api("/api/claude"); if (c && !c.error) { S.claude = c; S.claudeCli = !!c.cli; S.logs = S.logs || c.logs; } } catch (e) {} return S.claude; }
 async function loadClaude() {
   let c; try { c = await api("/api/claude"); } catch (e) { toast("Claude 연동 정보를 읽지 못했습니다", "err"); return; }
   if (!c || c.error) { toast("Claude 연동 정보 오류: " + (c && c.error), "err"); return; }

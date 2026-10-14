@@ -41,7 +41,9 @@ talog 는 설비 PC 에 상주하는 **AI 비전 로그 운영 플랫폼**입니
    - 설정 → 2 탐지: 치명 결함명(레시피 결함명 목록에서 클릭), 꼭 잡을 로그 문구
    - 설정 → 3 판단: LLM 교차 확인을 쓸지, CPU/GPU/자동
    - 설정 → 4 알림: 발송 방식(Microsoft 365 권장)·받는 사람 → 테스트 메일
-4. (선택) 로그인 시 자동 시작:
+4. 모드: 콘솔은 현장 모드로 열립니다(보기·리포트). 설정을 바꾸거나 시험할 때는 콘솔 왼쪽 위에서
+   운영자 모드로 바꾸고(PIN — 담당자에게 문의), 끝나면 현장 모드로 되돌려 둡니다.
+5. (선택) 로그인 시 자동 시작:
    `schtasks /Create /TN "talog" /SC ONLOGON /TR "D:\\talog\\run_service.bat" /RL LIMITED`
 
 ## 화면
@@ -93,6 +95,7 @@ def main() -> int:
         y = y.replace("to: []  ", f"to: [{to}]  ", 1)
     s = settings.normalize(__import__("yaml").safe_load(y))
     assert s["site"] == args.site, "talog.yaml 템플릿의 site 줄을 찾지 못했습니다"
+    assert s["mode"] == "field", "현장 키트는 현장 모드(mode: field)로 연다 — 설정 변경은 운영자 모드(PIN)에서"
     with open(os.path.join(dst, "talog.yaml"), "w", encoding="utf-8") as f:
         f.write(y)
 

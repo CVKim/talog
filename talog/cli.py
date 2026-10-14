@@ -466,8 +466,9 @@ def fleet_main(argv=None) -> int:
 
 USAGE = f"""talog {__version__} — AI 비전 로그 운영 플랫폼
 
-  talog                        콘솔 열기 — 운영 현황 · 사건 · 분석 · Claude · 설정
-                               (--config <talog.yaml> --port 8778 --no-open)
+  talog                        콘솔 열기 — 운영 현황 · 사건 · 분석 · Claude(개발자 모드) · 설정
+                               (--config <talog.yaml> --port 8778 --no-open --no-watch
+                                --mode field|operator|developer — 모드는 콘솔 왼쪽 위에서도 바꾼다)
   talog run                    화면 없이 상주 감시 (자동 시작·서비스용)
                                --once · --check(설치 점검) · --replay <일자 폴더> · --test-email
   talog analyze <로그 폴더>     일자 / 설비 / 여러 설비 폴더의 진단 리포트
@@ -513,15 +514,20 @@ def main(argv=None):
 
 
 def console_main(argv) -> int:
+    from .access import MODES
     from .settings import default_path
     ap = argparse.ArgumentParser(prog="talog", description="talog 콘솔")
     ap.add_argument("--config", default=default_path())
     ap.add_argument("--port", type=int, default=8778)
     ap.add_argument("--no-open", action="store_true", help="브라우저 자동 열기 끔")
+    ap.add_argument("--mode", choices=tuple(MODES), default="",
+                    help="이번 실행만 모드를 바꾼다 (기본: talog.yaml 의 mode, 없으면 field — 콘솔 왼쪽 위에서도 바꾼다)")
+    ap.add_argument("--no-watch", action="store_true", help="감시를 시작하지 않고 연다 ('감시 시작'으로 켠다)")
     args = ap.parse_args(argv)
     from .console import serve
     try:
-        return serve(args.config, port=args.port, open_browser=not args.no_open)
+        return serve(args.config, port=args.port, open_browser=not args.no_open, autostart=not args.no_watch,
+                     mode=args.mode)
     except OSError as e:
         print(f"[talog] 포트 {args.port} 사용 불가 — 이미 콘솔이 떠 있으면 "
               f"http://127.0.0.1:{args.port} 를 여십시오. 다른 포트: --port ({e})")

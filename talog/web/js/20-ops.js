@@ -1,7 +1,7 @@
 /* ── 운영 현황 ─────────────────────────────────────────── */
 async function loadStatus() {
   let st; try { st = await api("/api/status"); } catch (e) { $("#runText").textContent = "연결 끊김"; $("#runPill").className = "live off"; return; }
-  S.st = st;
+  S.st = st; applyAccess(st.access);
   $("#ver").textContent = "v" + st.version; $("#siteName").textContent = st.site || "설비 이름 미지정"; $("#siteData").textContent = st.data_dir || "";
   $("#runText").textContent = st.running ? "감시 중" : "정지"; $("#runPill").className = "live " + (st.running ? "on" : "");
   const rb = $("#btnRun"); if (rb.getAttribute("aria-busy") !== "true") { rb.className = "btn " + (st.running ? "" : "primary");
@@ -208,10 +208,12 @@ function renderCapacity() {
   const cs = capSummary(rows); $("#capSum").hidden = !cs; if (cs) setSum($("#capSum"), cs.cls, cs.html);
   const b = rows.find(r => r.baseline_from); $("#capNote").textContent = b ? `기준선 ${b.baseline_from}부터` : bul.length && rows.length > bul.length ? `가장 빠듯한 ${bul.length}개 / ${rows.length}개 그룹` : ""; }
 $("#btnRun").onclick = async () => { const on = S.st && S.st.running;
+  if (on && !(await needMode("operator", "감시 정지는 운영자 모드에서 합니다"))) return;
   if (on && !(await confirmBox({title: "감시를 멈출까요?", body: "멈춘 동안에는 새 경보·사건·메일이 나오지 않습니다.", ok: "감시 정지", danger: true}))) return;
   await busy($("#btnRun"), async () => { const r = await api("/api/control", {action: on ? "stop" : "start"}); toast(r.running ? "감시를 시작했습니다" : "감시를 멈췄습니다", "ok"); });
   loadStatus(); };
 $("#btnInject").onclick = async () => {
+  if (!(await needMode("operator", "시험 경보는 운영자 모드에서 넣습니다"))) return;
   const mailOn = S.st && S.st.notify && S.st.notify.provider !== "off";
   if (mailOn && !(await confirmBox({title: "시험 경보를 넣을까요?", body: `메일이 켜져 있어 받는 사람 ${S.st.notify.to}명에게 시험 메일이 실제로 발송됩니다.`, ok: "넣고 발송"}))) return;
   await busy($("#btnInject"), async () => { const r = await api("/api/test/alert", {kind: $("#injKind").value}); toast(r.ok ? r.message : r.error, r.ok ? "ok" : "err"); });

@@ -1,6 +1,6 @@
 /* ── 설정: 바인딩 ─────────────────────────────────────── */
 function isDirty() { return !!S.set && (JSON.stringify(S.set) !== S.orig || !!S.secret || S.clearSecret); }
-function updateSaveBar() { $("#saveBar").classList.toggle("hidden", !isDirty()); $("#btnSaveGo").classList.toggle("hidden", S.view === "set"); }
+function updateSaveBar() { $("#saveBar").classList.toggle("hidden", !isDirty() || !atLeast("operator")); $("#btnSaveGo").classList.toggle("hidden", S.view === "set"); }
 function markDirty() { updateSaveBar(); }
 $("#btnSaveGo").onclick = () => go("set", {focus: true});
 function bind(root) {

@@ -2,6 +2,8 @@
 <section class="view" id="v-set" aria-labelledby="pageTitle">
   <nav class="subnav" aria-label="설정 단계"><a href="#set/s-collect" data-sec="s-collect"><span class="n">1</span>수집</a><a href="#set/s-detect" data-sec="s-detect"><span class="n">2</span>탐지</a><a href="#set/s-judge" data-sec="s-judge"><span class="n">3</span>판단</a><a href="#set/s-notify" data-sec="s-notify"><span class="n">4</span>알림</a></nav>
   <p class="meta" style="margin:0 0 16px">설정 파일 <span class="mono" id="cfgPath"></span> <span id="legacyTag"></span></p>
+  <div class="card acc-card" id="s-mode" aria-labelledby="accT"><div class="acc-h"><span class="acc-ic" id="accIc" aria-hidden="true"></span><div class="acc-tx"><span class="meta">모드 — 왼쪽 위에서도 바꿉니다</span><h2 id="accT">현장 모드</h2><p id="accD"></p></div></div><div class="mode-opts" id="modeOpts" role="radiogroup" aria-label="모드 고르기"></div></div>
+  <fieldset class="setfs" id="setFs"><legend class="vh">talog.yaml 설정 항목</legend>
 
   <div id="s-collect" class="setsec"><div class="sechead"><span class="n">1</span><h2>수집</h2><span class="meta">무엇을 읽을까</span></div>
   <div class="card"><div class="grid g3">
@@ -66,4 +68,5 @@
   </div></div>
 
   <div class="card hidden" id="advCard"><div class="chead"><h2>고급 값</h2><span class="meta">talog.yaml 의 advanced (엔진 세부값) — 파일에서 직접 고칩니다</span></div><pre class="log" id="advBox"></pre></div>
+  </fieldset>
 </section>

@@ -50,7 +50,7 @@ async function openInc(id, rp) {
   const roles = (v.notify || []).map(r => (d.role_text || {})[r] || r).join(", ");
   const em = d.email || {}, fu = d.email_followup, gc = gateCls(v.mode, v.label), title = (d.alerts[0] || {}).title || id;
   $("#incDetail").className = "card dcard " + esc(v.severity || "");
-  $("#incDetail").innerHTML = `<div class="dhead"><h2>${esc(title)}</h2><div class="dact"><button class="btn sm primary" type="button" id="btnIncClaude">${ic("sparkles")}Claude 로 분석</button>${d.day_dir ? `<button class="btn sm" type="button" id="btnIncLog" title="${esc(d.day_dir)}">${ic("file-search")}원본 로그로 확인</button>` : ""}</div></div>
+  $("#incDetail").innerHTML = `<div class="dhead"><h2>${esc(title)}</h2><div class="dact">${isDev() ? `<button class="btn sm primary" type="button" id="btnIncClaude">${ic("sparkles")}Claude 로 분석</button>${d.day_dir ? `<button class="btn sm" type="button" id="btnIncLog" title="${esc(d.day_dir)}">${ic("file-search")}원본 로그로 확인</button>` : ""}` : ""}</div></div>
     <div class="dmeta">${sevTag(v.severity)}<span>${esc(d.site || "")}</span><span class="num">${esc(d.opened)} – ${esc(d.closed || "")}</span><span>${esc(d.family_title || d.family)}</span><span class="mono">${esc(d.id)}</span>${rp ? '<span class="tag">재현</span>' : ""}</div>
     <div class="tabs" role="tablist" aria-label="사건 내용">${[["sum", "판단"], ["ev", "근거"], ["al", `경보 <span class="tag">${d.alerts.length}</span>`], ["mail", "메일"], ["qa", "질문"]].map(([k, l], i) => `<button type="button" role="tab" id="tab-${k}" aria-controls="pn-${k}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-tab="${k}">${l}</button>`).join("")}</div>
     <div role="tabpanel" id="pn-sum" aria-labelledby="tab-sum">${incSummary(d, title)}<div class="verdict ${gc}"><div class="vrow"><span class="gate ${gc}">${ic(gc === "agree" ? "check-circle" : gc === "warn" ? "alert" : "info", "sm")}${esc(v.label || "")}</span><b>${esc(v.cause_name || "")}</b>${v.llm_cause_name && v.llm_cause !== v.cause ? `<span class="meta">/ LLM: ${esc(v.llm_cause_name)}</span>` : ""}</div><p>${esc(v.message || "")}</p></div>
@@ -63,14 +63,14 @@ async function openInc(id, rp) {
       <details class="disclosure"><summary>근거 로그 ${(ev.log_lines || []).length}줄</summary><pre class="log">${esc((ev.log_lines || []).join("\n"))}</pre></details></div>
     <div role="tabpanel" id="pn-mail" aria-labelledby="tab-mail" hidden><div class="row" style="margin-bottom:10px">${em.sent ? '<span class="tag on">발송</span>' : em.eml ? '<span class="tag">보관</span>' : '<span class="tag">없음</span>'}${fu ? `<button class="btn sm" type="button" id="mFu">후속 메일 보기</button>` : ""}</div>
       ${em.eml || em.sent ? `<iframe class="mail" id="mFrame" title="사건 메일 미리보기" src="/api/mail?id=${encodeURIComponent(id)}&replay=${rp ? 1 : 0}"></iframe>` : '<div class="meta">메일을 보내지 않은 사건입니다 (등급 기준 미만이거나 메일 꺼짐)</div>'}</div>
-    <div role="tabpanel" id="pn-qa" aria-labelledby="tab-qa" hidden><p class="hint" style="margin:0 0 8px">사건 기록(근거·판단)만으로 로컬 LLM 이 답합니다. 원본 로그까지 보는 깊은 분석은 <b>Claude 로 분석</b>을 쓰십시오.</p>
+    <div role="tabpanel" id="pn-qa" aria-labelledby="tab-qa" hidden><p class="hint" style="margin:0 0 8px">사건 기록(근거·판단)만으로 로컬 LLM 이 답합니다.${isDev() ? " 원본 로그까지 보는 깊은 분석은 <b>Claude 로 분석</b>을 쓰십시오." : ""}</p>
       <div class="row"><label class="vh" for="iaQ">이 사건에 할 질문</label><input type="text" id="iaQ" style="flex:1;min-width:200px" placeholder="예: 왜 룰과 LLM 판단이 달랐나?"><button class="btn" type="button" id="btnIa">${ic("send")}질문</button><span id="iaBusy" class="meta" aria-live="polite"></span></div><div id="iaList"></div></div>`;
   const tabs = $$("#incDetail [role=tab]");
   const sel = t => { tabs.forEach(b => { const on = b === t; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; $("#" + b.getAttribute("aria-controls")).hidden = !on; }); };
   tabs.forEach((t, i) => { t.onclick = () => sel(t); t.onkeydown = e => { const k = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0; if (k) { e.preventDefault(); const n = tabs[(i + k + tabs.length) % tabs.length]; sel(n); n.focus(); } }; });
   if (fu) $("#mFu").onclick = () => { $("#mFrame").src = `/api/mail?id=${encodeURIComponent(id)}&replay=${rp ? 1 : 0}&which=followup`; };
-  $("#btnIncClaude").onclick = () => busy($("#btnIncClaude"), () => runSkill("rca", {incident: id}));     // 사건 RCA 스킬 (읽기만)
-  if (d.day_dir) $("#btnIncLog").onclick = () => busy($("#btnIncLog"), () => runSkill("logs", {day: d.day_dir, time: ((String(d.opened || "").match(/\d{1,2}:\d{2}(:\d{2})?/) || [""])[0]), symptom: `${title} (talog 사건 ${id})`}));
+  if (isDev()) $("#btnIncClaude").onclick = () => busy($("#btnIncClaude"), () => runSkill("rca", {incident: id}));     // 사건 RCA 스킬 (읽기만)
+  if (isDev() && d.day_dir) $("#btnIncLog").onclick = () => busy($("#btnIncLog"), () => runSkill("logs", {day: d.day_dir, time: ((String(d.opened || "").match(/\d{1,2}:\d{2}(:\d{2})?/) || [""])[0]), symptom: `${title} (talog 사건 ${id})`}));
   const ask = async () => { const q = $("#iaQ").value.trim(); if (!q) return; $("#iaBusy").textContent = "답을 만드는 중… (CPU 는 1~2분)";
     const r = await busy($("#btnIa"), () => api("/api/ask/incident", {id, replay: rp, q})); $("#iaBusy").textContent = "";
     if (!r || !r.ok) { toast("질문 실패: " + ((r && r.error) || ""), "err"); return; } $("#iaQ").value = "";

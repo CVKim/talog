@@ -1,0 +1,49 @@
+/* ── 모드 (v2.2) — 현장 · 운영자 · 개발자. Claude(.dev-only)는 개발자 모드에서만, 설정 칸은 운영자 모드 이상에서만 ── */
+/* 모드를 알기 전(첫 응답 전)에도 Claude 가 잠깐 보였다 사라지지 않게 — 개발자 모드일 때만 보인다 */
+html:not([data-mode="developer"]) .dev-only{display:none!important}
+html:not([data-mode="field"]) .oper-note{display:none}
+
+/* 왼쪽 위 모드 전환 — 어두운 사이드바 위 세 칸 묶음 (지금 모드 = 현재 메뉴와 같은 바탕) */
+.mode-sw{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px;margin:0 2px;padding:3px;border:1px solid var(--side-line);border-radius:10px;background:rgba(255,255,255,.03)}
+.mode-sw button{display:flex;align-items:center;justify-content:center;gap:5px;min-height:30px;padding:0 4px;border:0;border-radius:7px;background:transparent;color:var(--side-mute);font:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background var(--t1),color var(--t1)}
+.mode-sw button .ic{width:13px;height:13px;flex:none}
+.mode-sw button:hover{background:var(--side-hover);color:var(--side-ink)}
+.mode-sw button[aria-checked="true"]{background:var(--side-active);color:#fff}
+.mode-sw button:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+
+/* 설정 맨 위 '모드' 카드 — 지금 모드와 세 모드 고르기 (휴대폰에서도 여기서 바꾼다) */
+.acc-card{margin-bottom:18px}
+.acc-h{display:flex;align-items:flex-start;gap:14px}
+.acc-ic{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;flex:none;background:var(--sunken);color:var(--sub)}
+.acc-ic .ic{width:20px;height:20px}
+.acc-ic.operator{background:var(--ok-soft);color:var(--ok-ink)}
+.acc-ic.developer{background:var(--info-soft);color:var(--info-ink)}
+.acc-tx{flex:1;min-width:0}
+.acc-tx h2{margin:2px 0 4px;font-size:15px}
+.acc-tx p{margin:0;color:var(--sub);max-width:72ch}
+.mode-opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}
+.mode-opt{display:flex;flex-direction:column;align-items:stretch;gap:4px;text-align:left;padding:12px 14px;border:1px solid var(--line-2);border-radius:var(--r-lg);background:var(--surface);color:var(--sub);font:inherit;cursor:pointer;transition:border-color var(--t1),background var(--t1)}
+.mode-opt b{display:flex;align-items:center;gap:7px;color:var(--ink);font-size:14px}
+.mode-opt b .tag{margin-left:auto}
+.mode-opt span{font-size:12.5px;line-height:1.5}
+.mode-opt:hover{border-color:var(--line-strong);background:var(--surface-2)}
+.mode-opt[aria-checked="true"]{border-color:var(--brand-ink);background:var(--brand-soft);cursor:default}
+.mode-opt:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+/* 현장 모드: 설정 칸은 fieldset[disabled] 로 잠긴다 (입력·시험 버튼 모두) — 테두리 없는 묶음 */
+.setfs{border:0;margin:0;padding:0;min-width:0}
+#v-set.locked .acc-card{border-color:var(--line-strong)}
+
+/* PIN 대화상자 */
+#pinDlg .dlg-h .ic{color:var(--ink-2)}
+.pinf{margin-top:16px}
+.pinf .field{margin-bottom:12px}
+.pin-err{min-height:1.4em;margin:2px 0 0;color:var(--crit-ink);font-size:13px}
+.pin-err:empty{min-height:0}
+
+/* 태블릿 아이콘 레일(84px): 세 칸을 세로로 · 휴대폰(아래 탭): 전환은 설정의 '모드' 카드에서 */
+@media (max-width:1023px){
+  .mode-sw{grid-template-columns:minmax(0,1fr);margin:0}
+  .mode-sw button{flex-direction:column;gap:3px;min-height:44px;font-size:10.5px}
+}
+@media (max-width:899px){.mode-opts{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:767px){.mode-sw{display:none}}

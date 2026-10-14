@@ -2,6 +2,10 @@
 <div class="toasts" id="toast"></div>
 <dialog id="dlg" aria-labelledby="dlgT" aria-describedby="dlgB"><form method="dialog" class="dlg"><div class="dlg-h"><svg class="ic" aria-hidden="true"><use href="#i-alert"/></svg><div><h2 id="dlgT"></h2><p id="dlgB"></p></div></div>
   <div class="dlg-act"><button class="btn" value="cancel" id="dlgNo">취소</button><button class="btn primary" value="ok" id="dlgOk">확인</button></div></form></dialog>
+<dialog id="pinDlg" aria-labelledby="pinT" aria-describedby="pinD"><form method="dialog" class="dlg" id="pinForm"><div class="dlg-h"><svg class="ic" aria-hidden="true"><use href="#i-key"/></svg><div><h2 id="pinT">운영자 모드로 바꾸기</h2><p id="pinD"></p></div></div>
+  <div class="pinf"><div class="field"><label for="pinIn">PIN</label><input type="password" id="pinIn" autocomplete="off" spellcheck="false"></div>
+    <p class="pin-err" id="pinErr" role="alert"></p></div>
+  <div class="dlg-act"><button class="btn" type="button" id="pinNo">취소</button><button class="btn primary" value="ok" id="pinOk"><svg class="ic" aria-hidden="true"><use href="#i-lock-open"/></svg><span>바꾸기</span></button></div></form></dialog>
 <dialog id="skDlg" aria-labelledby="skT" aria-describedby="skD"><form method="dialog" class="dlg" id="skForm"><div class="dlg-h sk-h"><span class="ai-ic" id="skIc"></span><div><h2 id="skT"></h2><p id="skD"></p></div></div>
   <div class="skf" id="skFields"></div>
   <p class="sk-run" id="skRun"></p>
@@ -18,12 +22,12 @@
     <section role="tabpanel" id="helpPnTerms" aria-labelledby="htab-terms" hidden><label class="vh" for="helpTermQ">용어 찾기</label><input type="search" id="helpTermQ" placeholder="용어 찾기 — 예: 여유, 기준선, 재현" autocomplete="off"><dl class="glossary" id="helpTerms"></dl></section>
     <section role="tabpanel" id="helpPnKeys" aria-labelledby="htab-keys" hidden><table class="keys"><caption class="vh">단축키</caption><tbody>
       <tr><th scope="row"><span class="kbd">?</span></th><td>도움말 열기</td></tr>
-      <tr><th scope="row"><span class="kbd">Ctrl</span> + <span class="kbd">K</span></th><td>빠른 이동 — 화면·사건·Claude 작업·명령 찾기</td></tr>
-      <tr><th scope="row"><span class="kbd">Ctrl</span> + <span class="kbd">Enter</span></th><td>Claude 에게 질문 보내기 · 리포트에 질문</td></tr>
+      <tr><th scope="row"><span class="kbd">Ctrl</span> + <span class="kbd">K</span></th><td>빠른 이동 — 화면·사건·작업·명령 찾기</td></tr>
+      <tr><th scope="row"><span class="kbd">Ctrl</span> + <span class="kbd">Enter</span></th><td>질문 보내기 — 리포트에 질문<span class="dev-only"> · Claude 에게 질문</span></td></tr>
       <tr><th scope="row"><span class="kbd">Esc</span></th><td>대화상자·풀이·도움말 닫기</td></tr>
       <tr><th scope="row"><span class="kbd">←</span> <span class="kbd">→</span></th><td>탭 사이 이동 (사건 상세·도움말)</td></tr></tbody></table></section>
   </div>
-  <div class="drawer-f"><button class="btn" id="helpTour" type="button"><svg class="ic" aria-hidden="true"><use href="#i-route"/></svg>처음 안내 다시 보기</button><span class="meta">talog 는 이 PC 안에서만 돕니다 — 외부로 보내는 것은 Claude 화면에서 고른 작업뿐입니다.</span></div>
+  <div class="drawer-f"><button class="btn" id="helpTour" type="button"><svg class="ic" aria-hidden="true"><use href="#i-route"/></svg>처음 안내 다시 보기</button><span class="meta">talog 는 이 PC 안에서만 돕니다<span class="dev-only"> — 외부로 보내는 것은 Claude 화면에서 고른 작업뿐입니다</span>.</span></div>
 </dialog>
 <!-- 용어 풀이 (term() 버튼이 연다) -->
 <div class="termpop" id="termPop" role="dialog" aria-labelledby="termPopT" hidden><b id="termPopT"></b><p id="termPopD"></p><p class="termpop-x" id="termPopX" hidden></p><button class="btn sm ghost" id="termPopMore" type="button"><svg class="ic sm" aria-hidden="true"><use href="#i-book"/></svg>용어 사전에서 보기</button></div>

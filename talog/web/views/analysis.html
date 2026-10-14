@@ -1,7 +1,7 @@
 <!-- 분석 ================================================================= -->
 <section class="view" id="v-ana" aria-labelledby="pageTitle">
   <div class="card">
-    <div class="chead"><h2>로그 폴더 분석</h2><span class="meta">진단 리포트 · 경보 재현 · Claude 원본 로그 조사</span></div>
+    <div class="chead"><h2>로그 폴더 분석</h2><span class="meta">진단 리포트 · 경보 재현<span class="dev-only"> · Claude 원본 로그 조사</span></span></div>
     <ol class="steps-h" id="anaSteps" aria-label="분석 단계"><li data-step="1" class="on"><span class="n">1</span>폴더 고르기</li><li class="sep" aria-hidden="true">›</li><li data-step="2"><span class="n">2</span>할 일 고르기</li><li class="sep" aria-hidden="true">›</li><li data-step="3"><span class="n">3</span>결과 보기</li></ol>
     <div class="formgrid">
       <div class="field"><label for="anaDir">일자 폴더 또는 설비 폴더</label><input type="text" id="anaDir" list="dayList" placeholder="예: D:\AIV_LOG\Talos\2026_09\28"><datalist id="dayList"></datalist></div>
@@ -10,8 +10,8 @@
     <div class="daychips" id="dayChips" aria-label="최근 일자 폴더"></div>
     <div class="ana-opts" role="group" aria-label="할 일">
       <button class="ana-opt primary" id="btnReport" type="button"><b><svg class="ic" aria-hidden="true"><use href="#i-file-text"/></svg>진단 리포트 만들기</b><span>검사 한 건씩 판정·미완료 원인·타임라인을 HTML 보고서로 정리합니다.</span><span class="t">보통 1~5분 · 이 PC 안에서만</span></button>
-      <button class="ana-opt" id="btnReplay" type="button"><b><svg class="ic" aria-hidden="true"><use href="#i-history"/></svg>경보 재현</b><span>지금 규칙으로 그날 로그를 처음부터 다시 돌려 경보·사건이 언제 났을지 봅니다.</span><span class="t">하루치 수 분~수십 분 · 메일 보내지 않음</span></button>
-      <button class="ana-opt" id="btnAnaClaude" type="button"><b><svg class="ic brand" aria-hidden="true"><use href="#i-sparkles"/></svg>Claude 로 원본 로그 조사</b><span>Claude 가 이 폴더의 원본 로그를 시각·문구·검사 id 로 직접 찾아 읽고 경과와 원인을 정리합니다.</span><span class="t">구독 로그인 · 검사 id·경로는 가려서 보냄</span></button>
+      <button class="ana-opt" id="btnReplay" type="button"><b><svg class="ic" aria-hidden="true"><use href="#i-history"/></svg>경보 재현</b><span>지금 규칙으로 그날 로그를 처음부터 다시 돌려 경보·사건이 언제 났을지 봅니다.</span><span class="t">하루치 수 분~수십 분 · 메일 보내지 않음<span class="oper-note"> · 운영자 모드</span></span></button>
+      <button class="ana-opt dev-only" id="btnAnaClaude" type="button"><b><svg class="ic brand" aria-hidden="true"><use href="#i-sparkles"/></svg>Claude 로 원본 로그 조사</b><span>Claude 가 이 폴더의 원본 로그를 시각·문구·검사 id 로 직접 찾아 읽고 경과와 원인을 정리합니다.</span><span class="t">구독 로그인 · 검사 id·경로는 가려서 보냄</span></button>
     </div>
     <div id="jobBox" class="job hidden" aria-live="polite"><div class="job-h" id="jobState"></div><pre class="log" id="jobLog" style="max-height:260px"></pre></div>
   </div>

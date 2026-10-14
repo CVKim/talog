@@ -6,6 +6,9 @@
 새 API 는 GET_ROUTES / POST_ROUTES 에 한 줄을 더한다 — 함수는 (con, 인자) 를 받는다(GET 은 쿼리 dict, POST 는 JSON 본문):
     "/api/foo": lambda con, q: con.foo(q.get("x", "")),
 돌려주는 값: dict·list → 200 JSON · (상태, 본문) · (상태, 본문, Content-Type). 없는 대상은 FileNotFoundError → 404.
+
+모드(modes.py): 운영자 모드 이상에서 여는 경로는 oper(…), 개발자 모드에서만 여는 경로는 dev(…) 로 감싼다.
+감싸지 않은 경로는 현장 모드에서도 쓴다 — 보기·리포트 만들기·사건 질문 같은 것.
 """
 
 from __future__ import annotations
@@ -26,6 +29,24 @@ from .util import ASSETS, _Tee
 JSON = "application/json; charset=utf-8"
 HTML = "text/html; charset=utf-8"
 Route = Callable[[Console, dict], Any]
+
+NEED_OPER = "현장 모드에서는 할 수 없습니다 — 왼쪽 위에서 운영자 모드로 바꾸십시오 (PIN)"
+NEED_DEV = "Claude 연동은 개발자 모드에서만 씁니다 — 왼쪽 위에서 개발자 모드로 바꾸십시오 (PIN)"
+
+
+# ── 모드 ────────────────────────────────────────────────────────────
+def _needs(mode: str, message: str) -> Callable[[Route], Route]:
+    def wrap(fn: Route) -> Route:
+        def run(con: Console, arg: dict):
+            if not con.at_least(mode):
+                return 403, {"ok": False, "error": message, "need": mode, "mode": con.mode}
+            return fn(con, arg)
+        return run
+    return wrap
+
+
+oper = _needs("operator", NEED_OPER)     # 운영자 모드 이상: 설정 저장·시험·감시 정지·경보 재현
+dev = _needs("developer", NEED_DEV)      # 개발자 모드: Claude 연동
 
 
 # ── GET ─────────────────────────────────────────────────────────────
@@ -53,6 +74,7 @@ def _claude_file(con: Console, q: dict):
 GET_ROUTES: dict[str, Route] = {
     # 운영·설정
     "/api/status": lambda con, q: con.status(),
+    "/api/access": lambda con, q: con.access_info(),
     "/api/settings": lambda con, q: {"settings": con.public_settings(), "meta": con.meta()},
     "/api/folder": _folder,
     "/api/log": lambda con, q: {"lines": list(con.log)[-300:]},
@@ -66,10 +88,10 @@ GET_ROUTES: dict[str, Route] = {
     # 분석
     "/api/reports": lambda con, q: {"rows": con.reports()},
     "/api/job": _job,
-    # Claude
-    "/api/claude": lambda con, q: con.claude_info(),
-    "/api/claude/ask": lambda con, q: con.claude_ask_status(),
-    "/api/claude/file": _claude_file,
+    # Claude (개발자 모드)
+    "/api/claude": dev(lambda con, q: con.claude_info()),
+    "/api/claude/ask": dev(lambda con, q: con.claude_ask_status()),
+    "/api/claude/file": dev(_claude_file),
 }
 
 
@@ -79,13 +101,26 @@ def _save_settings(con: Console, b: dict):
     return (400 if errs else 200), {"ok": not errs, "errors": errs, "settings": con.public_settings()}
 
 
-def _control(con: Console, b: dict):
-    act = b.get("action")
-    if act == "start":
-        con.start_watch()
-    elif act == "stop":
-        con.stop_watch()
+def _stop_watch(con: Console, _b: dict):
+    con.stop_watch()
     return {"ok": True, "running": con.running()}
+
+
+def _control(con: Console, b: dict):
+    if b.get("action") == "stop":
+        return oper(_stop_watch)(con, b)           # 감시 정지는 운영자 모드 이상
+    if b.get("action") == "start":
+        con.start_watch()                          # 시작은 현장 모드에서도 — 현장 PC 가 감시를 멈춘 채 남지 않게
+    return {"ok": True, "running": con.running()}
+
+
+def _start_job(con: Console, b: dict):
+    return con.start_job(b.get("kind", ""), b.get("dir", ""), b.get("recipe", ""))
+
+
+def _job_post(con: Console, b: dict):
+    """진단 리포트는 현장 모드에서도, 경보 재현(규칙을 고칠 때 쓰는 시험)은 운영자 모드 이상."""
+    return (oper(_start_job) if b.get("kind") == "replay" else _start_job)(con, b)
 
 
 def _claude_ask(con: Console, b: dict):
@@ -94,27 +129,29 @@ def _claude_ask(con: Console, b: dict):
 
 
 POST_ROUTES: dict[str, Route] = {
+    # 모드 (위로 올릴 때만 PIN)
+    "/api/access/mode": lambda con, b: con.set_mode(str(b.get("mode") or ""), str(b.get("pin") or "")),
     # 운영·설정
-    "/api/settings": _save_settings,
+    "/api/settings": oper(_save_settings),
     "/api/control": _control,
-    "/api/test/llm": lambda con, b: con.test_llm(b),
-    "/api/test/mail-check": lambda con, b: con.test_mail_check(b),
-    "/api/test/mail": lambda con, b: con.test_mail(b),
-    "/api/test/rule": lambda con, b: con.test_rule(b),
-    "/api/test/alert": lambda con, b: con.inject(b.get("kind", "")),
+    "/api/test/llm": oper(lambda con, b: con.test_llm(b)),
+    "/api/test/mail-check": oper(lambda con, b: con.test_mail_check(b)),
+    "/api/test/mail": oper(lambda con, b: con.test_mail(b)),
+    "/api/test/rule": oper(lambda con, b: con.test_rule(b)),
+    "/api/test/alert": oper(lambda con, b: con.inject(b.get("kind", ""))),
     # 사건·분석
-    "/api/job": lambda con, b: con.start_job(b.get("kind", ""), b.get("dir", ""), b.get("recipe", "")),
+    "/api/job": _job_post,
     "/api/ask/incident": lambda con, b: con.ask_incident(b.get("id", ""), bool(b.get("replay")), b.get("q", "")),
     "/api/ask/report": lambda con, b: con.ask_report(b.get("tag", ""), b.get("q", "")),
-    # Claude
-    "/api/claude/test": lambda con, b: con.claude_test(),
-    "/api/claude/ask": _claude_ask,
-    "/api/claude/ask/cancel": lambda con, b: con.claude_ask_cancel(),
-    "/api/claude/prompt": lambda con, b: con.claude_prompt(b.get("name", ""), b.get("args") or {}),
-    "/api/claude/thread/new": lambda con, b: con.claude_new_thread(),
-    "/api/claude/log": lambda con, b: con.claude_select_log(b.get("path", "")),
-    "/api/claude/workspace": lambda con, b: con.claude_workspace(b.get("dir", "")),
-    "/api/claude/open": lambda con, b: con.open_folder(b.get("dir", "")),
+    # Claude (개발자 모드)
+    "/api/claude/test": dev(lambda con, b: con.claude_test()),
+    "/api/claude/ask": dev(_claude_ask),
+    "/api/claude/ask/cancel": dev(lambda con, b: con.claude_ask_cancel()),
+    "/api/claude/prompt": dev(lambda con, b: con.claude_prompt(b.get("name", ""), b.get("args") or {})),
+    "/api/claude/thread/new": dev(lambda con, b: con.claude_new_thread()),
+    "/api/claude/log": dev(lambda con, b: con.claude_select_log(b.get("path", ""))),
+    "/api/claude/workspace": dev(lambda con, b: con.claude_workspace(b.get("dir", ""))),
+    "/api/claude/open": dev(lambda con, b: con.open_folder(b.get("dir", ""))),
 }
 
 
@@ -202,8 +239,11 @@ def _handler_factory(con: Console):
     return H
 
 
-def serve(config_path: str, port: int = 8778, open_browser: bool = True, autostart: bool = True) -> int:
-    con = Console(config_path, port)
+def serve(config_path: str, port: int = 8778, open_browser: bool = True, autostart: bool = True,
+          mode: str = "") -> int:
+    """콘솔을 띄우고 감시를 시작한다(autostart=False 면 '감시 시작'을 누를 때까지 멈춤). 모드와 상관없이 같다 —
+    모드는 화면에서 바뀌므로, 현장 PC 를 개발자 모드로 둔 채 다시 켜도 감시가 멈춘 채 남지 않게."""
+    con = Console(config_path, port, mode=mode)
     sys.stdout = _Tee(sys.stdout, con.log)        # 콘솔 창 + 화면의 실행 로그 (분석 작업은 별도 프로세스)
     srv = ThreadingHTTPServer(("127.0.0.1", port), _handler_factory(con))
     url = f"http://127.0.0.1:{port}/"
@@ -211,6 +251,7 @@ def serve(config_path: str, port: int = 8778, open_browser: bool = True, autosta
     print(f"        설정 {con.config_path}"
           + (" (옛 watch.yaml 형식 — 콘솔에서 저장하면 새 형식으로 바뀝니다)" if con.legacy else "")
           + " · 이 창을 닫으면 감시도 멈춥니다")
+    print(f"        {con.access_info()['mode_label']} — 모드는 콘솔 왼쪽 위에서 바꿉니다 (위로 올릴 때 PIN)")
     if autostart:
         con.start_watch()
     if open_browser:
