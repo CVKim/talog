@@ -45,16 +45,17 @@ FAKE = textwrap.dedent('''
         {"type": "tool_use", "id": "tu2", "name": "TodoWrite", "input": {}}]}})
     time.sleep(0.3)                            # 도구가 0.3초 걸린 셈 — 걸린 ms 가 음수로 나오면 안 된다
     out({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "tu1",
-         "content": [{"type": "text", "text": "# 사건 X1\\n원인: 처리 여유 고갈"}]}]}})
+         "content": [{"type": "text", "text": "# 사건 X1\\n원인: 처리 여유 고갈 · 그룹 9 점유 4.043초 · 05:02:28 거부"}]}]}})
     os.makedirs("reports", exist_ok=True)
     open(os.path.join("reports", "rca_X1.html"), "w", encoding="utf-8").write("<html></html>")
     if "LOGIN" in q:
         out({"type": "result", "subtype": "success", "is_error": True, "num_turns": 1,
              "result": "Invalid API key · Please run /login"})
         sys.exit(1)
-    out({"type": "assistant", "message": {"content": [{"type": "text", "text": "## 결론\\n- 원인 A"}]}})
+    ans = "## 결론\\n- 그룹 9 점유 4.0초 · 05:02 거부 · 9.9배" if q.startswith("/") else "## 결론\\n- 원인 A"
+    out({"type": "assistant", "message": {"content": [{"type": "text", "text": ans}]}})
     out({"type": "result", "subtype": "success", "is_error": False, "num_turns": 3, "session_id": sid,
-         "result": "## 결론\\n- 원인 A",
+         "result": ans,
          "permission_denials": [{"tool_name": "Bash", "tool_input": {"command": "rm"}}]})
 ''')
 
@@ -134,7 +135,10 @@ def test_ask_runs_clean_and_reports_progress(con, monkeypatch):
     assert j["denied"] == ["Bash"] and j["elapsed_s"] >= 0
     a = _calls(con)[0]["args"]
     assert a[a.index("--allowedTools") + 1] == Console.ASK_TOOLS
+    assert a[a.index("--tools") + 1] == Console.ASK_BUILTIN == "Read,Glob,Edit,Write,Skill"   # 셸·웹 없음
+    assert "--fallback-model" not in a                               # Sonnet 은 대체 모델이 필요 없다
     assert a[a.index("--permission-mode") + 1] == "dontAsk" and "--strict-mcp-config" in a
+    assert j["fact"] == {"ok": True, "checked": 0, "unsupported": []}   # 답에 수치가 없다
     assert a[a.index("--max-turns") + 1] == "60" and a[a.index("--model") + 1] == "sonnet"
     assert "--include-partial-messages" in a and "--resume" not in a and "--effort" not in a
     env = {k.upper() for k in _calls(con)[0]["env"]}
@@ -221,17 +225,21 @@ def test_claude_file_only_serves_reports(con):
             con.claude_file(bad)
 
 
-def test_claude_info_lists_actions_models_and_efforts(con):
+def test_claude_info_lists_skills_models_and_efforts(con):
     info = con.claude_info()
     assert info["cli"] == "FAKE_CLAUDE" and info["cli_version"] == "9.9.9"
     assert info["ask"]["state"] == "idle" and len(info["tools"]) == 18
-    assert {t["name"] for t in info["tools"] if not t["ask"]} == {"start_replay", "save_case"}   # 앱에서만
+    assert {t["name"] for t in info["tools"] if not t["ask"]} == {"start_replay", "save_case"}   # 바로 묻기 기본 목록 밖
+    assert [t["name"] for t in info["tools"] if t["card"]] == ["start_replay"]                 # 비교 카드에서 확인 후
     assert [m["v"] for m in info["models"]] == ["", "sonnet", "opus", "haiku"]
     assert tuple(e["v"] for e in info["efforts"]) == Console.ASK_EFFORTS
-    keys = [a["key"] for a in info["actions"]]
-    assert keys[0] == "log" and {"daily", "site", "cap"} <= set(keys)
-    assert info["actions"][0]["needs"] == "log" and info["actions"][0]["prompt"] == "log_investigation"
-    assert not any("Result 폴더" in a["text"] for a in info["actions"])   # 바로 묻기는 reports 에만 쓴다
+    from talog.mcp_server import SKILLS
+    sk = info["skills"]
+    assert [k["key"] for k in sk] == ["rca", "logs", "daily", "site", "rules"]
+    assert [k["command"] for k in sk] == ["/" + n for n in SKILLS]
+    kinds = {k["key"]: [f["kind"] for f in k["fields"]] for k in sk}
+    assert kinds["rca"] == ["incident"] and kinds["logs"] == ["logday", "time", "text"] and kinds["rules"][-1] == "confirm"
+    assert [q["key"] for q in info["quick"]] == ["cap"]                # 리포트가 없으면 교차 확인 칩도 없다
     assert set(info["logs"]) == {"root", "days", "selected"}
 
 
@@ -287,7 +295,7 @@ def test_console_page_has_core_controls():
     from talog import console
     page = open(console._PAGE, encoding="utf-8").read()
     for i in ("btnCa", "btnCaStop", "caModel", "caEffort", "caThread", "caCtx", "btnNewThread", "logSel",
-              "btnLogSel", "aiUsage", "aiActions", "opsStrip", "opsTol", "capBullets", "incSearch", "cmdk",
+              "btnLogSel", "aiUsage", "aiSkills", "opsStrip", "opsTol", "capBullets", "incSearch", "cmdk",
               "saveBar", "btnSaveGo", "dlg", "btnTheme", "main"):
         assert f'id="{i}"' in page, i
     assert page.count("__TALOG_TOKEN__") == 1
@@ -300,8 +308,101 @@ def test_console_page_has_core_controls():
     assert used <= defined, used - defined
 
 
-def test_action_icons_exist_in_page(con):
+def test_skill_icons_exist_in_page(con):
     from talog import console
     page = open(console._PAGE, encoding="utf-8").read()
     defined = set(re.findall(r'<symbol id="i-([a-z-]+)"', page))
-    assert {a["icon"] for a in con.claude_info()["actions"]} <= defined
+    info = con.claude_info()
+    assert {a["icon"] for a in info["skills"] + info["quick"]} <= defined
+    for i in ("skDlg", "skFields", "skOk", "skNo", "aiSkills", "aiTools"):
+        assert f'id="{i}"' in page, i
+
+
+def _incidents(con, day="20261012"):
+    os.makedirs(con.data_dir, exist_ok=True)
+    with open(os.path.join(con.data_dir, f"incidents_{day}_replay.jsonl"), "w", encoding="utf-8") as f:
+        for iid, sev in ((f"{day}-040101-capacity_drift", "warn"), (f"{day}-050228-capacity_drift", "crit")):
+            f.write(json.dumps({"id": iid, "opened": iid[9:11] + ":" + iid[11:13], "alerts": [{"title": "t"}],
+                                "verdict": {"severity": sev}}) + "\n")
+
+
+def test_skill_card_runs_slash_command_in_new_thread(con):
+    _incidents(con)
+    rca = con.claude_info()["skills"][0]
+    assert rca["fields"][0]["default"] == "20261012-050228-capacity_drift"     # 기본 = 가장 최근 심각 사건
+    assert con.claude_ask("앞 질문")["ok"] and _wait(con)["state"] == "done"
+    assert con.claude_ask("", skill="rca", args={"incident": "20261012-050228-capacity_drift"})["ok"]
+    j = _wait(con)
+    assert j["state"] == "done" and not j["resumed"] and j["skill"] == "/talog-rca" and j["card"] == "rca"
+    assert j["q"] == "사건 RCA · 20261012-050228-capacity_drift"            # 화면에는 한 줄 요약
+    a = _calls(con)[-1]["args"]
+    assert a[a.index("-p") + 1] == "/talog-rca 20261012-050228-capacity_drift" and "--resume" not in a
+    assert "mcp__talog__start_replay" not in a[a.index("--allowedTools") + 1]
+    # 스킬 파일이 에이전트 폴더에 깔린다 (고친 스킬도 다시 깔린다)
+    from talog.mcp_server import SKILLS
+    for n in SKILLS:
+        assert os.path.exists(os.path.join(con.workspace_default, ".claude", "skills", n, "SKILL.md")), n
+    # 답의 수치 대조 — 4.0(4.043)·05:02 는 도구 결과에 있고 9.9 는 없다
+    assert j["fact"]["checked"] >= 3 and j["fact"]["unsupported"] == ["9.9"] and not j["fact"]["ok"]
+    st = con.claude_ask_status()
+    assert len(st["turns"]) == 1 and st["turns"][0]["args"] == {"incident": "20261012-050228-capacity_drift"}
+
+
+def test_skill_card_validation(con):
+    assert "모르는 스킬 카드" in con.claude_ask("", skill="nope")["error"]
+    assert "사건 id 형식" in con.claude_ask("", skill="rca", args={"incident": "x y; rm"})["error"]
+    assert "HH:MM" in con.claude_ask("", skill="logs", args={"time": "5시"})["error"]
+    assert "YYYYMMDD" in con.claude_ask("", skill="daily", args={"day": "어제"})["error"]
+    assert con.ask_job.get("state") != "running"
+    # 줄바꿈·앞 '/' 는 지워 다른 슬래시 명령으로 바뀌지 않는다
+    assert con.claude_ask("", skill="site", args={"focus": "/clear\n그룹 9"})["ok"]
+    _wait(con)
+    a = _calls(con)[-1]["args"]
+    assert a[a.index("-p") + 1] == "/talog-site clear 그룹 9"
+
+
+def test_logs_card_selects_folder_and_uses_alias(con, tmp_path):
+    day = tmp_path / "talos" / "2026_10" / "12"
+    day.mkdir(parents=True)
+    (day / "InspStarter.log").write_text("2026/10/12-05:02:49.421 start\n", encoding="utf-8")
+    assert con.claude_ask("", skill="logs", args={"day": str(day), "time": "05:02", "symptom": "NoInspThread"})["ok"]
+    j = _wait(con)
+    a = _calls(con)[-1]["args"]
+    prompt = a[a.index("-p") + 1]
+    assert prompt == "/talog-logs 일자=선택 시각=05:02 증상=NoInspThread" and str(day) not in prompt
+    assert con.claude_ask_status()["log_selected"] == str(day) and "2026_10\\12" in j["q"]
+
+
+def test_rules_card_opens_replay_only_when_confirmed(con, tmp_path):
+    root = tmp_path / "talos"
+    day = root / "2026_10" / "12"
+    day.mkdir(parents=True)
+    (day / "comm.log").write_text("2026/10/12-05:02:49.421 x\n", encoding="utf-8")
+    other = tmp_path / "elsewhere" / "12"
+    other.mkdir(parents=True)
+    (other / "comm.log").write_text("x\n", encoding="utf-8")
+    con.settings["log_root"] = str(root)
+    con.cfg = settings.compile(con.settings)
+    card = next(k for k in con.claude_info()["skills"] if k["key"] == "rules")
+    assert [d["v"] for d in card["fields"][0]["choices"]] == [str(day)]       # 재현은 로그 루트 아래만
+    assert con.claude_ask("", skill="rules", args={"day": str(day)})["ok"]   # 확인 안 함 → 재진단만
+    j = _wait(con)
+    a = _calls(con)[-1]["args"]
+    assert "mcp__talog__start_replay" not in a[a.index("--allowedTools") + 1] and not j["replay"]
+    assert a[a.index("-p") + 1] == "/talog-rules 날짜=20261012 재현 안 함"
+    assert "로그 루트 밖" in con.claude_ask("", skill="rules", args={"day": str(other)}, allow_replay=True)["error"]
+    assert con.claude_ask("", skill="rules", args={"day": str(day)}, allow_replay=True, model="opus")["ok"]
+    j = _wait(con)
+    a = _calls(con)[-1]["args"]
+    assert a[a.index("--allowedTools") + 1] == Console.ASK_TOOLS + ",mcp__talog__start_replay" and j["replay"]
+    assert a[a.index("-p") + 1] == f"/talog-rules 날짜=20261012 일자={os.path.join('2026_10', '12')} 재현 허용"
+    assert a[a.index("--fallback-model") + 1] == "sonnet"
+
+
+def test_ground_check_ignores_paths_ids_and_list_numbers():
+    ev = ["그룹 9 점유 4.043초, 유휴 3, 05:02:28 거부, 내성 0.332"]
+    ans = ("1. 그룹 9 점유 4.04초 (05:02)\n2. 내성 33.2%\n- 보고서 `reports\\풍산_20261012\\rca_x.html`\n"
+           "- 사건 20261012-050228-capacity_drift · 13:10 재시작 · 7.7배")
+    r = Console.ground_check(ans, ev)
+    assert set(r["unsupported"]) == {"13:10", "7.7"} and not r["ok"]
+    assert Console.ground_check("근거 없음", ev) == {"ok": True, "checked": 0, "unsupported": []}

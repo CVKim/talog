@@ -20,16 +20,18 @@ talog MCP 도구(`mcp__talog__*`)로 사건·처리 여유 추세·진단 리포
 5. **조치는 런북 기준** — 지금 / 다음 정지 때 / 개발팀 으로 나눈다. 진행 중 검사가 있으면 즉시 재시작을 권하지 않는다.
 6. **결과는 파일로** — `reports\` 에 독립 HTML 보고서(talog-rca 템플릿)를 남기고, 답변에는 결론 세 줄과 경로만 쓴다.
 
-## 워크플로
+## 워크플로 — 작업마다 스킬 하나
 
-| 하고 싶은 일 | 이렇게 시작 |
-|---|---|
-| 사건 하나 깊게 | "talog 사건 `<사건 id>` 분석해 줘" → talog-rca 스킬 절차 |
-| 하루 검토 | `/mcp__talog__daily_review` 또는 "어제 경보 검토해 줘" |
-| 현장 점검 | `/mcp__talog__site_health` |
-| 원본 로그로 확인 | `/mcp__talog__log_investigation` 또는 "12일 05:02 전후 원본 로그 봐 줘" — `log_days` 로 폴더부터 본다 |
-| 규칙을 고친 뒤 | "rediagnose 로 원인이 바뀐 사건만 보여 줘" |
-| 그날을 다시 돌려 보기 | start_replay → job_status (수 분 걸린다고 먼저 알린다) |
+| 하고 싶은 일 | 스킬 (슬래시 명령) | 예 |
+|---|---|---|
+| 사건 하나 깊게 | `/talog-rca <사건 id>` | `/talog-rca 20261012-050228-capacity_drift` |
+| 원본 로그로 확인 | `/talog-logs <일자> <시각> <증상>` | `/talog-logs 12 05:02 NoInspThread` — `log_days` 로 폴더부터 본다 |
+| 하루 검토 | `/talog-daily <날짜> <출처>` | `/talog-daily 20261012` |
+| 현장 점검·규칙 조정 | `/talog-site <출처>` | 기준선·재시작·오경보·놓침과 문턱값 조정안 |
+| 규칙을 고친 뒤 비교 | `/talog-rules <출처> <일자> [재현 허용]` | 재진단 → (허락하면) 재현 → 전후 비교표. 사용자가 직접 부를 때만 |
+
+공통 원인 표·용어·예시 SQL·보고서 규칙은 `.claude/skills/talog-rca/reference.md` 에 있다.
+Claude 데스크톱 채팅에서는 같은 일을 `/mcp__talog__incident_rca` 같은 MCP 프롬프트로 시작할 수 있다.
 
 ## 하지 말 것
 

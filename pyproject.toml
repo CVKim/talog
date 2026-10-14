@@ -1,6 +1,6 @@
 [project]
 name = "talog"
-version = "2.1.0"
+version = "2.2.0"
 description = "AI 비전 로그 운영 플랫폼 — 실시간 감시 · 룰+LLM 사건 판단 · 메일 알림 · 진단 리포트 · 자연어 질의"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,8 +26,8 @@ build-backend = "setuptools.build_meta"
 packages = ["talog", "talog.rules"]
 
 [tool.setuptools.package-data]
-"talog" = ["console.html", "assets/*", "claude_kit/*.md", "claude_kit/skills/talog-rca/*.md",
-           "claude_kit/skills/talog-rca/templates/*.html"]
+"talog" = ["console.html", "assets/*", "claude_kit/*.md", "claude_kit/skills/*/*.md",
+           "claude_kit/skills/*/templates/*.html"]
 "talog.rules" = ["*.yaml"]
 
 [tool.pytest.ini_options]

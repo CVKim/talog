@@ -31,7 +31,9 @@ Python 3.10 이상, 런타임 의존성은 PyYAML 하나. 현장 PC 는 오프�
   `Result/`(git 제외)에 둔다.
 - **Claude 연동은 구독 로그인만 쓴다.** API 키·과금 경로를 새로 만들지 않는다. 콘솔 '바로 묻기'는 `Console.claude_env` 로
   키를 빼고 띄우고, 쓰기는 에이전트 폴더 `reports` 안(`Edit(reports/**)`)만 허용한다.
-- `talog/claude_kit/skills/talog-rca` 와 `.claude/skills/talog-rca` 는 같은 내용으로 유지한다(테스트가 확인).
+- `talog/claude_kit/skills/talog-*` 와 `.claude/skills/talog-*` 는 같은 내용으로 유지한다(테스트가 확인). 스킬의
+  `allowed-tools` 에는 읽기 도구만 둔다 — 쓰는 도구(`start_replay`·`save_case`)는 콘솔이 사용자 확인 뒤에만 연다.
+- 작업은 master 에 바로 커밋·푸시한다(브랜치·PR 없이 — 사용자 요청 2026-10-14).
 - `talog/console.html` 은 파일 하나·외부 리소스 없음(현장 오프라인). 화면을 바꾸면 디자인 시스템 문서를 따르고,
   대비는 계산으로, 배치는 1440·1024·375 폭과 밝게/어둡게에서 직접 확인한다.
 - 감지·판단 규칙을 고치면 현장 원본 재현(경보 재현)으로 전후를 비교하고 CHANGELOG 에 근거를 남긴다.

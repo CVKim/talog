@@ -463,6 +463,28 @@ iframe.mail{width:100%;height:540px;border:1px solid var(--line);border-radius:v
 .toolgrp li .ic{color:var(--mute)}
 .toolgrp li .mono{font-size:11.5px;color:var(--ink-2)}
 .toolgrp li span span{color:var(--mute)}
+.toolcols{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 22px}
+.toolcols .toolgrp b{margin-top:0}
+/* 작업 스킬 카드 — 카드 하나 = 스킬 하나 (/talog-…) */
+.skl{display:grid;gap:6px}
+.act .skn{display:inline-block;font:11.5px/1.4 var(--mono);color:var(--mute);margin-top:3px}
+.act.skc{padding:9px 11px;gap:10px;align-items:center;width:100%}
+.act.skc .ai-ic{width:30px;height:30px;border-radius:8px}
+.act.skc b{font-size:13px}.act.skc .d{display:none}
+.act.skc .skn{margin-top:1px}
+.ai-quick{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:14px;width:100%;max-width:820px}
+.ai-quick .lab{width:100%;text-align:center;font-size:12px;color:var(--mute);font-weight:600}
+#skDlg{width:min(560px,calc(100vw - 32px))}
+.sk-h .ai-ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand-ink);flex:none}
+.sk-h .ai-ic .ic{width:20px;height:20px;color:var(--brand-ink);margin:0}
+.skf{margin-top:18px}
+.skf .field{margin-bottom:12px}
+.skf .field .hint{margin:2px 0 0}
+.skf .confirm{border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;background:var(--surface-2)}
+.skf .confirm.on{border-color:var(--warn-line);background:var(--warn-soft)}
+.skf .confirm .hint{margin:6px 0 0;color:var(--sub)}
+.sk-run{font-size:12.5px;color:var(--mute);margin:4px 0 0;line-height:1.6}
+.sk-run .mono{color:var(--ink-2)}
 .principles{list-style:none;margin:0;padding:0;display:grid;gap:10px}
 .principles li{display:grid;grid-template-columns:18px minmax(0,1fr);gap:8px;font-size:12.5px;color:var(--sub);line-height:1.55}
 .principles li>.ic{color:var(--mute);margin-top:2px}.principles b{color:var(--ink);font-weight:600}
@@ -547,7 +569,8 @@ dialog[open]{animation:dlgIn var(--t2) var(--ease)}
   main{padding:20px 20px 120px}.topbar{padding:10px 20px}.subnav{margin:-20px -20px 18px;padding:10px 20px}
   .g3{grid-template-columns:minmax(0,1fr)}
 }
-@media (max-width:899px){.g2,.formgrid{grid-template-columns:minmax(0,1fr)}.ai-acts{grid-template-columns:minmax(0,1fr)}.bul{grid-template-columns:62px minmax(0,1fr)}.bul .v{grid-column:2;text-align:left}}
+@media (max-width:1279px){.toolcols{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:899px){.g2,.formgrid{grid-template-columns:minmax(0,1fr)}.ai-acts{grid-template-columns:minmax(0,1fr)}.toolcols{grid-template-columns:minmax(0,1fr)}.bul{grid-template-columns:62px minmax(0,1fr)}.bul .v{grid-column:2;text-align:left}}
 @media (max-width:767px){
   body{font-size:15px}
   input[type=text],input[type=number],input[type=password],input[type=search],select,textarea{font-size:16px}
@@ -770,12 +793,11 @@ dialog[open]{animation:dlgIn var(--t2) var(--ease)}
       </div>
     </div>
     <aside class="ai-side" aria-label="분석 맥락">
+      <div class="ctx" id="ctxSkills"><h3><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>작업 스킬<span class="meta">누르면 필요한 값만 묻습니다</span></h3><div class="skl" id="aiSkills"></div></div>
       <div class="ctx hl" id="ctxLog"><h3><svg class="ic" aria-hidden="true"><use href="#i-folder-open"/></svg>분석할 원본 로그<span class="meta" id="logSelState"></span></h3>
         <div class="selp hidden" id="logSelPath"></div>
         <div class="row"><label class="vh" for="logSel">로그 폴더</label><input type="text" id="logSel" list="logDays" style="flex:1;min-width:0" placeholder="일자 폴더 경로"><datalist id="logDays"></datalist><button class="btn sm" id="btnLogSel" type="button">고르기</button><button class="btn sm ghost hidden" id="btnLogClr" type="button" aria-label="고른 폴더 해제">해제</button></div>
         <p class="hint">Claude 가 이 폴더의 원본 로그를 시각·문구·검사 id 로 직접 찾아 읽습니다. Claude 에게는 경로 대신 '선택'으로만 알립니다.</p></div>
-      <div class="ctx hidden" id="ctxActs"><h3><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>빠른 작업<span class="meta">MCP 프롬프트</span></h3><div class="grid" style="gap:6px" id="aiActions"></div></div>
-      <div class="ctx"><h3><svg class="ic" aria-hidden="true"><use href="#i-wrench"/></svg>Claude 가 쓰는 talog 도구<span class="meta" id="aiToolCnt"></span></h3><div id="aiTools"></div></div>
       <div class="ctx"><h3><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>데이터·비용</h3>
         <ul class="principles">
           <li><svg class="ic" aria-hidden="true"><use href="#i-check-circle"/></svg><span><b>추가 과금 없음</b> — 구독 로그인으로만 실행합니다. 이 PC 에 API 키가 있어도 빼고 띄웁니다. 구독 사용량에는 포함됩니다.</span></li>
@@ -804,6 +826,9 @@ dialog[open]{animation:dlgIn var(--t2) var(--ease)}
         <div class="mono muted" id="deskPath" style="margin:10px 0 8px"></div>
         <div class="cmd"><pre id="cmdDesk">…</pre><button class="btn sm" type="button" data-copy="cmdDesk"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg>복사</button></div></div>
     </div>
+    <div class="sechead" style="margin-top:24px"><span class="n">4</span><h3>Claude 가 쓰는 talog 도구</h3><span class="meta" id="aiToolCnt"></span></div>
+    <p class="hint" style="margin:0 0 10px">스킬이 이 도구들을 차례로 부릅니다. 바로 묻기는 읽기 도구만 쓰고, 경보 재현은 '규칙 바꾼 뒤 비교' 카드에서 확인했을 때만, 사례 저장은 Claude 앱에서만 씁니다.</p>
+    <div class="toolcols" id="aiTools"></div>
   </div>
 </section>
 
@@ -884,6 +909,10 @@ dialog[open]{animation:dlgIn var(--t2) var(--ease)}
 <div class="toasts" id="toast"></div>
 <dialog id="dlg" aria-labelledby="dlgT" aria-describedby="dlgB"><form method="dialog" class="dlg"><div class="dlg-h"><svg class="ic" aria-hidden="true"><use href="#i-alert"/></svg><div><h2 id="dlgT"></h2><p id="dlgB"></p></div></div>
   <div class="dlg-act"><button class="btn" value="cancel" id="dlgNo">취소</button><button class="btn primary" value="ok" id="dlgOk">확인</button></div></form></dialog>
+<dialog id="skDlg" aria-labelledby="skT" aria-describedby="skD"><form method="dialog" class="dlg" id="skForm"><div class="dlg-h sk-h"><span class="ai-ic" id="skIc"></span><div><h2 id="skT"></h2><p id="skD"></p></div></div>
+  <div class="skf" id="skFields"></div>
+  <p class="sk-run" id="skRun"></p>
+  <div class="dlg-act"><button class="btn" type="button" id="skNo">취소</button><button class="btn primary" value="ok" id="skOk"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg><span>실행</span></button></div></form></dialog>
 <dialog id="cmdk" aria-label="빠른 이동"><div class="cmdk-in"><svg class="ic lg" aria-hidden="true"><use href="#i-search"/></svg><input type="text" id="cmdkQ" placeholder="화면·사건·작업 찾기" aria-label="찾기" aria-controls="cmdkList" autocomplete="off"></div>
   <div class="cmdk-list" id="cmdkList" role="listbox" aria-label="결과"></div><div class="cmdk-foot"><span>↑↓ 고르기</span><span>Enter 열기</span><span>Esc 닫기</span></div></dialog>
 
@@ -1168,9 +1197,8 @@ async function openInc(id, rp) {
   const sel = t => { tabs.forEach(b => { const on = b === t; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; $("#" + b.getAttribute("aria-controls")).hidden = !on; }); };
   tabs.forEach((t, i) => { t.onclick = () => sel(t); t.onkeydown = e => { const k = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0; if (k) { e.preventDefault(); const n = tabs[(i + k + tabs.length) % tabs.length]; sel(n); n.focus(); } }; });
   if (fu) $("#mFu").onclick = () => { $("#mFrame").src = `/api/mail?id=${encodeURIComponent(id)}&replay=${rp ? 1 : 0}&which=followup`; };
-  $("#btnIncClaude").onclick = () => busy($("#btnIncClaude"), async () => { const p = await api("/api/claude/prompt", {name: "incident_rca", args: {incident_id: id}}); await askClaude(p.ok ? p.text : `talog 사건 ${id} 를 talog-rca 절차로 분석해 줘`, {fresh: true}); });
-  if (d.day_dir) $("#btnIncLog").onclick = () => busy($("#btnIncLog"), async () => { const r = await api("/api/claude/log", {path: d.day_dir}); if (!r.ok) { toast(r.error, "err"); return; } S.logs = r;
-    const p = await api("/api/claude/prompt", {name: "log_investigation", args: {day: "선택", symptom: `${d.opened} 무렵 ${title} (talog 사건 ${id})`}}); await askClaude(p.text, {fresh: true}); });
+  $("#btnIncClaude").onclick = () => busy($("#btnIncClaude"), () => runSkill("rca", {incident: id}));     // 사건 RCA 스킬 (읽기만)
+  if (d.day_dir) $("#btnIncLog").onclick = () => busy($("#btnIncLog"), () => runSkill("logs", {day: d.day_dir, time: ((String(d.opened || "").match(/\d{1,2}:\d{2}(:\d{2})?/) || [""])[0]), symptom: `${title} (talog 사건 ${id})`}));
   const ask = async () => { const q = $("#iaQ").value.trim(); if (!q) return; $("#iaBusy").textContent = "답을 만드는 중… (CPU 는 1~2분)";
     const r = await busy($("#btnIa"), () => api("/api/ask/incident", {id, replay: rp, q})); $("#iaBusy").textContent = "";
     if (!r || !r.ok) { toast("질문 실패: " + ((r && r.error) || ""), "err"); return; } $("#iaQ").value = "";
@@ -1194,8 +1222,7 @@ async function startJob(kind, btn) { const dir = anaDir();
 $("#btnReport").onclick = () => startJob("report", $("#btnReport")); $("#btnReplay").onclick = () => startJob("replay", $("#btnReplay"));
 $("#btnAnaClaude").onclick = () => busy($("#btnAnaClaude"), async () => { const dir = anaDir();
   if (!dir) { toast("로그 폴더를 넣으십시오", "err"); return; }
-  const r = await api("/api/claude/log", {path: dir}); if (!r.ok) { toast(r.error, "err"); return; } S.logs = r;
-  const p = await api("/api/claude/prompt", {name: "log_investigation", args: {day: "선택", symptom: "그날 가장 심각한 이상 (예: NoInspThread)"}}); await askClaude(p.text, {fresh: true}); });
+  await ensureClaude(); openSkill(((S.claude && S.claude.skills) || []).find(k => k.key === "logs"), {day: dir}); });
 let jobTimer = null;
 async function pollJob() { const j = await api("/api/job"); if (j.state === "idle") return; $("#jobBox").classList.remove("hidden");
   const kind = j.kind === "replay" ? "경보 재현" : "진단 리포트", run = j.state === "running";
@@ -1247,15 +1274,15 @@ async function loadClaude() {
   if (!$("#caModel").options.length) { $("#caModel").innerHTML = c.models.map(m => `<option value="${m.v}">${esc(m.label)}</option>`).join(""); $("#caEffort").innerHTML = c.efforts.map(m => `<option value="${m.v}">${esc(m.label)}</option>`).join("");
     try { const pm = localStorage.getItem("talog.claude.model"), pe = localStorage.getItem("talog.claude.effort");
       if (pm != null && c.models.some(m => m.v === pm)) $("#caModel").value = pm; if (pe != null && c.efforts.some(m => m.v === pe)) $("#caEffort").value = pe; } catch (e) {} }
-  $("#aiActions").innerHTML = c.actions.map((a, i) => `<button type="button" class="act mini" data-act="${i}" title="${esc(a.desc)}"><span class="ai-ic">${ic(a.icon)}</span><div><b>${esc(a.title)}</b><span>${esc(a.desc)}</span></div></button>`).join("");
-  $$("#aiActions [data-act]").forEach(b => b.onclick = () => runAction(c.actions[+b.dataset.act]));
+  $("#aiSkills").innerHTML = c.skills.map((k, i) => skillBtn(k, i, true)).join("");
+  $$("#aiSkills [data-sk]").forEach(b => b.onclick = () => openSkill(c.skills[+b.dataset.sk]));
   const byName = Object.fromEntries(c.tools.map(t => [t.name, t]));
   $("#aiToolCnt").textContent = `${c.tools.length}개 · 바로 묻기 ${c.tools.filter(t => t.ask).length}개`;
-  $("#aiTools").innerHTML = TOOL_GROUPS.map(([g, names]) => `<div class="toolgrp"><b>${g}</b><ul>${names.filter(n => byName[n]).map(n => `<li title="${esc(byName[n].description)}">${ic(TOOL_IC[n] || "wrench", "sm")}<span><span class="mono">${n}</span> <span>${esc(byName[n].title)}${byName[n].ask ? "" : " · Claude 앱에서"}</span></span></li>`).join("")}</ul></div>`).join("");
+  $("#aiTools").innerHTML = TOOL_GROUPS.map(([g, names]) => `<div class="toolgrp"><b>${g}</b><ul>${names.filter(n => byName[n]).map(n => `<li title="${esc(byName[n].description)}">${ic(TOOL_IC[n] || "wrench", "sm")}<span><span class="mono">${n}</span> <span>${esc(byName[n].title)}${byName[n].ask ? "" : byName[n].card ? " · 비교 카드에서 확인 후" : " · Claude 앱에서"}</span></span></li>`).join("")}</ul></div>`).join("");
   renderLogSel(c.logs);
   $("#cmdCode").textContent = c.claude_code; $("#cmdMcp").textContent = c.mcp_json; $("#cmdDesk").textContent = c.desktop_json;
   $("#deskPath").textContent = c.desktop_path + (c.desktop_exists ? "  (파일 있음 — talog 항목만 붙이기)" : "  (없으면 새로 만듭니다)");
-  $("#aiSkillHint").innerHTML = c.skill ? `RCA 절차 Skill: <span class="mono">${esc(c.skill_path)}</span> (<span class="mono">/talog-rca</span>)` : "";
+  $("#aiSkillHint").innerHTML = c.skill ? `작업 스킬 ${c.skills.length}개 — 에이전트 폴더의 <span class="mono">.claude\\skills\\talog-*</span>: ${c.skills.map(k => `<span class="mono">${esc(k.command)}</span>`).join(" · ")}` : "";
   if (!$("#wsDir").value) $("#wsDir").value = c.workspace_default;
   $("#wsResult").innerHTML = c.workspace_exists ? `<span class="ok">${ic("check-circle", "sm")} 이미 있습니다</span> <span class="meta">— 다시 만들면 연결·스킬만 새로 하고 CLAUDE.md 는 그대로 둡니다</span>` : "";
   renderThread(c.ask); if (c.ask.state === "running") { clearTimeout(askTimer); askTimer = setTimeout(() => pollAsk(false), 900); } }
@@ -1295,7 +1322,42 @@ function mdHtml(t) { const inline = mdInline;
   if (code !== null) out.push(`<pre>${esc(code.join("\n"))}</pre>`);
   fl(); ft(); return out.join(""); }
 let askTimer = null;
-function setAskRunning(on) { $(".comp").classList.toggle("running", on); $("#btnCa").disabled = on; $("#btnCaStop").classList.toggle("hidden", !on); $("#btnNewThread").disabled = on; $$("#aiActions [data-act], #caThread .ai-empty [data-act]").forEach(b => b.disabled = on); }
+function setAskRunning(on) { $(".comp").classList.toggle("running", on); $("#btnCa").disabled = on; $("#btnCaStop").classList.toggle("hidden", !on); $("#btnNewThread").disabled = on; $$("#aiSkills [data-sk], #caThread .ai-empty [data-sk], #caThread .ai-empty [data-quick]").forEach(b => b.disabled = on); }
+/* ── 작업 스킬 카드: 누르면 필요한 값만 묻고 '/스킬 인자'로 새 대화를 연다 ── */
+const skillBtn = (k, i, side) => `<button type="button" class="act${side ? " skc" : ""}" data-sk="${i}"${side ? ` title="${esc(k.desc)}"` : ""}><span class="ai-ic">${ic(k.icon)}</span><div><b>${esc(k.title)}</b><span class="d">${esc(k.desc)}</span><span class="skn">${esc(k.command)}</span></div></button>`;
+let skCur = null;
+function skField(f, v) { const id = "sk_" + f.name, val = v != null && v !== "" ? v : (f.default || "");
+  const lab = `<label for="${id}">${esc(f.label)}${f.hint && f.kind !== "confirm" ? ` <span class="opt">(${esc(f.hint)})</span>` : ""}</label>`;
+  if (f.kind === "incident") return `<div class="field">${lab}<select id="${id}" data-f="${f.name}"><option value="">가장 최근 심각 사건</option>${(f.choices || []).map(o => `<option value="${esc(o.v)}"${o.v === val ? " selected" : ""}>${esc((SEVK[o.severity] ? `[${SEVK[o.severity]}] ` : "") + o.label)}</option>`).join("")}</select></div>`;
+  if (f.kind === "day") return `<div class="field">${lab}<select id="${id}" data-f="${f.name}"><option value="">사건이 있는 가장 최근 날</option>${(f.choices || []).map(o => `<option value="${esc(o.v)}"${o.v === val ? " selected" : ""}>${esc(o.label)}</option>`).join("")}</select></div>`;
+  if (f.kind === "logday") { const ch = f.choices || [];
+    return `<div class="field">${lab}<input type="text" id="${id}" data-f="${f.name}" list="${id}_l" value="${esc(val)}" placeholder="${ch.length ? "일자 폴더 경로" : "일자 폴더 경로 — 설정의 로그 루트에 폴더가 없습니다"}" spellcheck="false"><datalist id="${id}_l">${ch.map(o => `<option value="${esc(o.v)}">${esc(o.label)}</option>`).join("")}</datalist><p class="hint">${f.root_only ? "재현하려면 설정의 로그 루트 아래 일자 폴더여야 합니다. " : ""}Claude 에게는 경로 대신 '선택'으로만 알립니다.</p></div>`; }
+  if (f.kind === "confirm") return `<div class="confirm" id="${id}_box"><label class="switch"><input type="checkbox" id="${id}" data-f="${f.name}"${val === true ? " checked" : ""}><span>${esc(f.label)}</span></label><p class="hint">${esc(f.hint || "")}</p></div>`;
+  const pat = f.kind === "time" ? ` pattern="\\d{1,2}:\\d{2}(:\\d{2})?" inputmode="numeric" title="HH:MM 또는 HH:MM:SS"` : "";
+  return `<div class="field">${lab}<input type="text" id="${id}" data-f="${f.name}" value="${esc(val)}" placeholder="${esc(f.placeholder || "")}"${pat} maxlength="160"></div>`; }
+function skRunLine() { const sel = s => { const o = $(s).selectedOptions[0]; return o ? o.textContent.split(" — ")[0] : "기본"; };
+  const rp = $("#sk_replay"), on = !!(rp && rp.checked);
+  if (rp) { $("#sk_replay_box").classList.toggle("on", on); $("#skOk span").textContent = on ? "재현 포함 실행" : "실행"; }
+  $("#skRun").innerHTML = `<span class="mono">${esc(skCur.command)}</span> 스킬을 새 대화로 실행합니다 · 모델 ${esc(sel("#caModel"))} · effort ${esc(sel("#caEffort"))}${on ? " · <b>이 질문에서만 경보 재현 허용</b>" : ""}`; }
+async function openSkill(k, preset = {}) { if (!k) return; await ensureClaude();
+  if (S.ask && S.ask.state === "running") { toast("Claude 가 답하는 중입니다 — 끝난 뒤 실행하십시오", "err"); return; }
+  skCur = k; $("#skIc").innerHTML = ic(k.icon); $("#skT").textContent = k.title; $("#skD").textContent = k.desc;
+  $("#skFields").innerHTML = k.fields.map(f => skField(f, preset[f.name])).join(""); $("#skOk span").textContent = "실행";
+  const rp = $("#sk_replay"); if (rp) rp.onchange = skRunLine; skRunLine();
+  const d = $("#skDlg"); d.returnValue = ""; d.showModal(); const f1 = $("#skFields [data-f]"); if (f1) f1.focus(); }
+$("#skNo").onclick = () => $("#skDlg").close("cancel");
+$("#skDlg").onclose = async () => { const d = $("#skDlg"), k = skCur; if (d.returnValue !== "ok" || !k) return;
+  const args = {}; let replay = false;
+  $$("#skFields [data-f]").forEach(el => { if (el.type === "checkbox") { if (el.dataset.f === "replay") replay = el.checked; } else args[el.dataset.f] = el.value.trim(); });
+  if (replay && !(await confirmBox({title: "그날 로그를 재현할까요?", body: "지금 규칙으로 하루치를 다시 돌려 경보·사건을 만듭니다. 작업 폴더에 결과 파일을 쓰고 수 분~수십 분 걸리며, 메일은 보내지 않습니다.\nClaude 는 이 질문에서만 재현 도구를 쓸 수 있습니다.", ok: "재현 포함 실행"}))) return;
+  runSkill(k, args, replay); };
+async function runSkill(k, args = {}, replay = false) { await ensureClaude();
+  if (typeof k === "string") k = ((S.claude && S.claude.skills) || []).find(x => x.key === k); if (!k) return;
+  if (!S.claudeCli) { copyText(`${k.command} ${Object.values(args).filter(Boolean).join(" ")}`.trim(), "이 PC 에 Claude Code 가 없어 스킬 명령을 복사했습니다 — 에이전트 폴더를 연 Claude 앱에 붙여 넣으세요"); return; }
+  if (S.view !== "ai") go("ai", {focus: false});
+  const r = await api("/api/claude/ask", {skill: k.key, args, allow_replay: !!replay, model: $("#caModel").value || "", effort: $("#caEffort").value || ""});
+  if (!r || !r.ok) { toast((r && r.error) || "실행하지 못했습니다", "err"); return; }
+  S.openK = {}; setAskRunning(true); pollAsk(true); }
 async function askClaude(q, {fresh = false} = {}) { await ensureClaude();
   if (!S.claudeCli) { copyText(q, "이 PC 에 Claude Code 가 없어 질문을 복사했습니다 — Claude 앱에 붙여 넣으세요"); return; }
   if (S.view !== "ai") go("ai", {focus: false});
@@ -1331,31 +1393,33 @@ function turnHtml(t, i, last) {
   let body = "";
   if (running) body = t.live ? `<div class="answer streaming">${mdHtml(t.live)}</div>` : `<div class="typing" role="img" aria-label="생각하는 중"><i></i><i></i><i></i></div>`;
   else if (t.state === "done") { const reps = (t.reports || []).map(p => { const h = p.toLowerCase().endsWith(".html"); return `<a class="btn sm" href="/api/claude/file?path=${encodeURIComponent(p)}" target="_blank" rel="noopener">${ic(h ? "file-text" : "list", "sm")}${h ? "보고서" : "근거"} · ${esc(p.split(/[\\/]/).pop())}</a>`; }).join("");
-    body = `<div class="answer">${mdHtml(t.answer)}</div><div class="ans-bar"><button class="btn sm ghost" type="button" data-copyans="${i}">${ic("copy", "sm")}복사</button>${last ? `<button class="btn sm ghost" type="button" data-again="${i}">${ic("repeat", "sm")}다시 묻기</button>` : ""}${reps}<span class="spacer"></span><span class="ai-note">${ic("sparkles", "sm")}AI 가 만든 답 — 근거를 확인하십시오</span></div>`; }
+    body = `<div class="answer">${mdHtml(t.answer)}</div><div class="ans-bar"><button class="btn sm ghost" type="button" data-copyans="${i}">${ic("copy", "sm")}복사</button>${last ? `<button class="btn sm ghost" type="button" data-again="${i}">${ic("repeat", "sm")}다시 ${t.card ? "실행" : "묻기"}</button>` : ""}${reps}${factBadge(t.fact)}<span class="spacer"></span><span class="ai-note">${ic("sparkles", "sm")}AI 가 만든 답 — 근거를 확인하십시오</span></div>`; }
   else body = `<div class="note ${t.state === "failed" ? "crit" : ""}">${ic(t.state === "failed" ? "x-circle" : "info")}<span style="white-space:pre-wrap">${esc(t.error || (t.state === "cancelled" ? "사용자가 멈췄습니다" : "실패"))}</span></div>${last ? `<div class="ans-bar"><button class="btn sm" type="button" data-again="${i}">${ic("repeat", "sm")}다시 묻기</button></div>` : ""}`;
   const q = t.q.length > 700 ? t.q.slice(0, 700) + " …" : t.q;
-  return `<div class="msg-u">${t.log_selected ? `<div class="mu-h"><span class="tag">${ic("folder-open", "sm")}원본 로그 폴더 함께</span></div>` : ""}${esc(q)}</div><div class="msg-ai"><div class="avatar">${ic("sparkles")}</div><div class="ai-body"><div class="ai-head">${head}</div>${steps}${body}</div></div>`; }
+  const tags = (t.skill ? `<span class="tag">${ic("bolt", "sm")}${esc(t.skill)}</span>` : "") + (t.replay ? `<span class="tag w">${ic("history", "sm")}재현 허용</span>` : "") + (t.log_selected && !t.skill ? `<span class="tag">${ic("folder-open", "sm")}원본 로그 폴더 함께</span>` : "");
+  return `<div class="msg-u">${tags ? `<div class="mu-h">${tags}</div>` : ""}${esc(q)}</div><div class="msg-ai"><div class="avatar">${ic("sparkles")}</div><div class="ai-body"><div class="ai-head">${head}</div>${steps}${body}</div></div>`; }
 function renderThread(st) { S.ask = st = st || {}; usageBadge(st.usage); renderCtx(st);
   const turns = st.turns || [], run = st.state === "running", box = $("#caThread"); setAskRunning(run);
-  $("#ctxActs").classList.toggle("hidden", !turns.length);           // 빈 대화에서는 가운데 카드로 보인다
+  $("#ctxSkills").classList.toggle("hidden", !turns.length);         // 빈 대화에서는 가운데 카드로 보인다
   const la = [...turns].reverse().find(t => t.auth != null && t.auth !== "");
   $("#aiStAuth").className = "badge " + (la ? (la.auth === "none" ? "ok" : "warn") : "plain");
   $("#aiStAuth").textContent = la ? (la.auth === "none" ? "구독 로그인 확인됨" : `API 과금 계정 (${la.auth})`) : "구독 로그인으로 실행";
-  if (!turns.length) { const A = (S.claude && S.claude.actions) || [];
-    box.innerHTML = `<div class="ai-empty"><div class="orb">${ic("sparkles")}</div><h2>무엇을 분석할까요?</h2><p>Claude 가 talog 의 사건·처리 여유·진단 리포트와 <b>원본 로그</b>를 도구로 직접 읽고 답합니다. 질문을 쓰거나 아래 작업을 고르세요.</p><div class="ai-acts">${A.map((a, i) => `<button type="button" class="act" data-act="${i}"><span class="ai-ic">${ic(a.icon)}</span><div><b>${esc(a.title)}</b><span>${esc(a.desc)}</span></div></button>`).join("")}</div></div>`;
-    $$("#caThread [data-act]").forEach(b => b.onclick = () => runAction(A[+b.dataset.act])); return; }
+  if (!turns.length) { const K = (S.claude && S.claude.skills) || [], Q = (S.claude && S.claude.quick) || [];
+    box.innerHTML = `<div class="ai-empty"><div class="orb">${ic("sparkles")}</div><h2>무엇을 분석할까요?</h2><p>Claude 가 talog 의 사건·처리 여유·진단 리포트와 <b>원본 로그</b>를 도구로 직접 읽고 답합니다. 작업을 고르면 필요한 값만 묻고 그 작업의 스킬로 시작합니다.</p><div class="ai-acts">${K.map((k, i) => skillBtn(k, i, false)).join("")}</div>${Q.length ? `<div class="ai-quick"><span class="lab">가벼운 질문</span>${Q.map((x, i) => `<button type="button" class="btn sm" data-quick="${i}">${ic(x.icon, "sm")}${esc(x.title)}</button>`).join("")}</div>` : ""}</div>`;
+    $$("#caThread [data-sk]").forEach(b => b.onclick = () => openSkill(K[+b.dataset.sk]));
+    $$("#caThread [data-quick]").forEach(b => b.onclick = () => askClaude(Q[+b.dataset.quick].text, {fresh: true})); return; }
   if (box.querySelector(".ai-empty")) box.innerHTML = "";
   while (box.children.length > turns.length) box.lastElementChild.remove();
   turns.forEach((t, i) => { const h = turnHtml(t, i, i === turns.length - 1); let el = box.children[i];
     if (!el) { el = document.createElement("div"); el.className = "turn"; box.appendChild(el); }
     if (el._h === h) return; el._h = h; el.innerHTML = h;
     $$("[data-copyans]", el).forEach(b => b.onclick = () => copyText(t.answer, "답을 복사했습니다"));
-    $$("[data-again]", el).forEach(b => b.onclick = () => askClaude(t.q, {fresh: !(S.ask && S.ask.can_continue) || turns.length === 1})); }); }
-async function runAction(a) { if (!a) return; await ensureClaude();
-  if (a.needs === "log" && !(S.logs && S.logs.selected)) { toast("먼저 오른쪽 '분석할 원본 로그'에서 폴더를 고르십시오", "err"); if (S.view !== "ai") go("ai"); $("#logSel").focus(); return; }
-  let text = a.text;
-  if (a.key === "log") { const p = await api("/api/claude/prompt", {name: "log_investigation", args: {day: "선택", symptom: "그날 가장 심각한 이상 (예: NoInspThread)"}}); if (p.ok) text = p.text; }
-  askClaude(text, {fresh: true}); }
+    $$("[data-again]", el).forEach(b => b.onclick = () => t.card ? openSkill(((S.claude && S.claude.skills) || []).find(k => k.key === t.card), {...t.args, replay: !!t.replay}) : askClaude(t.q, {fresh: !(S.ask && S.ask.can_continue) || turns.length === 1})); }); }
+/* 답의 수치·시각을 이번 대화의 도구 결과와 대조한 결과 (지어낸 값 찾기) */
+function factBadge(f) { if (!f || !f.checked) return "";
+  if (f.ok) return `<span class="badge ok plain" title="답에 적힌 수치·시각 ${f.checked}개가 모두 이번 대화의 도구 결과에 있습니다">${ic("check-circle", "sm")}수치 근거 ${f.checked}개 확인</span>`;
+  const U = f.unsupported || [], u = U.join(", ");
+  return `<span class="badge warn plain" title="도구 결과에서 찾지 못한 값: ${esc(u)} — 계산한 값이거나 지어낸 값일 수 있습니다. 보고서에서 확인하십시오">${ic("alert", "sm")}도구 결과에 없는 값 ${U.length}개: ${esc(U.slice(0, 3).join(", ").slice(0, 28))}${U.length > 3 ? " …" : ""}</span>`; }
 async function newThread() { const r = await api("/api/claude/thread/new", {}); if (!r.ok) { toast(r.error, "err"); return; } S.openK = {}; $("#caThread").innerHTML = ""; renderThread({state: "idle", turns: [], usage: (S.ask || {}).usage}); toast("새 대화를 시작합니다"); $("#caQ").focus(); }
 $("#btnNewThread").onclick = newThread;
 $("#btnCa").onclick = () => { const q = $("#caQ").value.trim(); if (!q) { toast("질문을 넣으십시오", "err"); $("#caQ").focus(); return; } askClaude(q, {fresh: !(S.ask && S.ask.can_continue)}); };
@@ -1391,7 +1455,7 @@ $("#btnAiTest").onclick = () => busy($("#btnAiTest"), async () => { $("#aiTest")
 let cmdItems = [], cmdSel = 0;
 function cmdList() { const items = [];
   Object.entries(VIEWS).forEach(([k, v]) => items.push({g: "화면", icon: {ops: "dashboard", inc: "siren", ana: "file-search", ai: "sparkles", set: "sliders"}[k], label: v[0], k: v[1], run: () => go(k, {focus: true})}));
-  ((S.claude && S.claude.actions) || []).forEach(a => items.push({g: "Claude 작업", icon: a.icon, label: a.title, k: a.desc, run: () => { go("ai"); runAction(a); }}));
+  ((S.claude && S.claude.skills) || []).forEach(k => items.push({g: "Claude 스킬", icon: k.icon, label: k.title, k: `${k.command} · ${k.desc}`, run: () => { go("ai"); openSkill(k); }}));
   (S.incRows || (S.st && S.st.incidents) || []).slice(0, 30).forEach(r => items.push({g: "사건", icon: "siren", label: r.title, k: `${mmdd(r.day || "")} ${r.time || ""} ${r.cause || ""}`, run: () => { go("inc", {focus: false}); openInc(r.id, !!r.replay); }}));
   items.push({g: "명령", icon: "plus", label: "Claude 새 대화", k: "앞 대화를 잊고 새로 시작", run: () => { go("ai"); newThread(); }});
   items.push({g: "명령", icon: "plug", label: "Claude 연결 시험", k: "MCP 서버 점검", run: () => { go("ai"); openSetup(true); $("#btnAiTest").click(); }});

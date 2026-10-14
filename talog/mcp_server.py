@@ -39,7 +39,13 @@ from . import settings
 
 SERVER_NAME = "talog"
 # 이 서버는 도구·프롬프트·리소스의 기본 기능만 쓰므로 판마다 호환된다 — 클라이언트가 고른 판을 그대로 쓴다
-_KNOWN_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
+# 최신(요청마다 _meta 로 판을 알리는 무상태 방식)과 옛 판(initialize 핸드셰이크)을 함께 받는다 — stdio 하나로 두 시대 모두
+_MODERN_VERSIONS = ("2026-07-28",)
+_LEGACY_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
+_KNOWN_VERSIONS = _MODERN_VERSIONS + _LEGACY_VERSIONS
+_MV = "io.modelcontextprotocol/protocolVersion"
+_LIST_TTL_MS = {"tools/list": 3_600_000, "prompts/list": 3_600_000, "resources/templates/list": 3_600_000,
+                "server/discover": 3_600_000, "resources/list": 60_000, "resources/read": 30_000}
 _MAX_TEXT = 22000                 # 도구 결과 한 번의 글자 수 상한 (Claude Code 출력 한도 안)
 _TAG_RE = re.compile(r"^[\w\-. ]+$")
 _DAY_RE = re.compile(r"^(\d{8})$")
@@ -541,6 +547,10 @@ PROMPTS = [
      "description": "원본 talos 로그를 직접 읽어 증상(시각·문구·검사 id)의 경과와 원인을 찾는다",
      "arguments": [{"name": "day", "description": "일자 폴더 (예: 12, 2026_10\\12 또는 콘솔에서 고른 경로)", "required": False},
                    {"name": "symptom", "description": "증상 — 예: 05:02 NoInspThread, 검사 id, 오류 문구", "required": False}]},
+    {"name": "rules_compare", "title": "규칙 바꾼 뒤 비교",
+     "description": "저장된 사건을 지금 규칙으로 재진단하고, 사용자가 허락하면 그날을 재현해 전후를 비교한다",
+     "arguments": [{"name": "source", "description": "출처 (비우면 전체)", "required": False},
+                   {"name": "day", "description": "날짜 YYYYMMDD (재진단 범위)", "required": False}]},
 ]
 
 _GUIDE = """# talog 용어 (Claude 용 요약)
@@ -563,6 +573,7 @@ _INSTRUCTIONS = (
     "talog(talos 비전 검사 로그 분석기)의 산출물을 읽는 도구다. overview 로 시작해 list_incidents → get_incident → "
     "capacity_trend·get_report·query_report 순으로 근거를 확인한다. 원본 로그는 log_days → log_files → search_logs"
     "(시각 범위) → read_log → trace_inspection 으로 직접 읽는다 — 하루 폴더가 수십 GB 이므로 늘 시각 범위를 좁혀서 찾는다. "
+    "작업 폴더에 talog 스킬(talog-rca·talog-logs·talog-daily·talog-site·talog-rules)이 있으면 그 절차를 따른다. "
     "검사 id·경로는 마스킹돼 ID-xxxxxx·<로그> 로 보인다(그 토큰 그대로 다시 찾을 수 있다). "
     "수치·시각은 도구 결과에 있는 값만 인용하고, 룰 진단에 동의하는지 근거와 함께 밝힌다. 조치는 runbook 의 문장을 "
     "기준으로 한다. 사용자에게는 한국어로 답한다. 산출물은 사용자의 로컬 Result 폴더에 파일로 남기고 외부에 게시하지 않는다."
@@ -1257,11 +1268,36 @@ class TalogMCP:
     def get_prompt(self, name: str, args: dict) -> dict:
         return prompt_messages(name, args)
 
+    # 자원 — 런북·용어 + 최근 사건·리포트. Claude Code 에서 '@talog:talog://incident/<id>' 로 대화에 바로 붙인다
+    RESOURCE_TEMPLATES = [
+        {"uriTemplate": "talog://incident/{incident_id}", "name": "incident", "title": "talog 사건",
+         "mimeType": "text/markdown", "description": "사건 하나의 판단·룰 근거·경보·근거 데이터 (get_incident 와 같은 내용, 마스킹)"},
+        {"uriTemplate": "talog://report/{tag}", "name": "report", "title": "talog 진단 리포트 소견",
+         "mimeType": "text/markdown", "description": "리포트 하나의 자동 진단 소견과 DB 표 (get_report 와 같은 내용)"}]
+
     def resources(self) -> list[dict]:
-        return [{"uri": "talog://runbook", "name": "runbook", "title": "talog 런북 (원인·조치 사전 원문)",
-                 "mimeType": "text/yaml", "description": "rules/runbook.yaml"},
-                {"uri": "talog://guide", "name": "guide", "title": "talog 용어 요약",
-                 "mimeType": "text/markdown", "description": "유휴 스레드·점유·한계·내성·기준선·원인 이름"}]
+        out = [{"uri": "talog://runbook", "name": "runbook", "title": "talog 런북 (원인·조치 사전 원문)",
+                "mimeType": "text/yaml", "description": "rules/runbook.yaml"},
+               {"uri": "talog://guide", "name": "guide", "title": "talog 용어 요약",
+                "mimeType": "text/markdown", "description": "유휴 스레드·점유·한계·내성·기준선·원인 이름"}]
+        seen = set()
+        for i in sorted((i for s in self.all_sources() for i in s.incidents()), key=lambda i: i.get("id") or "",
+                        reverse=True):
+            iid = i.get("id") or ""
+            if not iid or iid in seen or len(seen) >= 20:
+                continue
+            seen.add(iid)
+            v = i.get("verdict") or {}
+            out.append({"uri": f"talog://incident/{iid}", "name": iid, "mimeType": "text/markdown",
+                        "title": self.mask.text(f"{iid[4:6]}/{iid[6:8]} {i.get('opened', '')} "
+                                                f"{((i.get('alerts') or [{}])[0]).get('title', '')}")[:120],
+                        "description": f"{_SEV_KO.get(v.get('severity'), '-')} · "
+                                       f"{(v.get('cause_name') or '-').split(' — ')[0]} · {v.get('label') or '-'}"})
+        for s in self.sources:
+            for r in s.reports()[-10:]:
+                out.append({"uri": f"talog://report/{r['tag']}", "name": r["tag"], "mimeType": "text/markdown",
+                            "title": f"진단 리포트 {r['tag']}", "description": " / ".join(r["findings"][:2])[:200]})
+        return out
 
     def read_resource(self, uri: str) -> dict:
         if uri == "talog://runbook":
@@ -1270,7 +1306,49 @@ class TalogMCP:
                 return {"uri": uri, "mimeType": "text/yaml", "text": f.read()}
         if uri == "talog://guide":
             return {"uri": uri, "mimeType": "text/markdown", "text": _GUIDE}
+        m = re.match(r"^talog://(incident|report)/(.+)$", uri or "")
+        if m:
+            kind, key = m.group(1), m.group(2)
+            try:
+                text = (self.t_get_incident({"incident_id": key}) if kind == "incident"
+                        else self.t_get_report({"tag": key}))
+            except ValueError as e:
+                raise KeyError(f"{uri} — {e}") from None
+            finally:
+                self.mask.save()
+            return {"uri": uri, "mimeType": "text/markdown", "text": text}
         raise KeyError(uri)
+
+    # 인자 자동완성 — 프롬프트(/mcp__talog__incident_rca 의 사건 id 등)와 자원 템플릿
+    _SYMPTOMS = ("NoInspThread", "Waiting thread count = 0", "exception", "timeout", "CheckFinish done", "INSPECT_END",
+                 "enqueueV3", "INFER_ERROR")
+
+    def complete(self, ref: dict, arg: dict) -> list[str]:
+        name, val = str((arg or {}).get("name") or ""), str((arg or {}).get("value") or "").strip().lower()
+        if name == "incident_id":
+            cands = sorted({i.get("id") for s in self.all_sources() for i in s.incidents() if i.get("id")}, reverse=True)
+        elif name == "source":
+            cands = [s.name for s in self.all_sources()]
+        elif name == "tag":
+            cands = [r["tag"] for s in self.sources for r in s.reports()]
+        elif name == "symptom":
+            cands = list(self._SYMPTOMS)
+        elif name == "day" and (ref or {}).get("name") == "log_investigation":
+            try:
+                roots = self._log_roots()
+            except ValueError:
+                return []
+            cands = (["선택"] if self._log_cfg().get("selected") else []) + [
+                next((os.path.relpath(d, r) for r in roots if logread.inside(d, r) and d != r), d)
+                for d in logread.day_dirs(roots, 30)]
+        elif name == "day":
+            cands = sorted({(i.get("id") or "")[:8] for s in self.all_sources() for i in s.incidents()
+                            if re.match(r"^\d{8}", i.get("id") or "")} | set(k for s in self.sources for k in s.kpi_days()),
+                           reverse=True)
+        else:
+            return []
+        hit = [c for c in cands if c.lower().startswith(val)]
+        return hit + [c for c in cands if val and val in c.lower() and c not in hit]
 
     # ── 원본 로그 폴더 설정 (콘솔이 고른 폴더) ─────────────────────
     def _log_cfg(self) -> dict:
@@ -1298,8 +1376,16 @@ class TalogMCP:
         return logread.resolve_day(roots, day)
 
     # ── JSON-RPC ───────────────────────────────────────────────
+    CAPABILITIES = {"tools": {"listChanged": False}, "prompts": {"listChanged": False},
+                    "resources": {"subscribe": False, "listChanged": False}, "completions": {}}
+    SERVER_INFO = {"name": SERVER_NAME, "title": "talog — AI 비전 로그 분석", "version": __version__}
+
     def handle(self, msg: dict) -> dict | None:
-        """요청 하나 → 응답(알림이면 None)."""
+        """요청 하나 → 응답(알림이면 None).
+
+        두 시대를 함께 받는다: 옛 판(2025-11-25 이전)은 initialize 핸드셰이크로, 최신 판(2026-07-28)은 요청마다
+        params._meta 에 판·클라이언트를 싣는다. 최신 요청에는 resultType·serverInfo(_meta)·캐시 힌트(ttlMs)를 붙이고,
+        모르는 판이면 UnsupportedProtocolVersionError(-32022)로 지원 판을 알린다."""
         if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0":
             return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
         method, mid = msg.get("method"), msg.get("id")
@@ -1307,16 +1393,24 @@ class TalogMCP:
             return None                                  # 클라이언트가 보낸 응답 — 이 서버는 요청을 보내지 않는다
         if "id" not in msg:
             return None                                  # 알림 (initialized, cancelled …)
-        p = msg.get("params") or {}
+        p = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+        meta = p.get("_meta") if isinstance(p.get("_meta"), dict) else {}
+        mver = str(meta.get(_MV) or "")
+        if mver and mver not in _KNOWN_VERSIONS:
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32022, "message": "Unsupported protocol version",
+                                                          "data": {"supported": list(_KNOWN_VERSIONS), "requested": mver}}}
+
+        def err(code: int, message: str) -> dict:
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": code, "message": message}}
         try:
-            if method == "initialize":
+            if method == "initialize":                   # 옛 판 핸드셰이크 — 아는 판이면 그 판, 아니면 아는 가장 새 옛 판
                 req = str(p.get("protocolVersion") or "")
-                ver = req if re.match(r"^\d{4}-\d{2}-\d{2}$", req) else _KNOWN_VERSIONS[1]
+                ver = req if req in _LEGACY_VERSIONS else _LEGACY_VERSIONS[0]
                 self.client = p.get("clientInfo") or {}
-                res = {"protocolVersion": ver,
-                       "capabilities": {"tools": {"listChanged": False}, "prompts": {"listChanged": False},
-                                        "resources": {"subscribe": False, "listChanged": False}, "logging": {}},
-                       "serverInfo": {"name": SERVER_NAME, "title": "talog — AI 비전 로그 분석", "version": __version__},
+                res = {"protocolVersion": ver, "capabilities": dict(self.CAPABILITIES, logging={}),
+                       "serverInfo": self.SERVER_INFO, "instructions": _INSTRUCTIONS}
+            elif method == "server/discover":
+                res = {"supportedVersions": list(_KNOWN_VERSIONS), "capabilities": self.CAPABILITIES,
                        "instructions": _INSTRUCTIONS}
             elif method == "ping":
                 res = {}
@@ -1325,7 +1419,7 @@ class TalogMCP:
             elif method == "tools/call":
                 name = p.get("name", "")
                 if name not in {t["name"] for t in TOOLS}:
-                    return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": f"Unknown tool: {name}"}}
+                    return err(-32602, f"Unknown tool: {name}")
                 try:
                     text = self.call_tool(name, p.get("arguments") or {})
                     res = {"content": [{"type": "text", "text": text}], "isError": False}
@@ -1338,19 +1432,25 @@ class TalogMCP:
             elif method == "resources/list":
                 res = {"resources": self.resources()}
             elif method == "resources/templates/list":
-                res = {"resourceTemplates": []}
+                res = {"resourceTemplates": self.RESOURCE_TEMPLATES}
             elif method == "resources/read":
                 res = {"contents": [self.read_resource(p.get("uri", ""))]}
-            elif method == "logging/setLevel":
+            elif method == "logging/setLevel":            # 옛 판 호환 (2026-07-28 에서 폐지 예정)
                 res = {}
             elif method == "completion/complete":
-                res = {"completion": {"values": [], "total": 0, "hasMore": False}}
+                vals = self.complete(p.get("ref") or {}, p.get("argument") or {})
+                res = {"completion": {"values": vals[:100], "total": len(vals), "hasMore": len(vals) > 100}}
             else:
-                return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"Method not found: {method}"}}
+                return err(-32601, f"Method not found: {method}")
         except KeyError as e:
-            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": f"Invalid params: {e}"}}
+            return err(-32602, f"Invalid params: {e}")
         except Exception as e:                           # 서버는 죽지 않는다
-            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": f"{type(e).__name__}: {e}"}}
+            return err(-32603, f"{type(e).__name__}: {e}")
+        if mver or method == "server/discover":          # 최신 판 결과 모양
+            res = dict(res, resultType="complete")
+            res["_meta"] = dict(res.get("_meta") or {}, **{"io.modelcontextprotocol/serverInfo": self.SERVER_INFO})
+            if method in _LIST_TTL_MS:
+                res.update(ttlMs=_LIST_TTL_MS[method], cacheScope="private")
         return {"jsonrpc": "2.0", "id": mid, "result": res}
 
 
@@ -1393,6 +1493,14 @@ def prompt_messages(name: str, args: dict) -> dict:
                 "3. 의미 있는 줄은 read_log(at=시각) 로 앞뒤 문맥을 읽고, 관련 검사는 trace_inspection 으로 처음부터 끝까지 따라간다.\n"
                 "4. talog 사건이 있으면 list_incidents·get_incident 와 맞춰 보고, 룰 판단과 원본 로그가 같은 이야기를 하는지 본다.\n"
                 "5. 시간순 경과표(시각·파일·사건)·원인·근거 원문(짧게 인용)·조치(runbook 문장 기준)로 정리한다. " + save)
+    elif name == "rules_compare":
+        src, day = args.get("source", ""), args.get("day", "")
+        text = (f"talog 규칙을 바꾼 뒤 비교해 주세요 — 출처 '{src or '전체'}', 날짜 '{day or '전체'}' (talog-rules 절차).\n"
+                "1. rediagnose 로 저장된 사건을 지금 규칙으로 다시 판정해 원인이 바뀐 사건만 본다.\n"
+                "2. 바뀐 사건은 get_incident 로 근거를 열어 어느 판단이 맞는지 밝힌다.\n"
+                "3. 그날을 재현(start_replay)할지 먼저 나에게 묻는다 — 작업 폴더에 파일을 쓰고 수 분~수십 분 걸린다. "
+                "허락하면 job_status 로 결과를 보고 원래 사건과 시각·심각도·원인을 표로 맞춘다.\n"
+                "4. 새로 생긴·사라진·빨라지거나 늦어진 경보를 세고, 바뀐 규칙이 나은지 판정한다. " + save)
     else:
         raise KeyError(name)
     meta = next(p for p in PROMPTS if p["name"] == name)
@@ -1432,6 +1540,8 @@ def serve_stdio(server: TalogMCP, stdin=None, stdout=None) -> int:
 
 
 _KIT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "claude_kit")
+# 작업별 스킬 — 에이전트 폴더 .claude/skills/<이름> 으로 복사하고, 콘솔 스킬 카드가 '/이름 인자'로 부른다
+SKILLS = ("talog-rca", "talog-logs", "talog-daily", "talog-site", "talog-rules")
 
 
 def server_command(configs: list[str], work_dir: str = "") -> list[str]:
@@ -1478,12 +1588,13 @@ def init_workspace(target: str, configs: list[str]) -> dict:
     cmd = server_command(configs, os.path.join(target, "mcp_jobs"))
     put(".mcp.json", json.dumps({"mcpServers": {"talog": {"type": "stdio", "command": cmd[0], "args": cmd[1:]}}},
                                 ensure_ascii=False, indent=2) + "\n")
-    sk_src = os.path.join(_KIT, "skills", "talog-rca")
-    sk_dst = os.path.join(target, ".claude", "skills", "talog-rca")
-    if os.path.isdir(sk_dst):
-        shutil.rmtree(sk_dst)                     # 스킬은 talog 판에 맞춰 늘 새로 (사용자 수정분은 CLAUDE.md 에)
-    shutil.copytree(sk_src, sk_dst)
-    made += [os.path.relpath(os.path.join(r, f), target) for r, _d, fs in os.walk(sk_dst) for f in fs]
+    for name in SKILLS:
+        sk_src = os.path.join(_KIT, "skills", name)
+        sk_dst = os.path.join(target, ".claude", "skills", name)
+        if os.path.isdir(sk_dst):
+            shutil.rmtree(sk_dst)                 # 스킬은 talog 판에 맞춰 늘 새로 (사용자 수정분은 CLAUDE.md 에)
+        shutil.copytree(sk_src, sk_dst)
+        made += [os.path.relpath(os.path.join(r, f), target) for r, _d, fs in os.walk(sk_dst) for f in fs]
     for d in ("reports", "mcp_jobs"):
         os.makedirs(os.path.join(target, d), exist_ok=True)
     return {"dir": target, "made": made, "kept": kept, "command": cmd, "sources": [s.name for s in srcs]}

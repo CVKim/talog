@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.2.0 (2026-10-14) — 작업별 스킬 카드 · MCP 2026-07-28 · 답 수치 대조
+
+콘솔 Claude 화면 오른쪽의 '도구 18개' 목록은 개발자용이라 무엇을 눌러야 할지 알기 어려웠고, RCA 스킬 하나가
+하루 검토·현장 점검까지 맡아 '현장 점검'(Opus) 한 번에 RCA 스킬 전체를 읽었다. 작업마다 스킬을 나누고, 화면은
+그 스킬을 카드로 부르게 바꿨다. 추가 과금 경로는 없다(구독 로그인 그대로).
+
+- **작업별 스킬 5개** (`talog/claude_kit/skills`, 저장소 `.claude/skills` 와 같은 내용 — 테스트가 확인):
+  `talog-rca`(사건 RCA, 공통 참고 `reference.md`·보고서 템플릿) · `talog-logs`(원본 로그 조사) · `talog-daily`
+  (하루 검토) · `talog-site`(현장 점검·규칙 조정) · `talog-rules`(규칙 바꾼 뒤 비교). 머리말에 `argument-hint`·
+  `$ARGUMENTS`, `allowed-tools` 는 읽기 도구만(테스트가 확인 — allowed-tools 는 콘솔 허용 목록을 넘어 도구를 열 수
+  있다). 파일을 쓰는 재현이 든 `talog-rules` 는 `disable-model-invocation: true`(사용자가 부를 때만)
+- **스킬 카드**: 카드를 누르면 필요한 값만 묻고(사건·일자 폴더·시각·증상·날짜) `/talog-… 인자` 로 새 대화를
+  연다. Claude Code 2.1.143 실측: `-p` 에서 `/스킬 인자` 가 펼쳐지고 `disable-model-invocation` 스킬도 `/이름`
+  으로는 불린다(`Result/claude_integration/probes/skill_slash`). 사건 화면 'Claude 로 분석'·'원본 로그로 확인',
+  분석 화면 'Claude 로 원본 로그 조사', Ctrl+K 도 같은 카드를 쓴다. 도구 목록은 '연결 설정' 4번으로 옮겼다
+- **경보 재현은 확인 후에만**: '규칙 바꾼 뒤 비교' 카드에서 재현 스위치를 켜고 한 번 더 확인해야, 그 질문에만
+  `mcp__talog__start_replay` 를 허용 목록에 더한다. 로그 루트 밖 폴더는 거절한다
+- **바로 묻기 도구 풀 축소**: `--tools Read,Glob,Edit,Write,Skill` — 셸·웹·하위 에이전트를 아예 싣지 않는다(시스템
+  프롬프트가 줄어 구독 사용량도 준다). 쓰기는 그대로 `Edit(reports/**)` 규칙으로 reports 안만. Opus 를 고르면
+  붐빌 때 Sonnet 으로 넘어가는 `--fallback-model sonnet`
+- **답 수치 대조**: 답에 적힌 수치·시각을 그 대화의 도구 결과(와 스킬 본문)에서 찾아 '수치 근거 N개 확인' 또는
+  '도구 결과에 없는 값 k개'로 답 아래에 보인다. 경로·코드·사건 id·목록 번호는 수치로 보지 않는다
+- **MCP 2026-07-28 대응** (옛 판과 함께): 요청마다 `_meta` 로 판을 알리는 무상태 요청을 받고 `resultType`·
+  `serverInfo`(_meta)·캐시 힌트(`ttlMs`·`cacheScope`)를 붙인다. `server/discover`, 모르는 판은
+  UnsupportedProtocolVersionError(-32022). 옛 판 initialize 는 모르는 판이면 아는 가장 새 옛 판(2025-11-25)으로 답한다
+- **MCP 자동완성·자원**: 프롬프트 인자 자동완성(사건 id·날짜·출처·일자 폴더·증상·리포트 태그), 최근 사건 20건·
+  리포트를 자원(`talog://incident/<id>`, `talog://report/<tag>`)과 자원 템플릿으로 — Claude Code 에서 `@` 로 대화에
+  붙인다. 새 프롬프트 `rules_compare`(규칙 바꾼 뒤 비교, 재현은 묻고 나서)
+- **넣지 않은 것 — '한계 도달 예상'**: 점유 p99 추세로 거부 시각을 예측하는 기능을 검토했으나 풍산 2호기 10/12
+  재현에서 04시 직선 예측이 '48~62시간 남음'이었고 거부는 05:02 에 일시 지연(+3.6초, 지난 24시간 최대 +1.5초의
+  두 배)으로 났다. 틀린 '남은 시간'은 현장에 잘못된 안심을 주므로 넣지 않고, 스킬에 "거부 시각을 추세로 예측하지
+  않는다"를 적었다(`Result/v22_improvements/forecast_check.py`)
+
 ## 2.1.0 (2026-10-13) — 처리 여유: NoInspThread 를 미리 보는 그룹별 자동 기준선
 
 풍산 2호기 10/12 05:02 NoInspThread(side2 그룹 10~12) 재현에서 v2.0.0 은 11일 경보 0건, 12일은 거부

@@ -127,7 +127,8 @@ def test_protocol_handshake_and_listing(site):
     writers = {t["name"] for t in tools if not t["annotations"]["readOnlyHint"]}
     assert writers == {"start_replay", "save_case"}
     prompts = srv.handle({"jsonrpc": "2.0", "id": 3, "method": "prompts/list"})["result"]["prompts"]
-    assert {p["name"] for p in prompts} == {"incident_rca", "daily_review", "site_health", "log_investigation"}
+    assert {p["name"] for p in prompts} == {"incident_rca", "daily_review", "site_health", "log_investigation",
+                                            "rules_compare"}
     msg = srv.handle({"jsonrpc": "2.0", "id": 4, "method": "prompts/get",
                       "params": {"name": "incident_rca", "arguments": {"incident_id": "X-1"}}})["result"]["messages"][0]
     assert "X-1" in msg["content"]["text"] and "Result" in msg["content"]["text"]
@@ -138,6 +139,65 @@ def test_protocol_handshake_and_listing(site):
     assert srv.handle({"jsonrpc": "2.0", "id": 9, "method": "tools/call",
                        "params": {"name": "nope", "arguments": {}}})["error"]["code"] == -32602
     assert srv.handle({"id": 10, "method": "ping"})["error"]["code"] == -32600
+    # 모르는 옛 판으로 초기화하면 아는 가장 새 옛 판으로 답한다 (클라이언트가 고른다)
+    init = srv.handle({"jsonrpc": "2.0", "id": 11, "method": "initialize", "params": {"protocolVersion": "2099-01-01"}})
+    assert init["result"]["protocolVersion"] == "2025-11-25" and "resultType" not in init["result"]
+
+
+def _modern(method, params=None, ver="2026-07-28", mid=1):
+    p = dict(params or {})
+    p["_meta"] = {"io.modelcontextprotocol/protocolVersion": ver,
+                  "io.modelcontextprotocol/clientInfo": {"name": "pytest", "version": "1"},
+                  "io.modelcontextprotocol/clientCapabilities": {}}
+    return {"jsonrpc": "2.0", "id": mid, "method": method, "params": p}
+
+
+def test_modern_stateless_requests_discover_and_version_errors(site):
+    """2026-07-28: initialize 없이 요청마다 _meta 로 판을 알린다 — discover·resultType·serverInfo·캐시 힌트."""
+    srv = _srv(site)
+    d = srv.handle(_modern("server/discover"))["result"]
+    assert d["supportedVersions"][0] == "2026-07-28" and "2025-06-18" in d["supportedVersions"]
+    assert d["resultType"] == "complete" and d["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "talog"
+    assert {"tools", "prompts", "resources", "completions"} <= set(d["capabilities"]) and d["ttlMs"] > 0
+    tl = srv.handle(_modern("tools/list"))["result"]
+    assert tl["resultType"] == "complete" and tl["ttlMs"] == 3_600_000 and tl["cacheScope"] == "private"
+    assert [t["name"] for t in tl["tools"]] == [t["name"] for t in M.TOOLS]       # 늘 같은 순서 (캐시)
+    call = srv.handle(_modern("tools/call", {"name": "overview", "arguments": {}}))["result"]
+    assert call["resultType"] == "complete" and not call["isError"] and "ttlMs" not in call
+    bad = srv.handle(_modern("tools/list", ver="1900-01-01"))["error"]
+    assert bad["code"] == -32022 and bad["data"]["requested"] == "1900-01-01" and "2026-07-28" in bad["data"]["supported"]
+    # 옛 판 요청 모양에는 새 필드를 붙이지 않는다
+    assert "resultType" not in srv.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})["result"]
+
+
+def test_completion_and_incident_resources(site):
+    srv = _srv(site)
+
+    def comp(ref, name, value=""):
+        r = srv.handle({"jsonrpc": "2.0", "id": 1, "method": "completion/complete",
+                        "params": {"ref": ref, "argument": {"name": name, "value": value}}})["result"]["completion"]
+        return r["values"]
+    prompt = {"type": "ref/prompt", "name": "incident_rca"}
+    assert comp(prompt, "incident_id", "2026") == ["20261012-050228-capacity_drift"]
+    assert comp(prompt, "incident_id", "capacity") == ["20261012-050228-capacity_drift"]   # 가운데 글자로도
+    assert comp(prompt, "incident_id", "zzz") == []
+    assert comp({"type": "ref/prompt", "name": "daily_review"}, "day", "2026") == ["20261012"]
+    assert comp({"type": "ref/prompt", "name": "daily_review"}, "source") == ["시험 설비"]
+    assert "NoInspThread" in comp({"type": "ref/prompt", "name": "log_investigation"}, "symptom", "no")
+    assert comp({"type": "ref/resource", "uri": "talog://report/{tag}"}, "tag", "시험") == ["시험_12"]
+    res = srv.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/list"})["result"]["resources"]
+    uris = [r["uri"] for r in res]
+    assert uris[:2] == ["talog://runbook", "talog://guide"]
+    assert "talog://incident/20261012-050228-capacity_drift" in uris and "talog://report/시험_12" in uris
+    inc = next(r for r in res if r["uri"].startswith("talog://incident/"))
+    assert INNER not in json.dumps(inc, ensure_ascii=False) and "심각" in inc["description"]
+    tpl = srv.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/templates/list"})["result"]["resourceTemplates"]
+    assert {t["uriTemplate"] for t in tpl} == {"talog://incident/{incident_id}", "talog://report/{tag}"}
+    txt = srv.handle({"jsonrpc": "2.0", "id": 4, "method": "resources/read",
+                      "params": {"uri": "talog://incident/20261012-050228-capacity_drift"}})["result"]["contents"][0]["text"]
+    assert "시간 경과형 처리 열화" in txt and INNER not in txt                    # 사건 상세와 같은 내용, 마스킹
+    miss = srv.handle({"jsonrpc": "2.0", "id": 5, "method": "resources/read", "params": {"uri": "talog://incident/x"}})
+    assert miss["error"]["code"] == -32602                                       # 2026-07-28: 자원 없음 = Invalid Params
 
 
 # ── 도구 ─────────────────────────────────────────────────────────────
@@ -357,8 +417,10 @@ def test_self_test_passes_on_fresh_pc_with_only_raw_logs(tmp_path):
 def test_init_workspace_keeps_user_lessons(site, tmp_path):
     ws = tmp_path / "agent"
     r = M.init_workspace(str(ws), [site["cfg"]])
-    for rel in ("CLAUDE.md", "README.md", ".mcp.json", os.path.join(".claude", "skills", "talog-rca", "SKILL.md"),
-                os.path.join(".claude", "skills", "talog-rca", "templates", "rca_report.html")):
+    for rel in ("CLAUDE.md", "README.md", ".mcp.json",
+                os.path.join(".claude", "skills", "talog-rca", "templates", "rca_report.html"),
+                os.path.join(".claude", "skills", "talog-rca", "reference.md"),
+                *(os.path.join(".claude", "skills", n, "SKILL.md") for n in M.SKILLS)):
         assert (ws / rel).exists(), rel
     assert (ws / "reports").is_dir() and (ws / "mcp_jobs").is_dir()
     mcp = json.loads((ws / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["talog"]
@@ -374,14 +436,37 @@ def test_init_workspace_keeps_user_lessons(site, tmp_path):
 
 
 def test_packaged_kit_matches_repo_skill():
-    """저장소의 .claude/skills/talog-rca 와 패키지(claude_kit) 사본이 같아야 한다 (exe 로 만든 에이전트 폴더 = 개발판)."""
-    repo = os.path.join(ROOT, ".claude", "skills", "talog-rca")
-    kit = os.path.join(ROOT, "talog", "claude_kit", "skills", "talog-rca")
-    if not os.path.isdir(repo):
+    """저장소의 .claude/skills/talog-* 와 패키지(claude_kit) 사본이 같아야 한다 (exe 로 만든 에이전트 폴더 = 개발판)."""
+    if not os.path.isdir(os.path.join(ROOT, ".claude", "skills", "talog-rca")):
         pytest.skip("저장소 스킬 사본 없음")
-    for rel in ("SKILL.md", os.path.join("templates", "rca_report.html")):
-        with open(os.path.join(repo, rel), encoding="utf-8") as a, open(os.path.join(kit, rel), encoding="utf-8") as b:
-            assert a.read().replace("\r\n", "\n") == b.read().replace("\r\n", "\n"), rel
+    for name in M.SKILLS:
+        repo = os.path.join(ROOT, ".claude", "skills", name)
+        kit = os.path.join(ROOT, "talog", "claude_kit", "skills", name)
+        files = sorted(os.path.relpath(os.path.join(r, f), kit) for r, _d, fs in os.walk(kit) for f in fs)
+        assert files and files == sorted(os.path.relpath(os.path.join(r, f), repo) for r, _d, fs in os.walk(repo) for f in fs)
+        for rel in files:
+            with open(os.path.join(repo, rel), encoding="utf-8") as a, open(os.path.join(kit, rel), encoding="utf-8") as b:
+                assert a.read().replace("\r\n", "\n") == b.read().replace("\r\n", "\n"), f"{name}/{rel}"
+
+
+def test_skills_frontmatter_is_safe():
+    """스킬마다 이름·설명·인자 힌트가 있고, allowed-tools 에 쓰는 도구(재현·사례 저장)나 셸이 없다 —
+    allowed-tools 는 콘솔의 허용 목록을 넘어 도구를 열 수 있으므로 읽기 도구만 둔다."""
+    import yaml
+    known = {t["name"] for t in M.TOOLS}
+    for name in M.SKILLS:
+        text = open(os.path.join(ROOT, "talog", "claude_kit", "skills", name, "SKILL.md"), encoding="utf-8").read()
+        fm = yaml.safe_load(text.split("---")[1])
+        assert fm["name"] == name and len(fm["description"]) <= 1024 and fm.get("argument-hint")
+        assert "$ARGUMENTS" in text
+        tools = [t.strip() for t in fm["allowed-tools"].split(",")]
+        assert all(t.startswith("mcp__talog__") and t[len("mcp__talog__"):] in known for t in tools), name
+        assert not {"mcp__talog__start_replay", "mcp__talog__save_case"} & set(tools), name
+        for ref in re.findall(r"`(?:\.\./)?(talog-[a-z]+)/", text):
+            assert ref in M.SKILLS
+    # 파일을 쓰는 재현은 사용자가 직접 부를 때만
+    rules = open(os.path.join(ROOT, "talog", "claude_kit", "skills", "talog-rules", "SKILL.md"), encoding="utf-8").read()
+    assert "disable-model-invocation: true" in rules
 
 
 def test_server_command_points_at_entry_script(site):

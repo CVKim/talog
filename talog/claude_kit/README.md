@@ -14,14 +14,15 @@ talog 콘솔(Claude 연동 → 에이전트 폴더 만들기) 또는 `talog mcp 
 |---|---|
 | `CLAUDE.md` | 에이전트 역할·일하는 방식·워크플로·하지 말 것·배운 점 (Claude 가 매번 읽는다) |
 | `.mcp.json` | talog MCP 서버 연결 (현장 talog.yaml 을 데이터 출처로) |
-| `.claude/skills/talog-rca/` | RCA 절차와 보고서 템플릿 |
+| `.claude/skills/talog-*/` | 작업별 스킬 5개 — `talog-rca`(사건 RCA, 공통 참고·보고서 템플릿 포함) · `talog-logs`(원본 로그 조사) · `talog-daily`(하루 검토) · `talog-site`(현장 점검·규칙 조정) · `talog-rules`(규칙 바꾼 뒤 비교) |
 | `reports/` | 보고서가 쌓이는 곳 |
 | `mcp_jobs/` | 경보 재현 작업 폴더 |
 
 ## 첫 질문 예
 
 - "talog 개요 보여 줘"
-- "가장 최근 심각 사건을 분석해 줘"
-- `/mcp__talog__daily_review`
+- `/talog-rca` — 가장 최근 심각 사건을 골라 분석
+- `/talog-logs 12 05:02 NoInspThread`
+- `/talog-daily`
 
 `CLAUDE.md` 의 "배운 점"에 현장 사정을 한 줄씩 더할수록 분석이 그 현장에 맞아진다.
