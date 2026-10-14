@@ -335,6 +335,25 @@ def test_self_test_cli(site):
     assert r.returncode == 0 and "자가 점검 통과" in out and "도구 18개" in out
 
 
+def test_self_test_passes_on_fresh_pc_with_only_raw_logs(tmp_path):
+    """막 설치한 개발자 PC — 사건·리포트는 아직 없고 복사한 원본 로그만 있다. 연결 시험은 통과해야 한다."""
+    logs, data = tmp_path / "AIV_LOG" / "설비A", tmp_path / "data"
+    day = logs / "2026_10" / "12"
+    day.mkdir(parents=True)
+    (day / "InspStarter.log").write_text("2026/10/12-05:02:49.421 start\n", encoding="utf-8")
+    cfg = tmp_path / "talog.yaml"
+    cfg.write_text(f"site: 설비A\nlog_root: {logs}\ndata_dir: {data}\nai: {{llm: false}}\n", encoding="utf-8")
+    rep = M.self_test_report(M.build([str(cfg)], str(tmp_path / "work"), True, str(tmp_path / "kb")))
+    data_check = next(c for c in rep["checks"] if c["key"] == "data")
+    assert rep["ok"] and data_check["ok"] and "원본 로그 폴더 1개" in data_check["detail"]
+    assert rep["sources"][0]["log_days"] == 1 and rep["sources"][0]["incidents"] == 0
+    # 아무것도 없으면(로그 루트도 없음) 실패하고 무엇을 하라는지 알린다
+    cfg.write_text(f"site: 빈 설비\nlog_root: {tmp_path / 'nowhere'}\ndata_dir: {tmp_path / 'data2'}\n", encoding="utf-8")
+    rep = M.self_test_report(M.build([str(cfg)], str(tmp_path / "work2"), True, str(tmp_path / "kb2")))
+    data_check = next(c for c in rep["checks"] if c["key"] == "data")
+    assert not rep["ok"] and not data_check["ok"] and "로그 루트" in data_check["detail"]
+
+
 def test_init_workspace_keeps_user_lessons(site, tmp_path):
     ws = tmp_path / "agent"
     r = M.init_workspace(str(ws), [site["cfg"]])
