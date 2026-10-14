@@ -313,6 +313,31 @@ def _timeline_svg(ctx: ReportContext) -> str:
     return "".join(parts) + legend
 
 
+def _timeline_summary(ctx: ReportContext) -> str:
+    """타임라인 캡션 — 그림과 같은 데이터로 만든 한 줄 요약 (몇 건·언제부터 언제까지·이상 검사의 종류와 첫 시각)."""
+    started = [it for it in ctx.inspections if it.start_ts and not it.status.startswith("sim")]
+    if not started:
+        return ""
+    started.sort(key=lambda it: it.start_ts)
+    bad = [it for it in started if it.status in _BAD_STATUSES]
+    kinds: dict[str, list] = {}
+    for it in bad:
+        kinds.setdefault(it.status, []).append(it)
+    parts = [f"검사 {len(started):,}건 ({_fmt_ts(started[0].start_text)[:8]} ~ {_fmt_ts(started[-1].start_text)[:8]})"]
+    if bad:
+        parts.append("<b>이상 " + f"{len(bad)}건</b> — " + ", ".join(
+            f"{_STATUS_KO.get(k, k)} {len(v)}건 (처음 {_fmt_ts(v[0].start_text)[:8]})" for k, v in kinds.items()))
+    else:
+        parts.append("이상 검사 없음")
+    n_restart = max(0, len(ctx.gens) - 1)
+    crashes = sum(1 for g in ctx.gens if g.end_cause in ("crash", "kill", "destroy"))
+    parts.append(f"재시작 {n_restart}회" + (f" · 비정상 종료 {crashes}회" if crashes else ""))
+    loads = sum(1 for m in ctx.model_loads if m.kind == "recipe_load")
+    if loads:
+        parts.append(f"모델 로드 {loads}회")
+    return f"<p class='sumline'><b>요약</b> · {' · '.join(parts)}</p>"
+
+
 def _hourly_svg(ctx: ReportContext) -> str:
     """시간대별 검사 수 + 평균 검사시간 추이."""
     import datetime as _dt
@@ -354,6 +379,14 @@ def _hourly_svg(ctx: ReportContext) -> str:
                  f'style="fill:var(--orange)">■ 평균 검사시간(s) '
                  f'(최대 {maxd:.2f}s)</text>')
     parts.append("</svg>")
+    # 캡션 — 가장 바쁜 시간과 가장 느린 시간 (그림과 같은 값)
+    busy = max(hours, key=lambda hh: len(per_hour[hh]))
+    slow = max(hours, key=lambda hh: durs[hh])
+    allv = [d for v in per_hour.values() for d in v if d > 0]
+    base = statistics.median(allv) if allv else 0
+    parts.append(f"<p class='sumline'><b>요약</b> · 가장 바쁜 시간 {busy}시 ({len(per_hour[busy]):,}건) · "
+                 f"평균 검사시간이 가장 긴 시간 {slow}시 ({durs[slow]:.2f}초"
+                 + (f", 하루 가운데 값 {base:.2f}초의 {durs[slow] / base:.2f}배" if base else "") + ")</p>")
     return "".join(parts)
 
 
@@ -1874,10 +1907,16 @@ def render(ctx: ReportContext) -> str:
         return (f"{v[:-1]}<span class='unit'>s</span>"
                 if v.endswith("s") and v != "-" else v)
 
+    # 타일 캡션 — 숫자만 두지 않고 그 숫자가 무엇인지 한 줄로
+    desc = {"검사 수": "이 폴더에서 시작된 검사", "완료": "결과 송신까지 끝난 검사",
+            "이상": "거부·실행 중 소실 등 끝나지 못한 검사", "NG 판정": "제품 결함으로 판정 (설비 이상 아님)",
+            "에러": "오류·크래시·통신 실패 로그", "평균 검사시간": "시작 ~ 결과 송신 평균",
+            "최대 검사시간": "가장 오래 걸린 한 건", "재시작": "talos 프로세스가 다시 뜬 횟수",
+            "시뮬레이션": "설비 없이 돌린 시험 검사"}
     card_html = hero + "".join(
         f"<div class='card' onclick=\"{'gotoSection' if t != 'main-bad' else 'scrollMain'}"
         f"('{t}')\"><div class='num' style='color:{c}'>{_numfmt(v)}</div>"
-        f"<div class='lbl'>{k}</div></div>" for k, v, c, t in cards)
+        f"<div class='lbl'>{k}</div><div class='desc'>{desc.get(k, '')}</div></div>" for k, v, c, t in cards)
 
     files_html = "".join(
         f"<tr><td>{_esc(nm)}</td><td>{_esc(cat)}</td><td class='r'>{sz / 1048576:.1f}</td>"
@@ -2014,7 +2053,10 @@ else if(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)d
                      margin-left: 1px; }}
  .card .lbl {{ font-size: 10.5px; color: var(--muted); margin-top: 4px;
                text-transform: uppercase; letter-spacing: .6px; }}
- .card.hero {{ grid-column: span 2; cursor: default; }}
+ .card .desc {{ font-size: 11px; color: var(--ink2); margin-top: 3px; line-height: 1.4; }}
+.sumline {{ margin: 8px 0 0; padding: 8px 11px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--surface); font-size: 12.5px; line-height: 1.6; color: var(--ink2); }}
+.card.hero {{ grid-column: span 2; cursor: default; }}
  .card.hero .num {{ font-size: 33px; }}
  .card.hero .sub {{ font-size: 12px; color: var(--ink2); margin-top: 5px; }}
  .card.hero.h-crit {{ border-color: var(--tint-crit-bd); background:
@@ -2147,7 +2189,7 @@ else if(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)d
  <div class="cards">{card_html}</div>
  {leak_banner}
  <h2>타임라인 <span class="hint">— 굵은 선(이상 검사)·▼재시작·✖종료·▲모델로드를
- 클릭/호버해 보세요</span></h2>{_timeline_svg(ctx)}
+ 클릭/호버해 보세요</span></h2>{_timeline_svg(ctx)}{_timeline_summary(ctx)}
  {_findings_section(ctx)}
  <div id="main-bad"></div>
  <h2>미완료/이상 검사 <span class="hint">— inner id 클릭 시 채널별 간트로
