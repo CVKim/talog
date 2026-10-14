@@ -1,0 +1,37 @@
+/* ── 표·목록 ── */
+.tbl{overflow:auto;max-height:480px;margin:0 -4px;padding:0 4px}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;font-variant-numeric:tabular-nums}
+th{position:sticky;top:0;z-index:1;background:var(--surface);text-align:left;color:var(--mute);font-weight:600;font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:not(.emptyrow):not(.skrow):hover{background:var(--surface-2)}
+tr.click{cursor:pointer}tr.click:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+tr.sel{background:var(--brand-soft)!important}tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--brand)}
+td b{font-weight:600}
+caption{caption-side:top}
+.empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:28px 16px;text-align:center;color:var(--mute);font-size:13px}
+.empty .ic{color:var(--line-strong);margin-bottom:4px}.empty b{color:var(--ink-2);font-size:14px;font-weight:600}
+.sk{display:block;height:11px;border-radius:6px;background:linear-gradient(90deg,var(--sunken) 0%,var(--sk) 50%,var(--sunken) 100%);background-size:200% 100%;animation:sk 1.3s ease-in-out infinite}
+.sk+.sk{margin-top:8px}.sk.lg{height:22px;width:55%}.sk.sm{height:9px}
+@keyframes sk{from{background-position:100% 0}to{background-position:-100% 0}}
+.note{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:var(--r);border:1px solid var(--info-line);background:var(--info-soft);color:var(--ink-2);font-size:13px;margin:10px 0 12px;line-height:1.55}
+.note>.ic{color:var(--info);margin-top:1px}
+.note.warn{border-color:var(--warn-line);background:var(--warn-soft)}.note.warn>.ic{color:var(--warn)}
+.note.crit{border-color:var(--crit-line);background:var(--crit-soft)}.note.crit>.ic{color:var(--crit)}
+.note.ok{border-color:var(--ok-line);background:var(--ok-soft)}.note.ok>.ic{color:var(--ok)}
+pre.log{background:var(--sunken);border:1px solid var(--line);border-radius:var(--r);padding:12px;font:12px/1.65 var(--mono);color:var(--ink-2);max-height:420px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+details.disclosure>summary,details.card>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;color:var(--ink-2);border-radius:var(--r-sm)}
+details.disclosure>summary::-webkit-details-marker,details.card>summary::-webkit-details-marker{display:none}
+details.disclosure>summary::before,details.card>summary::before{content:"";width:7px;height:7px;border-right:2px solid var(--mute);border-bottom:2px solid var(--mute);transform:rotate(-45deg);transition:transform var(--t2) var(--ease);margin:0 4px 0 2px}
+details[open].disclosure>summary::before,details[open].card>summary::before{transform:rotate(45deg)}
+details.disclosure{margin-top:14px}details.disclosure>summary{font-size:13px;color:var(--sub)}
+details[open]>summary{margin-bottom:10px}
+.result{margin-top:10px;font-size:13px}
+.bar{height:8px;border-radius:999px;background:var(--sunken);overflow:hidden;min-width:60px;flex:1}
+.bar i{display:block;height:100%;border-radius:inherit;background:var(--info)}.bar i.hi{background:var(--warn)}
+ul.facts,ol.acts{margin:0;padding-left:20px}ul.facts li,ol.acts li{margin:4px 0;line-height:1.55}
+ol.steps{margin:0;padding-left:20px}ol.steps li{margin:4px 0}
+.qa{border-top:1px solid var(--line);padding:12px 0}.qa:first-child{border-top:0}
+.qa .q{font-weight:700;display:flex;gap:6px;align-items:flex-start}.qa .q .ic{color:var(--brand);margin-top:3px}
+.qa .a{white-space:pre-wrap;margin-top:6px;line-height:1.6}
+

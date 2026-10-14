@@ -293,7 +293,7 @@ def test_timeline_counts_inspections_once_and_keeps_last_groups(con):
 
 def test_console_page_has_core_controls():
     from talog import console
-    page = open(console._PAGE, encoding="utf-8").read()
+    page = console.build_page()
     for i in ("btnCa", "btnCaStop", "caModel", "caEffort", "caThread", "caCtx", "btnNewThread", "logSel",
               "btnLogSel", "aiUsage", "aiSkills", "opsStrip", "opsTol", "capBullets", "incSearch", "cmdk",
               "saveBar", "btnSaveGo", "dlg", "btnTheme", "main"):
@@ -308,9 +308,39 @@ def test_console_page_has_core_controls():
     assert used <= defined, used - defined
 
 
+def test_page_assembles_offline_from_web_sources():
+    """브라우저가 받는 페이지는 파일 하나·외부 리소스 없음 — web/ 소스의 표시 줄이 모두 풀리고, 순서 번호를 지킨다."""
+    from talog.console import page
+    html = page.build_page()
+    assert "@@include" not in html and "/* @@css */" not in html and "/* @@js */" not in html
+    assert html.startswith("<!doctype html>") and html.rstrip().endswith("</html>")
+    # 외부 스크립트·스타일·글꼴·이미지를 부르지 않는다 (현장 PC 오프라인)
+    assert not re.search(r"""(?:src|href)\s*=\s*["']?(?:https?:)?//""", html)
+    assert not re.search(r"@import|url\(\s*['\"]?(?:https?:)?//", html)
+    names = [os.path.basename(f) for f in page.sources()]
+    for kind in ("css", "js"):
+        files = [n for n in names if n.endswith("." + kind)]
+        assert files and all(re.match(r"^\d{2}-[a-z0-9-]+\." + kind + "$", n) for n in files), files
+    assert page.build_page() is page.build_page()                     # 바뀌지 않으면 다시 합치지 않는다
+
+
+def test_page_assembles_from_crlf_checkout(tmp_path):
+    """Windows 에서 받은 사본(core.autocrlf=true)은 소스가 CRLF 다 — 그래도 표시 줄이 모두 풀리고 결과는 LF."""
+    import shutil
+    from talog.console import page
+    web = tmp_path / "web"
+    shutil.copytree(page.WEB, web)
+    for f in page.sources(str(web)):
+        data = open(f, "rb").read().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        open(f, "wb").write(data)
+    html = page.assemble(str(web))
+    assert "@@include" not in html and "@@css" not in html and "@@js" not in html and "\r" not in html
+    assert html == page.assemble(page.WEB)
+
+
 def test_skill_icons_exist_in_page(con):
     from talog import console
-    page = open(console._PAGE, encoding="utf-8").read()
+    page = console.build_page()
     defined = set(re.findall(r'<symbol id="i-([a-z-]+)"', page))
     info = con.claude_info()
     assert {a["icon"] for a in info["skills"] + info["quick"]} <= defined

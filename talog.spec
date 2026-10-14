@@ -7,7 +7,7 @@ a = Analysis(
     binaries=[],
     datas=[('talog\\rules\\events.yaml', 'talog/rules'),
            ('talog\\rules\\runbook.yaml', 'talog/rules'),
-           ('talog\\console.html', 'talog'),
+           ('talog\\web', 'talog/web'),                  # 콘솔 페이지 소스 (console/page.py 가 합친다)
            ('talog\\assets', 'talog/assets'),            # 로고·아이콘 (콘솔 파비콘)
            ('talog\\claude_kit', 'talog/claude_kit')],   # Claude 에이전트 폴더 원본 (CLAUDE.md·스킬)
     hiddenimports=[],

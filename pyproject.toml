@@ -26,7 +26,8 @@ build-backend = "setuptools.build_meta"
 packages = ["talog", "talog.rules"]
 
 [tool.setuptools.package-data]
-"talog" = ["console.html", "assets/*", "claude_kit/*.md", "claude_kit/skills/*/*.md",
+"talog" = ["web/*.html", "web/css/*.css", "web/js/*.js", "web/views/*.html", "web/partials/*.html",
+           "assets/*", "claude_kit/*.md", "claude_kit/skills/*/*.md",
            "claude_kit/skills/*/templates/*.html"]
 "talog.rules" = ["*.yaml"]
 

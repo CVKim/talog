@@ -1,0 +1,23 @@
+<!-- 분석 ================================================================= -->
+<section class="view" id="v-ana" aria-labelledby="pageTitle">
+  <div class="card">
+    <div class="chead"><h2>로그 폴더 분석</h2><span class="meta">진단 리포트 · 경보 재현 · Claude 원본 로그 조사</span></div>
+    <div class="formgrid">
+      <div class="field"><label for="anaDir">일자 폴더 또는 설비 폴더</label><input type="text" id="anaDir" list="dayList" placeholder="예: D:\AIV_LOG\Talos\2026_09\28"><datalist id="dayList"></datalist></div>
+      <div class="field"><label for="anaRecipe">레시피 폴더 <span class="opt">(선택)</span></label><input type="text" id="anaRecipe" placeholder="ALG.ini 가 있는 폴더 — 알고리즘 번호를 결함명·모델로 번역"></div>
+    </div>
+    <div class="daychips" id="dayChips" aria-label="최근 일자 폴더"></div>
+    <div class="row"><button class="btn primary" id="btnReport" type="button"><svg class="ic" aria-hidden="true"><use href="#i-file-text"/></svg>진단 리포트 만들기</button><button class="btn" id="btnReplay" type="button"><svg class="ic" aria-hidden="true"><use href="#i-history"/></svg>경보 재현</button><button class="btn" id="btnAnaClaude" type="button"><svg class="ic brand" aria-hidden="true"><use href="#i-sparkles"/></svg>Claude 로 원본 로그 조사</button></div>
+    <p class="hint"><b>진단 리포트</b> — 검사별 판정·미완료 원인(RCA)·타임라인. <b>경보 재현</b> — 지금 규칙으로 그날을 시간순으로 다시 돌려 경보·사건을 만듭니다(메일 없음). <b>Claude 로 원본 로그 조사</b> — 이 폴더를 Claude 가 직접 읽게 고르고 조사를 시작합니다.</p>
+    <div id="jobBox" class="job hidden" aria-live="polite"><div class="job-h" id="jobState"></div><pre class="log" id="jobLog" style="max-height:260px"></pre></div>
+  </div>
+  <div class="split">
+    <div class="card"><div class="chead"><h2>리포트</h2><span class="meta" id="repCount"></span></div><div class="tbl" style="max-height:620px"><table><caption class="vh">진단 리포트</caption><tbody id="repRows"></tbody></table></div></div>
+    <div class="card"><div class="chead"><h2>리포트에 질문</h2><span class="tag b hidden" id="askTag"></span><span class="meta">로컬 LLM</span></div>
+      <p class="hint" style="margin:0 0 10px">로컬 LLM 이 리포트 DB 를 SQL 로 직접 조회해 답합니다. 예: "미완료 검사 원인은?", "가장 오래 걸린 검사 5개", "12시 이후 NG 결함 분포".</p>
+      <label class="vh" for="askQ">리포트에 할 질문</label><textarea id="askQ" placeholder="리포트 목록에서 '질문'을 누른 뒤 입력 — Ctrl+Enter 로 보내기"></textarea>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="btnAsk" type="button"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg>질문</button><span id="askBusy" class="meta" aria-live="polite"></span></div>
+      <div id="askList" style="margin-top:6px"></div></div>
+  </div>
+</section>
+

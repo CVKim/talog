@@ -1,0 +1,61 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   talog 콘솔 디자인 시스템 v2
+   근거: UI/UX Pro Max — Status Page / Incident Management(#166: 실시간 운영 · 데이터 밀집 · 상태 매트릭스 ·
+   사건 타임라인 · 심각도 배지 · 가동 기록), AI/Chatbot Platform(#18: AI 네이티브 · 흐르는 답 · 입력 중 표시 ·
+   맥락 인식 · 가벼운 틀), 차트(목표 대비 bullet · 이상 표시 선 · 시간×날짜 히트맵)
+   - 셸: 어두운 사이드바(AIVEX 브랜드) + 위 막대 + 본문
+   - 색: 중립 + AIVEX 주황 강조 하나 + 상태색(심각·주의·정상·정보) — 상태는 늘 아이콘·글자와 함께
+   - 대비: Result/ui_redesign/contrast_check.py 로 글자 4.5:1 · 비텍스트 3:1 검증
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  color-scheme:light;
+  --bg:#f4f5f7;--surface:#fff;--surface-2:#f9fafb;--sunken:#f2f4f7;--hover:#f2f4f7;--sk:#e7eaef;
+  --line:#e4e7ec;--line-2:#d0d5dd;--line-strong:#838d9e;
+  --ink:#101828;--ink-2:#344054;--sub:#475467;--mute:#667085;
+  --brand:#ff5900;--brand-ink:#c2410c;--brand-soft:#fff4ed;--brand-line:#fed7aa;
+  --primary:#1d1d1d;--primary-hover:#3d3d3d;--on-primary:#fff;
+  --crit:#d92d20;--crit-solid:#d92d20;--crit-ink:#b42318;--crit-soft:#fef3f2;--crit-line:#fecdca;
+  --warn:#b38600;--warn-ink:#8f5f00;--warn-soft:#fef9e7;--warn-line:#f5dc8f;
+  --ok:#079455;--ok-ink:#067647;--ok-soft:#ecfdf3;--ok-line:#abefc6;
+  --info:#2e90fa;--info-ink:#175cd3;--info-soft:#eff8ff;--info-line:#b2ddff;
+  --focus:#c2410c;--focus-ring:rgba(194,65,12,.18);
+  --sh-1:0 1px 2px rgba(16,24,40,.05);
+  --sh-2:0 2px 4px -2px rgba(16,24,40,.06),0 4px 10px -2px rgba(16,24,40,.08);
+  --sh-3:0 20px 40px -12px rgba(16,24,40,.28),0 6px 12px -6px rgba(16,24,40,.08);
+  --scrim:rgba(16,24,40,.5);
+  --side-bg:#0f1115;--side-ink:#e6e8ec;--side-mute:#8b93a1;--side-line:rgba(255,255,255,.09);--side-hover:rgba(255,255,255,.06);--side-active:rgba(255,106,31,.16);
+  --r-sm:6px;--r:8px;--r-lg:12px;--r-xl:16px;
+  --font:"Pretendard Variable",Pretendard,"Segoe UI Variable Text","Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Cascadia Mono","Cascadia Code",D2Coding,Consolas,"Malgun Gothic",monospace;
+  --t1:120ms;--t2:200ms;--ease:cubic-bezier(.2,.8,.2,1);
+  --top-h:60px;--side-w:248px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --bg:#0c0e13;--surface:#13161d;--surface-2:#171b23;--sunken:#0f1217;--hover:#1c212a;--sk:#212733;
+  --line:#232a35;--line-2:#323a47;--line-strong:#5d6778;
+  --ink:#f2f4f7;--ink-2:#d0d5dd;--sub:#b3bbc7;--mute:#8d97a7;
+  --brand:#ff6a1f;--brand-ink:#ff9259;--brand-soft:#2a1a10;--brand-line:#5c3218;
+  --primary:#f2f4f7;--primary-hover:#fff;--on-primary:#101828;
+  --crit:#f04438;--crit-ink:#fda29b;--crit-soft:#2b1517;--crit-line:#5b2522;
+  --warn:#eaaa08;--warn-ink:#fac515;--warn-soft:#2a2210;--warn-line:#5a4813;
+  --ok:#17b26a;--ok-ink:#75e0a7;--ok-soft:#0f2a1e;--ok-line:#1e5a3e;
+  --info:#2e90fa;--info-ink:#84caff;--info-soft:#102338;--info-line:#1f4a75;
+  --focus:#ff9259;--focus-ring:rgba(255,146,89,.25);
+  --sh-1:none;--sh-2:0 4px 14px rgba(0,0,0,.4);--sh-3:0 24px 48px -12px rgba(0,0,0,.65);--scrim:rgba(0,0,0,.62);
+  --side-bg:#08090c;}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0c0e13;--surface:#13161d;--surface-2:#171b23;--sunken:#0f1217;--hover:#1c212a;--sk:#212733;
+  --line:#232a35;--line-2:#323a47;--line-strong:#5d6778;
+  --ink:#f2f4f7;--ink-2:#d0d5dd;--sub:#b3bbc7;--mute:#8d97a7;
+  --brand:#ff6a1f;--brand-ink:#ff9259;--brand-soft:#2a1a10;--brand-line:#5c3218;
+  --primary:#f2f4f7;--primary-hover:#fff;--on-primary:#101828;
+  --crit:#f04438;--crit-ink:#fda29b;--crit-soft:#2b1517;--crit-line:#5b2522;
+  --warn:#eaaa08;--warn-ink:#fac515;--warn-soft:#2a2210;--warn-line:#5a4813;
+  --ok:#17b26a;--ok-ink:#75e0a7;--ok-soft:#0f2a1e;--ok-line:#1e5a3e;
+  --info:#2e90fa;--info-ink:#84caff;--info-soft:#102338;--info-line:#1f4a75;
+  --focus:#ff9259;--focus-ring:rgba(255,146,89,.25);
+  --sh-1:none;--sh-2:0 4px 14px rgba(0,0,0,.4);--sh-3:0 24px 48px -12px rgba(0,0,0,.65);--scrim:rgba(0,0,0,.62);
+  --side-bg:#08090c;}
+

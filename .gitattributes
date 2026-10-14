@@ -1,0 +1,17 @@
+# 저장소에는 LF 로 둔다. 작업 폴더의 줄바꿈은 각자 OS 에 맞춘다 (Windows 개발자가 섞여도 diff 가 줄바꿈으로 흔들리지 않게).
+* text=auto
+
+# Windows 배치 파일은 CRLF 여야 cmd 가 제대로 읽는다
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.sh  text eol=lf
+
+# 바이너리
+*.png    binary
+*.webp   binary
+*.jpg    binary
+*.ico    binary
+*.ai     binary
+*.pdf    binary
+*.zip    binary
+*.sqlite binary

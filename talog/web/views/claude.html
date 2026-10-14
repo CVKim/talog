@@ -1,0 +1,66 @@
+<!-- Claude (AI 작업 공간) ===================================================== -->
+<section class="view" id="v-ai" aria-labelledby="pageTitle">
+  <div class="ai-top">
+    <span class="badge" id="aiStCli">Claude Code 확인 중</span><span class="badge plain" id="aiStAuth">구독 로그인으로 실행</span><span class="usage" id="aiUsage" title="구독 사용량 — 질문할 때 Claude Code 가 알려 준 값"><svg class="ic sm" aria-hidden="true"><use href="#i-gauge"/></svg><span id="aiUsageTxt">사용량: 첫 질문 뒤 표시</span><span class="meter" aria-hidden="true"><i id="aiUsageBar" style="width:0"></i></span></span>
+    <div class="end"><button class="btn" id="btnNewThread" type="button"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>새 대화</button><button class="btn" id="btnAiSetup" type="button" aria-expanded="false" aria-controls="aiSetup"><svg class="ic" aria-hidden="true"><use href="#i-plug"/></svg>연결 설정</button></div>
+  </div>
+  <div class="ai-layout">
+    <div class="ai-main">
+      <div class="thread" id="caThread"></div>
+      <div class="vh" id="caAnnounce" aria-live="polite"></div>
+      <div class="composer" id="askBox">
+        <div class="comp">
+          <div class="ctxline hidden" id="caCtx"></div>
+          <label class="vh" for="caQ">Claude 에게 보낼 질문</label>
+          <textarea id="caQ" rows="2" placeholder="talog 사건·리포트·원본 로그에 대해 물어보세요 — 예: 12일 05:02 NoInspThread 전후 원본 로그를 보고 원인을 정리해 줘"></textarea>
+          <div class="comp-bar">
+            <label class="fld-inline" for="caModel">모델</label><select id="caModel"></select>
+            <label class="fld-inline" for="caEffort">effort</label><select id="caEffort" title="생각하는 깊이 — 높을수록 깊게 보지만 오래 걸리고 사용량이 늡니다"></select>
+            <span class="meta kbdhint"><span class="kbd">Ctrl</span> + <span class="kbd">Enter</span></span>
+            <span class="spacer"></span>
+            <button class="btn danger hidden" id="btnCaStop" type="button"><svg class="ic" aria-hidden="true"><use href="#i-square"/></svg>멈추기</button>
+            <button class="btn primary" id="btnCa" type="button"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg><span>보내기</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside class="ai-side" aria-label="분석 맥락">
+      <div class="ctx" id="ctxSkills"><h3><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>작업 스킬<span class="meta">누르면 필요한 값만 묻습니다</span></h3><div class="skl" id="aiSkills"></div></div>
+      <div class="ctx hl" id="ctxLog"><h3><svg class="ic" aria-hidden="true"><use href="#i-folder-open"/></svg>분석할 원본 로그<span class="meta" id="logSelState"></span></h3>
+        <div class="selp hidden" id="logSelPath"></div>
+        <div class="row"><label class="vh" for="logSel">로그 폴더</label><input type="text" id="logSel" list="logDays" style="flex:1;min-width:0" placeholder="일자 폴더 경로"><datalist id="logDays"></datalist><button class="btn sm" id="btnLogSel" type="button">고르기</button><button class="btn sm ghost hidden" id="btnLogClr" type="button" aria-label="고른 폴더 해제">해제</button></div>
+        <p class="hint">Claude 가 이 폴더의 원본 로그를 시각·문구·검사 id 로 직접 찾아 읽습니다. Claude 에게는 경로 대신 '선택'으로만 알립니다.</p></div>
+      <div class="ctx"><h3><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>데이터·비용</h3>
+        <ul class="principles">
+          <li><svg class="ic" aria-hidden="true"><use href="#i-check-circle"/></svg><span><b>추가 과금 없음</b> — 구독 로그인으로만 실행합니다. 이 PC 에 API 키가 있어도 빼고 띄웁니다. 구독 사용량에는 포함됩니다.</span></li>
+          <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span><b>마스킹</b> — 검사 id → ID-xxxxxx, 경로 → &lt;로그&gt;. 원본 로그 줄도 가려서 넘깁니다.</span></li>
+          <li><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg><span><b>읽기 위주</b> — talog 도구는 읽기만, 쓰기는 reports 폴더만. 명령 실행·설정 수정은 막힙니다.</span></li>
+          <li><svg class="ic" aria-hidden="true"><use href="#i-cloud"/></svg><span><b>그래도 전송됩니다</b> — 읽은 내용은 Anthropic 으로 갑니다. 고객이 승인한 범위만 연결하십시오.</span></li>
+        </ul></div>
+    </aside>
+  </div>
+
+  <div class="card hidden" id="aiSetup" style="margin-top:20px">
+    <div class="chead"><h2>연결 설정</h2><span class="meta">Claude 앱(Code·데스크톱)에서 talog 를 쓰는 방법 · 연결 시험</span><div class="end"><button class="btn" id="btnAiTest" type="button"><svg class="ic" aria-hidden="true"><use href="#i-plug"/></svg>연결 시험</button></div></div>
+    <div id="aiTest" class="hidden" aria-live="polite" style="margin-bottom:18px"><div class="run-h" id="aiTestState" style="margin-bottom:10px"></div><div id="aiTestLog"></div></div>
+    <div class="sechead"><span class="n">1</span><h3>에이전트 폴더</h3><span class="badge info plain">권장</span></div>
+    <p class="hint" style="margin:0 0 12px">Claude 데스크톱(Code 탭)이나 Claude Code 에서 <b>이 폴더 하나만 열면</b> talog RCA 에이전트가 됩니다 — <span class="mono">CLAUDE.md</span>(역할·계획 먼저·근거로만·배운 점), <span class="mono">.mcp.json</span>, RCA 스킬·보고서 템플릿, <span class="mono">reports</span>. 바로 묻기도 이 폴더에서 돕니다.</p>
+    <div class="row"><label class="vh" for="wsDir">에이전트 폴더 위치</label><input type="text" id="wsDir" style="flex:1;min-width:240px"><button class="btn primary" id="btnWs" type="button"><svg class="ic" aria-hidden="true"><use href="#i-folder-plus"/></svg>폴더 만들기</button><button class="btn" id="btnWsOpen" type="button"><svg class="ic" aria-hidden="true"><use href="#i-folder-open"/></svg>탐색기에서 열기</button></div>
+    <div id="wsResult" class="small" style="margin-top:10px" aria-live="polite"></div>
+    <div class="grid g2" style="margin-top:22px">
+      <div><div class="sechead"><span class="n">2</span><h3>Claude Code 에 연결</h3><span class="meta">모든 폴더</span></div>
+        <p class="hint" style="margin:0 0 10px">명령 프롬프트에서 한 번 실행하면 어느 폴더에서 연 Claude Code 에서든 talog 도구를 씁니다.</p>
+        <div class="cmd"><pre id="cmdCode">…</pre><button class="btn sm" type="button" data-copy="cmdCode"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg>복사</button></div>
+        <details class="disclosure"><summary>프로젝트 폴더에 두는 .mcp.json</summary><div class="cmd"><pre id="cmdMcp">…</pre><button class="btn sm" type="button" data-copy="cmdMcp"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg>복사</button></div></details>
+        <p class="hint" id="aiSkillHint"></p></div>
+      <div><div class="sechead"><span class="n">3</span><h3>Claude 데스크톱 채팅에 연결</h3></div>
+        <ol class="steps small" style="color:var(--sub)"><li>Claude 데스크톱 → 설정 → 개발자 → <b>구성 편집</b>으로 아래 파일을 엽니다.</li><li>비었으면 그대로, 있으면 <span class="mono">mcpServers</span> 안에 <span class="mono">talog</span> 항목만 붙입니다.</li><li>Claude 데스크톱을 다시 켜면 채팅 도구 목록에 talog 가 보입니다.</li></ol>
+        <div class="mono muted" id="deskPath" style="margin:10px 0 8px"></div>
+        <div class="cmd"><pre id="cmdDesk">…</pre><button class="btn sm" type="button" data-copy="cmdDesk"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg>복사</button></div></div>
+    </div>
+    <div class="sechead" style="margin-top:24px"><span class="n">4</span><h3>Claude 가 쓰는 talog 도구</h3><span class="meta" id="aiToolCnt"></span></div>
+    <p class="hint" style="margin:0 0 10px">스킬이 이 도구들을 차례로 부릅니다. 바로 묻기는 읽기 도구만 쓰고, 경보 재현은 '규칙 바꾼 뒤 비교' 카드에서 확인했을 때만, 사례 저장은 Claude 앱에서만 씁니다.</p>
+    <div class="toolcols" id="aiTools"></div>
+  </div>
+</section>
+

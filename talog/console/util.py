@@ -11,7 +11,7 @@ from collections import Counter, deque
 
 PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))     # talog 패키지 폴더
 REPO = os.path.dirname(PKG)                                           # 저장소 루트 (소스 실행일 때)
-PAGE = os.path.join(PKG, "console.html")
+WEB = os.path.join(PKG, "web")                                        # 콘솔 페이지 소스 (page.py 가 합친다)
 ASSETS = os.path.join(PKG, "assets")
 TAG_RE = re.compile(r"^[\w.#\- ()가-힣]{1,120}$")                     # 리포트 태그 (경로 문자 없이)
 

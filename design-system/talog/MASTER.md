@@ -2,7 +2,9 @@
 
 UI/UX Pro Max 스킬의 "디자인 시스템 저장(persist)" 형식을 따른 기준 문서다. 화면을 고치거나 새 화면을 만들 때
 먼저 이 문서를 보고, 화면 하나만 다르게 해야 하면 `design-system/talog/pages/<화면>.md` 에 차이만 적는다
-(없으면 이 문서가 전부다). 구현: `talog/console.html` (파일 하나, 외부 리소스 없음 — 현장 PC 오프라인).
+(없으면 이 문서가 전부다). 구현: `talog/web/` 소스(`css/00-tokens.css` 토큰 · `css/2x` 부품 · `css/3x` 화면 ·
+`js/NN-*.js` 화면별 동작 · `views/*.html` 화면 마크업)를 `talog/console/page.py` 가 파일 하나로 합쳐 내보낸다
+(외부 리소스 없음 — 현장 PC 오프라인).
 
 ## 1. 근거 — 스킬 데이터에서 고른 행
 

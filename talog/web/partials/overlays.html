@@ -1,0 +1,11 @@
+<div class="savebar hidden" id="saveBar" role="region" aria-label="저장하지 않은 변경"><span class="msg"><svg class="ic" aria-hidden="true"><use href="#i-info"/></svg>저장하지 않은 변경이 있습니다</span><button class="btn hidden" id="btnSaveGo" type="button">설정 보기</button><button class="btn" id="btnRevert" type="button"><svg class="ic" aria-hidden="true"><use href="#i-undo"/></svg>되돌리기</button><button class="btn primary" id="btnSave" type="button"><svg class="ic" aria-hidden="true"><use href="#i-save"/></svg>저장하고 적용</button></div>
+<div class="toasts" id="toast"></div>
+<dialog id="dlg" aria-labelledby="dlgT" aria-describedby="dlgB"><form method="dialog" class="dlg"><div class="dlg-h"><svg class="ic" aria-hidden="true"><use href="#i-alert"/></svg><div><h2 id="dlgT"></h2><p id="dlgB"></p></div></div>
+  <div class="dlg-act"><button class="btn" value="cancel" id="dlgNo">취소</button><button class="btn primary" value="ok" id="dlgOk">확인</button></div></form></dialog>
+<dialog id="skDlg" aria-labelledby="skT" aria-describedby="skD"><form method="dialog" class="dlg" id="skForm"><div class="dlg-h sk-h"><span class="ai-ic" id="skIc"></span><div><h2 id="skT"></h2><p id="skD"></p></div></div>
+  <div class="skf" id="skFields"></div>
+  <p class="sk-run" id="skRun"></p>
+  <div class="dlg-act"><button class="btn" type="button" id="skNo">취소</button><button class="btn primary" value="ok" id="skOk"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg><span>실행</span></button></div></form></dialog>
+<dialog id="cmdk" aria-label="빠른 이동"><div class="cmdk-in"><svg class="ic lg" aria-hidden="true"><use href="#i-search"/></svg><input type="text" id="cmdkQ" placeholder="화면·사건·작업 찾기" aria-label="찾기" aria-controls="cmdkList" autocomplete="off"></div>
+  <div class="cmdk-list" id="cmdkList" role="listbox" aria-label="결과"></div><div class="cmdk-foot"><span>↑↓ 고르기</span><span>Enter 열기</span><span>Esc 닫기</span></div></dialog>
+

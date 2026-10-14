@@ -1,0 +1,22 @@
+/* ── 설정 ── */
+.subnav{position:sticky;top:var(--top-h);z-index:10;display:flex;gap:4px;flex-wrap:wrap;margin:-22px -28px 18px;padding:10px 28px;background:var(--bg);border-bottom:1px solid var(--line)}
+.subnav a{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;font-weight:600;font-size:13px;color:var(--sub);text-decoration:none;transition:background var(--t1),color var(--t1);border:1px solid transparent}
+.subnav a:hover{background:var(--hover);color:var(--ink)}
+.subnav a.on{background:var(--surface);color:var(--ink);box-shadow:var(--sh-2);border-color:var(--line)}
+.subnav a .n{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:var(--sunken);font-size:11px;color:var(--sub)}
+.subnav a.on .n{background:var(--primary);color:var(--on-primary)}
+.setsec{scroll-margin-top:calc(var(--top-h) + 64px);margin-bottom:28px}
+.prov{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.prov label{border:1px solid var(--line-2);border-radius:var(--r-lg);padding:12px 14px;cursor:pointer;font-weight:600;display:flex;gap:10px;align-items:center;transition:border-color var(--t1),background var(--t1)}
+.prov label:hover{border-color:var(--line-strong)}
+.prov label.on{border-color:var(--brand-ink);background:var(--brand-soft);color:var(--brand-ink)}
+.prov label:focus-within{outline:2px solid var(--focus);outline-offset:2px}
+.prov input{margin:0}
+.rulebox{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px;margin-top:14px}
+.savebar{position:fixed;left:calc(50% + var(--side-w) / 2);bottom:20px;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:8px;padding:8px 8px 8px 16px;border-radius:var(--r-lg);background:var(--primary);color:var(--on-primary);box-shadow:var(--sh-3);font-weight:600;font-size:13.5px;max-width:calc(100vw - var(--side-w) - 24px);animation:barIn var(--t2) var(--ease)}
+.savebar .msg{display:flex;align-items:center;gap:8px;margin-right:6px}
+.savebar .btn{height:32px;background:transparent;color:inherit;border-color:rgba(127,127,127,.45);box-shadow:none}
+.savebar .btn:hover{background:rgba(127,127,127,.18)}
+.savebar .btn.primary{background:var(--on-primary);color:var(--primary);border-color:var(--on-primary)}
+@keyframes barIn{from{opacity:0;transform:translate(-50%,8px)}}
+

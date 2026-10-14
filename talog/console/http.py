@@ -20,7 +20,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from .. import __version__
 from .app import Console
-from .util import ASSETS, PAGE, _Tee
+from .page import build_page
+from .util import ASSETS, _Tee
 
 JSON = "application/json; charset=utf-8"
 HTML = "text/html; charset=utf-8"
@@ -118,9 +119,8 @@ POST_ROUTES: dict[str, Route] = {
 
 
 def page_html(con: Console) -> str:
-    """콘솔 페이지 — 파일 하나, 외부 리소스 없음(현장 오프라인). 세션 토큰을 심는다."""
-    with open(PAGE, encoding="utf-8") as f:
-        return f.read().replace("__TALOG_TOKEN__", con.token)
+    """콘솔 페이지 — talog/web 소스를 합친 파일 하나(외부 리소스 없음). 세션 토큰을 심는다."""
+    return build_page().replace("__TALOG_TOKEN__", con.token)
 
 
 def _handler_factory(con: Console):

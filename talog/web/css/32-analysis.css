@@ -1,0 +1,9 @@
+/* ── 분석 ── */
+.job{margin-top:16px;border:1px solid var(--line);border-radius:var(--r-lg);padding:12px;background:var(--surface-2)}
+.job-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:13px}
+.rowact{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.rep-t{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.daychips{display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 12px}
+.daychips button{height:28px;padding:0 10px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);font:500 12px var(--mono);color:var(--sub)}
+.daychips button:hover{border-color:var(--brand-ink);color:var(--brand-ink)}
+

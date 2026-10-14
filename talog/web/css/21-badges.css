@@ -1,0 +1,14 @@
+/* ── 배지·태그 ── */
+.badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;background:var(--sunken);color:var(--sub);line-height:1}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.badge.plain::before{display:none}
+.badge.ok{background:var(--ok-soft);color:var(--ok-ink)}.badge.warn{background:var(--warn-soft);color:var(--warn-ink)}
+.badge.crit{background:var(--crit-soft);color:var(--crit-ink)}.badge.info{background:var(--info-soft);color:var(--info-ink)}
+.badge.brand{background:var(--brand-soft);color:var(--brand-ink)}
+.sev{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:var(--r-sm);font-size:12px;font-weight:700;white-space:nowrap;line-height:1;background:var(--sunken);color:var(--sub)}
+.sev::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.sev.crit{background:var(--crit-soft);color:var(--crit-ink)}.sev.warn{background:var(--warn-soft);color:var(--warn-ink)}.sev.info{background:var(--info-soft);color:var(--info-ink)}
+.tag{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:5px;font-size:11.5px;font-weight:600;white-space:nowrap;background:var(--sunken);color:var(--sub);line-height:1;vertical-align:1px}
+.tag.on{background:var(--ok-soft);color:var(--ok-ink)}.tag.will{background:var(--info-soft);color:var(--info-ink)}
+.tag.w{background:var(--warn-soft);color:var(--warn-ink)}.tag.c{background:var(--crit-soft);color:var(--crit-ink)}.tag.b{background:var(--brand-soft);color:var(--brand-ink)}
+
