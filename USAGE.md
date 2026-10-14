@@ -321,6 +321,9 @@ Claude 앱에서는 `log_days` 로 읽을 수 있는 일자 폴더를 보고 `da
 
 - 배포 키트: `python tools\make_deploy.py --site "CMFB#1" --email-to lead@company.com`
   → `deploy\talog_<설비>\` (talog.exe · run_talog.bat · run_service.bat · talog.yaml · DEPLOY.md)
+- 개발자 PC 배포판: `python tools\make_dev_kit.py` → `deploy\talog_<판>_개발자PC\` (+ .zip) — talog.exe · run_talog.bat ·
+  개발자용 talog.yaml(토스트·메일·로컬 LLM 꺼짐) · 시작하기.txt · 매뉴얼(개발자 PC 매뉴얼·대화형 그림·USAGE.md).
+  `dist\talog.exe` 판이 소스 판과 다르면 묶지 않는다
 - 설치 점검: `talog.exe run --check` (경로·추적 파일·규칙·LLM·메일 접속·GPU·테스트 토스트)
 - 로그인 시 자동 시작:
   ```

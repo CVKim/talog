@@ -638,7 +638,7 @@ class TalogMCP:
     # ── 도구 ───────────────────────────────────────────────────
     def t_overview(self, _a: dict) -> str:
         lines = [f"# talog 데이터 개요 — talog {__version__}",
-                 f"마스킹: {'켜짐 (검사 id → ID-xxxxxx, 경로 → <로그>·<데이터>, 원본 로그 줄은 요청 시만)' if self.mask.on else '꺼짐 (원본 값 그대로)'}",
+                 f"마스킹: {'켜짐 (검사 id → ID-xxxxxx, 경로 → <로그>·<데이터>, 원본 로그 줄도 가림)' if self.mask.on else '꺼짐 (원본 값 그대로)'}",
                  ""]
         rows = []
         for s in self.all_sources():
@@ -1536,18 +1536,23 @@ def self_test_report(server: TalogMCP) -> dict:
     check("tools", "도구·프롬프트", len(tools) == len(TOOLS) and len(prompts) == len(PROMPTS),
           f"도구 {len(tools)}개 · 프롬프트 {len(prompts)}개")
     srcs = []
+    extra = server.extra_log_roots()
     for s in server.sources:
         incs = s.incidents()
         st, _p = s.capacity_state()
+        days = logread.day_dirs([r for r in [s.log_root] + extra if r], 50)
         srcs.append({"name": s.name, "kind": s.kind, "incidents": len(incs),
                      "crit": sum(1 for i in incs if (i.get("verdict") or {}).get("severity") == "crit"),
                      "reports": len(s.reports()), "baseline_groups": len((st or {}).get("groups") or {}),
-                     "logs": bool(s.log_root and os.path.isdir(s.log_root))})
-    has_data = any(x["incidents"] or x["reports"] for x in srcs)
-    check("data", "데이터 출처", bool(srcs) and has_data,
-          " · ".join(f"{x['name']} — 사건 {x['incidents']}(심각 {x['crit']}) · 리포트 {x['reports']} · 기준선 "
-                     f"{x['baseline_groups']}그룹" for x in srcs) or "출처 없음")
-    check("mask", "마스킹", True, ("검사 id → ID-xxxxxx · 경로 → <로그>·<데이터> · 원본 로그 줄은 요청 시만"
+                     "logs": bool(days), "log_days": len(days)})
+    # 원본 로그 폴더만 있어도 Claude 가 읽을 것이 있다 (막 설치한 개발자 PC — 사건·리포트는 분석 뒤에 생긴다)
+    has_data = any(x["incidents"] or x["reports"] or x["log_days"] for x in srcs)
+    detail = " · ".join(f"{x['name']} — 사건 {x['incidents']}(심각 {x['crit']}) · 리포트 {x['reports']} · 원본 로그 폴더 "
+                        f"{x['log_days']}개 · 기준선 {x['baseline_groups']}그룹" for x in srcs) or "출처 없음"
+    if srcs and not has_data:
+        detail += " — 볼 데이터가 아직 없습니다. 설정의 로그 루트를 로그 폴더로 맞추거나 분석을 한 번 돌리십시오"
+    check("data", "데이터 출처", bool(srcs) and has_data, detail)
+    check("mask", "마스킹", True, ("검사 id → ID-xxxxxx · 경로 → <로그>·<데이터> · 원본 로그 줄도 가려서 보냄"
                                    if server.mask.on else "꺼짐 — 원본 값이 그대로 Claude 에 갑니다"))
     calls = []
     ok_calls = True
