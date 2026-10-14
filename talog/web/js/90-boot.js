@@ -8,6 +8,7 @@
   setSettings(r.settings); $("#pageSub").textContent = VIEWS[S.view][1]; applyHash(); await loadStatus(); loadTimeline(); if (S.set.ai.llm) loadModels();
   api("/api/folder").then(f => { S.folder = S.folder || f; renderFiles(); renderSugg(); });
   ensureClaude();
+  maybeTour();                                        // 처음 여는 브라우저에서 한 번 (건너뛸 수 있음)
   setInterval(() => { loadStatus(); if ($("#logDetails").open) loadLog(); }, 5000);
   setInterval(() => { if (S.view === "ops") loadTimeline(); }, 60000);
 })();

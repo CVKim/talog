@@ -7,6 +7,10 @@ function cmdList() { const items = [];
   items.push({g: "명령", icon: "plus", label: "Claude 새 대화", k: "앞 대화를 잊고 새로 시작", run: () => { go("ai"); newThread(); }});
   items.push({g: "명령", icon: "plug", label: "Claude 연결 시험", k: "MCP 서버 점검", run: () => { go("ai"); openSetup(true); $("#btnAiTest").click(); }});
   items.push({g: "명령", icon: "monitor", label: "화면 테마 바꾸기", k: THEME_LAB[theme], run: cycleTheme});
+  items.push({g: "도움말", icon: "help", label: "이 화면 읽는 법", k: "? 키", run: () => openHelp()});
+  items.push({g: "도움말", icon: "book", label: "용어 사전", k: "버틸 여유 · 기준선 · 판단 일치 …", run: () => openHelp({tab: "terms"})});
+  items.push({g: "도움말", icon: "route", label: "처음 안내 다시 보기", k: "다섯 화면 30초 둘러보기", run: startTour});
+  Object.entries(GLOSSARY).forEach(([k, g]) => items.push({g: "용어", icon: "book", label: g.t, k: g.d.slice(0, 40) + "…", run: () => openHelp({tab: "terms", term: k})}));
   items.push({g: "명령", icon: S.st && S.st.running ? "square" : "play", label: S.st && S.st.running ? "감시 정지" : "감시 시작", k: "", run: () => $("#btnRun").click()});
   return items; }
 function renderCmd() { const q = $("#cmdkQ").value.trim().toLowerCase();

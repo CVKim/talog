@@ -8,7 +8,7 @@
       <div class="field"><label for="f-site">설비 이름 <span class="opt">(메일 제목·기록에 표시)</span></label><input type="text" id="f-site" data-path="site" placeholder="예: PC3, CMFB#1"></div>
       <div class="field"><label for="f-logroot">talos 로그 루트 <span class="opt">(오늘 YYYY_MM\DD 폴더를 따라감)</span></label><input type="text" id="f-logroot" data-path="log_root"></div>
       <div class="field"><label for="f-datadir">저장 폴더 <span class="opt">(경보·사건·리포트)</span></label><input type="text" id="f-datadir" data-path="data_dir"></div></div>
-    <div class="row"><span class="lab">추적 방식</span><div class="seg" id="trSeg" role="group" aria-label="추적 방식"><button type="button" data-v="core">핵심 로그 (권장)</button><button type="button" data-v="all">폴더 전체</button><button type="button" data-v="list">직접 선택</button></div></div>
+    <div class="row"><span class="lab">추적 방식<span data-tip="tracking"></span></span><div class="seg" id="trSeg" role="group" aria-label="추적 방식"><button type="button" data-v="core">핵심 로그 (권장)</button><button type="button" data-v="all">폴더 전체</button><button type="button" data-v="list">직접 선택</button></div></div>
     <div class="note" id="trHelp"></div>
     <div id="trListBox" class="field hidden"><label>읽을 파일 <span class="opt">— 파일명 또는 와일드카드 (예: Comm.log, seq_*.log, DLInfer.log, alg\alg_dl_*.log)</span></label><div class="chips" data-path="tracking" data-ph="파일명 입력 후 Enter"></div></div>
     <details class="disclosure" id="fileDetails"><summary>오늘 폴더 파일 보기</summary>
@@ -17,7 +17,7 @@
       <p class="hint" id="fileNote"></p></details>
   </div></div>
 
-  <div id="s-detect" class="setsec"><div class="sechead"><span class="n">2</span><h2>탐지</h2><span class="meta">경보 규칙</span></div>
+  <div id="s-detect" class="setsec"><div class="sechead"><span class="n">2</span><h2>탐지<span data-tip="alert"></span></h2><span class="meta">경보 규칙</span></div>
   <div class="card">
     <div class="note"><svg class="ic" aria-hidden="true"><use href="#i-info"/></svg><span>등급이 알림을 정합니다 — <b class="crit">심각</b>: 즉시 메일 · <b class="warn">주의</b>: 묶음 메일(알림에서 켤 때) · 정보: 기록만. 조건의 "1회"는 한 번만 나와도 경보, "N회 / M분"은 M분 안에 N번 나오면 경보입니다.</span></div>
     <div class="chead" style="margin:18px 0 8px"><h3>기본 규칙</h3><span class="meta">플랫폼 소스와 대조 검증된 감지</span></div>
@@ -32,12 +32,12 @@
       <div id="rtRes" class="result" aria-live="polite"></div></div>
   </div></div>
 
-  <div id="s-judge" class="setsec"><div class="sechead"><span class="n">3</span><h2>판단</h2><span class="meta">룰 진단 + LLM 교차 확인</span></div>
+  <div id="s-judge" class="setsec"><div class="sechead"><span class="n">3</span><h2>판단<span data-tip="gate"></span></h2><span class="meta">룰 진단 + LLM 교차 확인</span></div>
   <div class="card">
     <div class="seg" id="aiSeg" role="group" aria-label="판단 방식"><button type="button" data-v="0">룰 진단만</button><button type="button" data-v="1">룰 + LLM 교차 확인</button></div>
     <p class="hint">룰이 근거(검사 흐름·GPU 로그·자원)로 원인을 정하고 조치·담당을 고릅니다. LLM(Qwen)은 같은 근거로 독립 판단해 <b>같은 원인일 때만 "판단 일치"</b>, 다르면 두 의견을 붙여 확인을 요청합니다. 심각 등급 메일은 룰 판단으로 먼저 나가고 LLM 의견은 같은 스레드의 후속 메일로 갑니다.</p>
     <div id="aiBox" style="margin-top:18px">
-      <div class="row"><label class="lab" for="f-aiurl">LLM 서버 (Ollama)</label><input type="text" id="f-aiurl" data-path="ai.url" style="width:260px"><button class="btn sm" id="btnModels" type="button"><svg class="ic" aria-hidden="true"><use href="#i-plug"/></svg>연결 확인</button><span id="llmAlive" class="small" aria-live="polite"></span></div>
+      <div class="row"><label class="lab" for="f-aiurl">LLM 서버 (Ollama)</label><span data-tip="llm"></span><input type="text" id="f-aiurl" data-path="ai.url" style="width:260px"><button class="btn sm" id="btnModels" type="button"><svg class="ic" aria-hidden="true"><use href="#i-plug"/></svg>연결 확인</button><span id="llmAlive" class="small" aria-live="polite"></span></div>
       <div class="row" style="margin-top:12px"><label class="lab" for="modelSel">모델</label><select id="modelSel" style="min-width:220px"></select><span class="hint" style="margin:0">qwen3.5:9b 가 판단이 더 정확하고 qwen2.5:7b 는 가볍습니다</span></div>
       <div class="row" style="margin-top:12px"><span class="lab">장치</span><div class="seg" id="devSeg" role="group" aria-label="LLM 장치"><button type="button" data-v="cpu">CPU</button><button type="button" data-v="gpu">GPU</button><button type="button" data-v="auto">자동</button></div><span id="devHelp" class="small muted"></span></div>
       <h3 class="subhead">GPU 지금 상태</h3><div id="gpuFree" class="small"></div>

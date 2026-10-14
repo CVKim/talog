@@ -50,3 +50,11 @@
 }
 @media (pointer:coarse){.btn{height:44px}.btn.sm{height:38px}.btn.icon{width:44px}.btn.sm.icon{width:38px}.seg button{height:38px}input[type=text],input[type=number],input[type=password],input[type=search],select{height:44px}.kbdhint{display:none}}
 @media (forced-colors:active){.cell{border:1px solid CanvasText}.cell.crit,.cell.warn{background:CanvasText}.badge::before,.sev::before{background:CanvasText}}
+/* v2.2 — 휴대폰 위 막대에 도움말 버튼이 더해져 자리가 모자란다: 감시 상태 알약은 점만(글은 화면 낭독기용으로 남김 —
+   상태는 감시 시작/정지 버튼 아이콘과 상태 카드 글로도 보인다), 제목은 넘치면 말줄임. 처음 안내는 아래 탭 위로 */
+@media (max-width:767px){
+  .tb-title{min-width:0}.tb-title h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .live{padding:0 9px;gap:0}
+  .live #runText{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  dialog.tour{inset:auto 12px calc(76px + env(safe-area-inset-bottom)) 12px;width:auto}
+}

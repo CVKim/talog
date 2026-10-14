@@ -2,8 +2,19 @@
 async function loadDays() { const f = S.folder || await api("/api/folder"); S.folder = f;
   $("#dayList").innerHTML = (f.days || []).map(d => `<option value="${esc(d)}">`).join("");
   $("#dayChips").innerHTML = (f.days || []).slice(0, 8).map(d => `<button type="button" data-d="${esc(d)}" title="${esc(d)}">${esc(tail2(d))}</button>`).join("");
-  $$("#dayChips button").forEach(b => b.onclick = () => { $("#anaDir").value = b.dataset.d; });
+  $$("#dayChips button").forEach(b => b.onclick = () => { $("#anaDir").value = b.dataset.d; anaStep(); });
   if (!$("#anaDir").value && f.days && f.days[0]) $("#anaDir").placeholder = "예: " + f.days[0]; }
+/** 단계 표시 (ux #81) — 폴더가 있으면 ①을 마치고 ②, 작업이 돌거나 끝나면 ③ */
+function anaStep(state = S.jobWas) {
+  const has = !!$("#anaDir").value.trim(), job = ["running", "done", "error"].includes(state);
+  $$("#anaSteps li[data-step]").forEach(li => {
+    const n = +li.dataset.step, on = job ? n === 3 : has ? n === 2 : n === 1;
+    li.classList.toggle("on", on);
+    li.classList.toggle("done", job ? n < 3 : has && n === 1);
+    if (on) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+  });
+}
+$("#anaDir").addEventListener("input", () => anaStep());
 const anaDir = () => $("#anaDir").value.trim() || (S.folder && S.folder.days && S.folder.days[0]) || "";
 async function startJob(kind, btn) { const dir = anaDir();
   if (!dir) { toast("로그 폴더를 넣으십시오", "err"); $("#anaDir").focus(); return; }
@@ -23,7 +34,7 @@ async function pollJob() { const j = await api("/api/job"); if (j.state === "idl
   $("#btnReport").disabled = $("#btnReplay").disabled = run;
   $("#jobLog").textContent = (j.log || []).join("\n"); $("#jobLog").scrollTop = 1e9;
   clearTimeout(jobTimer); if (run) jobTimer = setTimeout(pollJob, 1500); else if (S.jobWas === "running") { loadReports(); loadTimeline(); if (j.kind === "report" && j.reports && j.reports[0]) selectReport(j.reports[0]); }
-  S.jobWas = j.state; }
+  S.jobWas = j.state; anaStep(j.state); }
 async function loadReports() { if (!S.reports) $("#repRows").innerHTML = skRows(4);
   const r = await api("/api/reports"); S.reports = r.rows; $("#repCount").textContent = r.rows.length ? `${r.rows.length}개` : "";
   $("#repRows").innerHTML = r.rows.length ? r.rows.map(x => `<tr class="${S.rep === x.tag ? "sel" : ""}" data-tag="${esc(x.tag)}"><td><div class="rep-t"><b>${esc(x.tag)}</b><span class="meta">${esc(x.mtime)} · 소견 ${x.n_findings}건</span></div>${x.findings.slice(0, 2).map(f => `<div class="sub">${esc(f)}</div>`).join("")}

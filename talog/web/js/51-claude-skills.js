@@ -1,5 +1,5 @@
 /* ── 작업 스킬 카드: 누르면 필요한 값만 묻고 '/스킬 인자'로 새 대화를 연다 ── */
-const skillBtn = (k, i, side) => `<button type="button" class="act${side ? " skc" : ""}" data-sk="${i}"${side ? ` title="${esc(k.desc)}"` : ""}><span class="ai-ic">${ic(k.icon)}</span><div><b>${esc(k.title)}</b><span class="d">${esc(k.desc)}</span><span class="skn">${esc(k.command)}</span></div></button>`;
+const skillBtn = (k, i, side) => `<button type="button" class="act${side ? " skc" : ""}" data-sk="${i}"${side ? ` title="${esc(k.desc)}"` : ""}><span class="ai-ic">${ic(k.icon)}</span><div><b>${esc(k.title)}</b><span class="d">${esc(k.desc)}</span>${side ? "" : `<span class="skl-t">${ic("file-text", "xs")}${esc(k.leaves || "")}</span>`}<span class="skn">${esc(k.command)}</span></div></button>`;
 let skCur = null;
 function skField(f, v) { const id = "sk_" + f.name, val = v != null && v !== "" ? v : (f.default || "");
   const lab = `<label for="${id}">${esc(f.label)}${f.hint && f.kind !== "confirm" ? ` <span class="opt">(${esc(f.hint)})</span>` : ""}</label>`;

@@ -1,0 +1,110 @@
+/* ── 도움말 · 용어 풀이 · 캡션 · 지금 할 일 · 처음 안내 (v2.2) ── */
+.ic.xs{width:13px;height:13px;vertical-align:-2px}
+
+/* 용어 풀이 버튼 — 글 옆의 작은 (?) . 누르는 버튼(마우스 올림 전용 아님, ux #116) */
+.term{display:inline-grid;place-items:center;width:20px;height:20px;padding:0;margin:0 0 0 2px;border:0;border-radius:50%;background:transparent;color:var(--mute);vertical-align:-4px;cursor:pointer;flex:none}
+.term:hover,.term[aria-expanded="true"]{background:var(--brand-soft);color:var(--brand-ink)}
+.termpop{position:fixed;z-index:80;width:min(320px,calc(100vw - 24px));background:var(--surface);color:var(--ink);border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--sh-3);padding:12px 14px 10px}
+.termpop b{display:block;font-size:13.5px;margin-bottom:4px}
+.termpop p{margin:0 0 8px;font-size:13px;line-height:1.6;color:var(--sub)}
+.termpop .termpop-x{font-size:12.5px;color:var(--ink-2);background:var(--sunken);border-radius:var(--r-sm);padding:6px 8px}
+.termpop .btn{margin-left:-8px}
+
+/* 도움말 서랍 (오른쪽) */
+dialog.drawer{margin:0 0 0 auto;height:100%;max-height:100%;width:min(460px,100vw);border-radius:var(--r-xl) 0 0 var(--r-xl);display:none;flex-direction:column;padding:0}
+dialog.drawer[open]{display:flex;animation:drawerIn var(--t2) var(--ease)}
+@keyframes drawerIn{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}
+.drawer-h{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px 0}
+.drawer-h h2{font-size:18px;margin-top:2px}
+dialog.drawer .tabs{margin:12px 20px 0}
+.drawer-b{flex:1;min-height:0;overflow:auto;padding:16px 20px 20px}
+.drawer-f{display:flex;flex-direction:column;gap:8px;align-items:flex-start;padding:14px 20px 18px;border-top:1px solid var(--line);background:var(--surface-2)}
+.help-intro{margin:0 0 14px;color:var(--ink-2);line-height:1.6}
+.help-steps{list-style:none;margin:0 0 18px;padding:0;display:grid;gap:10px;counter-reset:hs}
+.help-steps li{display:grid;grid-template-columns:26px minmax(0,1fr);gap:2px 10px;counter-increment:hs}
+.help-steps li::before{content:counter(hs);grid-row:span 2;display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--primary);color:var(--on-primary);font-weight:700;font-size:12px}
+.help-steps b{font-size:13.5px}.help-steps span{font-size:13px;color:var(--sub);line-height:1.55}
+.help-h{display:flex;align-items:center;gap:6px;font-size:13.5px;margin:18px 0 8px}
+.help-faq{margin:0;display:grid;gap:8px}
+.help-faq dt{font-weight:600;font-size:13px}
+.help-faq dd{margin:0;font-size:13px;color:var(--sub);line-height:1.55}
+.help-chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{height:28px;padding:0 10px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);font-size:12.5px;font-weight:600;cursor:pointer}
+.chip:hover{border-color:var(--brand-line);background:var(--brand-soft)}
+#helpTermQ{width:100%;margin-bottom:12px}
+.glossary{margin:0;display:grid;gap:2px}
+.gl{padding:10px 12px;border-radius:var(--r);transition:background var(--t2)}
+.gl.on{background:var(--brand-soft);box-shadow:inset 3px 0 0 var(--brand)}
+.gl dt{font-weight:700;font-size:13.5px}
+.gl dd{margin:3px 0 0;font-size:13px;color:var(--sub);line-height:1.6}
+.gl-x{display:block;margin-top:6px;font-size:12.5px;color:var(--ink-2);background:var(--sunken);border-radius:var(--r-sm);padding:6px 8px}
+table.keys{width:100%}
+table.keys th{width:44%;text-align:left;font-weight:400;padding:8px 0;white-space:nowrap}
+table.keys td{font-size:13px;color:var(--sub);padding:8px 0}
+
+/* 캡션 — 차트·표 아래 '요약'(데이터로 만든 한 줄)과 '읽는 법' (charts #5·#8·#10·#18: 글로 된 주석·서술 요약) */
+.sum{display:flex;gap:8px;align-items:flex-start;margin:12px 0 0;padding:10px 12px;border-radius:var(--r);background:var(--surface-2);border:1px solid var(--line);font-size:13px;line-height:1.6;color:var(--ink-2)}
+.sum>.ic{margin-top:3px;color:var(--mute)}
+.sum b{font-weight:700}
+.sum.crit{background:var(--crit-soft);border-color:var(--crit-line)}.sum.crit>.ic{color:var(--crit)}
+.sum.warn{background:var(--warn-soft);border-color:var(--warn-line)}.sum.warn>.ic{color:var(--warn)}
+.sum.ok>.ic{color:var(--ok)}
+.howto{margin-top:8px;font-size:12.5px;color:var(--mute);line-height:1.6}
+.scale{display:flex;gap:4px 14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--sub)}
+.scale span{display:inline-flex;align-items:center;gap:6px}
+.scale i{width:14px;height:10px;border-radius:3px;box-shadow:inset 0 0 0 1px var(--line)}
+
+/* 지금 할 일 (운영 현황 상태 카드 안) — ux #80 다음 단계 제시 */
+.next{width:100%;margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.next h3{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);margin-bottom:8px}
+.next ol{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.next li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 10px;border-radius:var(--r);background:var(--surface-2);border:1px solid var(--line)}
+.next li>.ic{justify-self:center}
+.next li.crit>.ic{color:var(--crit)}.next li.warn>.ic{color:var(--warn)}.next li.info>.ic{color:var(--info)}.next li.ok>.ic{color:var(--ok)}
+.next li .nt{font-size:13px;line-height:1.5}
+.next li .nt b{font-weight:700}
+.next li.none{grid-template-columns:22px minmax(0,1fr)}
+
+/* KPI 상태 낱말 (색만으로 알리지 않는다 — ux #37) */
+.kpi .kst{display:inline-flex;align-items:center;gap:4px;font-weight:700;font-size:12px;padding:1px 7px;border-radius:999px;background:var(--sunken);color:var(--sub)}
+.kpi .kst.ok{background:var(--ok-soft);color:var(--ok-ink)}.kpi .kst.warn{background:var(--warn-soft);color:var(--warn-ink)}.kpi .kst.crit{background:var(--crit-soft);color:var(--crit-ink)}
+.kpi .kx{font-size:12px;color:var(--mute);line-height:1.5}
+
+/* 사건 요약 — 무슨 일 · 왜 · 지금 할 일 · 판단 확신 */
+.isum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 14px}
+.isum-i{border:1px solid var(--line);border-radius:var(--r-lg);padding:11px 13px;background:var(--surface);min-width:0}
+.isum-i .k{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--mute);margin-bottom:3px}
+.isum-i b{display:block;font-size:14px;line-height:1.45}
+.isum-i .d{display:block;margin-top:3px;font-size:12.5px;color:var(--sub);line-height:1.55}
+.isum-i.now{border-color:var(--brand-line);background:var(--brand-soft)}
+.isum-i.now .k{color:var(--brand-ink)}
+
+/* 분석 단계 — ① 폴더 ② 할 일 ③ 결과 (ux #81) */
+.steps-h{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px;padding:0;list-style:none}
+.steps-h li{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--mute)}
+.steps-h li .n{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:var(--sunken);color:var(--sub);font-size:11.5px}
+.steps-h li.on{color:var(--ink)}.steps-h li.on .n{background:var(--primary);color:var(--on-primary)}
+.steps-h li.done .n{background:var(--ok-soft);color:var(--ok-ink)}
+.steps-h .sep{color:var(--line-2)}
+.ana-opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:6px}
+.ana-opt{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);color:inherit;text-align:left;cursor:pointer;transition:border-color var(--t1),box-shadow var(--t1)}
+.ana-opt:hover{border-color:var(--brand-line);box-shadow:var(--sh-2)}
+.ana-opt:disabled{opacity:.55;cursor:not-allowed}
+.ana-opt.primary{border-color:var(--line-strong)}
+.ana-opt b{display:flex;align-items:center;gap:8px;font-size:14px}
+.ana-opt span{font-size:12.5px;color:var(--sub);line-height:1.5}
+.ana-opt .t{font-size:12px;color:var(--mute)}
+
+/* 처음 안내 — 오른쪽 아래 카드, 짚는 곳은 주황 테두리 */
+dialog.tour{position:fixed;inset:auto 20px 20px auto;margin:0;width:min(380px,calc(100vw - 32px));padding:16px 18px 14px;border:1px solid var(--brand-line);z-index:70}
+.tour-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.tour-n{font-size:12px;font-weight:700;color:var(--brand-ink)}
+.tour-dots{display:flex;gap:4px}.tour-dots i{width:6px;height:6px;border-radius:50%;background:var(--line-2)}.tour-dots i.on{background:var(--brand)}
+dialog.tour h2{font-size:16px;margin-bottom:4px}
+dialog.tour p{margin:0;color:var(--sub);line-height:1.6;font-size:13.5px}
+.tour-act{display:flex;gap:8px;align-items:center;margin-top:14px}
+.tour-hl{outline:3px solid var(--brand)!important;outline-offset:4px;border-radius:var(--r-lg)}
+@media (max-width:1023px){.isum{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:899px){.ana-opts{grid-template-columns:minmax(0,1fr)}.next li{grid-template-columns:22px minmax(0,1fr)}.next li .btn{grid-column:2;justify-self:start}}
+/* 스킬 카드 — 남기는 것·걸리는 시간 (기대치를 미리 알린다) */
+.act .skl-t{display:flex;align-items:center;gap:5px;margin-top:5px;font-size:12px;color:var(--ink-2)}

@@ -324,6 +324,26 @@ def test_page_assembles_offline_from_web_sources():
     assert page.build_page() is page.build_page()                     # 바뀌지 않으면 다시 합치지 않는다
 
 
+def test_help_terms_and_guides_are_complete():
+    """용어 풀이 버튼(term("키")·data-tip="키")과 화면 도움말이 가리키는 용어가 모두 GLOSSARY 에 있고,
+    화면마다 '이 화면 읽는 법'이 있다 — 버튼을 눌렀는데 빈 풀이가 뜨지 않게."""
+    from talog.console import page
+    html = page.build_page()
+    js = open(os.path.join(page.WEB, "js", "13-help.js"), encoding="utf-8").read()
+    block = js[js.index("const GLOSSARY = {"):js.index("const HELP_VIEWS")]
+    keys = set(re.findall(r"^\s+([a-z_]+): \{t:", block, re.M))
+    assert len(keys) >= 20
+    used = set(re.findall(r'term\("([a-z_]+)"', html)) | set(re.findall(r'data-tip="([a-z_]+)"', html))
+    views_block = js[js.index("const HELP_VIEWS"):js.index("/** 용어 풀이 버튼")]
+    used |= {k for t in re.findall(r"terms: \[([^\]]*)\]", views_block) for k in re.findall(r'"([a-z_]+)"', t)}
+    used |= set(re.findall(r'openHelp\(\{tab: "terms", term: "([a-z_]+)"', html))
+    assert used and used <= keys, used - keys
+    views = set(re.findall(r'^  (ops|inc|ana|ai|set): \{title:', views_block, re.M))
+    assert views == {"ops", "inc", "ana", "ai", "set"}
+    for i in ("btnHelp", "helpDlg", "termPop", "tourDlg", "stripSum", "tolSum", "capSum", "anaSteps"):
+        assert f'id="{i}"' in html, i
+
+
 def test_page_assembles_from_crlf_checkout(tmp_path):
     """Windows 에서 받은 사본(core.autocrlf=true)은 소스가 CRLF 다 — 그래도 표시 줄이 모두 풀리고 결과는 LF."""
     import shutil

@@ -3,19 +3,23 @@
   <div class="hero" id="opsHero"><div class="hi"><svg class="ic" aria-hidden="true"><use href="#i-loader"/></svg></div><div class="ht"><span class="sk lg"></span><span class="sk" style="width:40%"></span></div></div>
   <div class="kpis" id="opsKpis"><div class="kpi"><span class="sk sm" style="width:50%"></span><span class="sk lg"></span></div><div class="kpi"><span class="sk sm" style="width:50%"></span><span class="sk lg"></span></div><div class="kpi"><span class="sk sm" style="width:50%"></span><span class="sk lg"></span></div><div class="kpi"><span class="sk sm" style="width:50%"></span><span class="sk lg"></span></div></div>
   <div class="flow" id="flow" aria-label="처리 단계"></div>
-  <div class="card"><div class="chead"><h2>최근 상태 기록</h2><span class="meta">날짜 × 24시간 · 칸마다 그 시간의 가장 심한 경보</span>
+  <div class="card"><div class="chead"><h2>최근 상태 기록<span data-tip="alert"></span></h2><span class="meta">날짜 × 24시간 · 칸마다 그 시간의 가장 심한 경보</span>
       <div class="end legend" aria-hidden="true"><span><i style="background:var(--crit)"></i>심각</span><span><i style="background:var(--warn)"></i>주의</span><span><i style="background:var(--info-soft);box-shadow:inset 0 0 0 1px var(--info-line)"></i>정보</span><span><i style="background:var(--ok-soft);box-shadow:inset 0 0 0 1px var(--ok-line)"></i>검사 있음·경보 없음</span><span><i style="background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line)"></i>기록 없음</span></div></div>
     <div class="strip" id="opsStrip"><span class="sk"></span><span class="sk"></span></div>
+    <p class="sum" id="stripSum" aria-live="polite"><span class="sk" style="width:60%"></span></p>
     <details class="disclosure"><summary>표로 보기</summary><div class="tbl" style="max-height:300px"><table><caption class="vh">날짜별 경보·검사 합계</caption><thead><tr><th scope="col">날짜</th><th scope="col">심각</th><th scope="col">주의</th><th scope="col">검사</th><th scope="col">거부</th><th scope="col">최저 내성</th></tr></thead><tbody id="opsStripTbl"></tbody></table></div></details></div>
   <div class="grid g2">
-    <div class="card"><div class="chead"><h2>처리 여유 추세</h2><span class="meta" id="tolNote"></span></div><div id="opsTol"></div>
-      <p class="hint" style="margin-top:6px">시간마다 모든 Seq 그룹 중 가장 낮은 일시 지연 내성(한계 − 점유 p99, 한계 대비 %). 20% 아래(빨간 띠)는 잠깐의 지연으로도 NoInspThread 가 날 수 있는 구간입니다.</p></div>
-    <div class="card"><div class="chead"><h2>그룹별 처리 여유</h2><span class="meta" id="capSrc">지금 · 점유 p99 / 한계</span><div class="end"><span class="meta" id="capNote"></span></div></div>
+    <div class="card"><div class="chead"><h2>처리 여유 추세<span data-tip="tolerance"></span></h2><span class="meta" id="tolNote"></span></div><div id="opsTol"></div>
+      <p class="sum" id="tolSum" aria-live="polite"></p>
+      <p class="howto"><b>읽는 법</b> — 점 하나 = 그 시간에 가장 빠듯했던 그룹의 버틸 여유(잠깐 느려져도 거부 없이 버틸 여유). 노란 띠(40% 아래)는 주의, 빨간 띠(20% 아래)는 잠깐의 지연으로도 검사 시작 거부(NoInspThread)가 날 수 있는 구간입니다.</p></div>
+    <div class="card"><div class="chead"><h2>그룹별 처리 여유<span data-tip="limit"></span></h2><span class="meta" id="capSrc">지금 · 점유 p99 / 한계</span><div class="end"><span class="meta" id="capNote"></span></div></div>
       <div class="bullets" id="capBullets"></div>
+      <div class="scale" aria-label="막대 구간"><span><i style="background:var(--ok-soft)"></i>여유 (한계의 60% 아래)</span><span><i style="background:var(--warn-soft)"></i>빠듯 (60~80%)</span><span><i style="background:var(--crit-soft)"></i>위험 (80% 넘음)</span><span><i style="background:var(--ink-2);box-shadow:none"></i>막대 = 느린 검사(p99)의 점유 시간 · 오른쪽 끝 = 한계</span></div>
+      <p class="sum" id="capSum" aria-live="polite"></p>
       <details class="disclosure"><summary>표로 보기</summary><div class="tbl" style="max-height:340px"><table><caption class="vh">그룹별 처리 여유</caption><thead><tr><th scope="col">그룹</th><th scope="col">상태</th><th scope="col">유휴 (지금/기준)</th><th scope="col">점유 p50</th><th scope="col">p99 / 한계</th><th scope="col">내성</th><th scope="col">투입 간격</th></tr></thead><tbody id="capRows"></tbody></table></div></details></div>
   </div>
   <div class="split">
-    <div class="card"><div class="chead"><h2>오늘 사건</h2><span class="meta" id="opsIncMeta"></span><div class="end"><a class="btn sm ghost" href="#inc">전체 보기<svg class="ic sm" aria-hidden="true"><use href="#i-chevron-right"/></svg></a></div></div>
+    <div class="card"><div class="chead"><h2>오늘 사건<span data-tip="incident"></span></h2><span class="meta" id="opsIncMeta"></span><div class="end"><a class="btn sm ghost" href="#inc">전체 보기<svg class="ic sm" aria-hidden="true"><use href="#i-chevron-right"/></svg></a></div></div>
       <div class="tbl" style="max-height:420px"><table><caption class="vh">오늘 사건</caption><tbody id="opsInc"></tbody></table></div></div>
     <div class="card"><div class="chead"><h2>경보 타임라인</h2><span class="meta" id="opsAlertMeta"></span></div><ol class="tl" id="opsAlerts" aria-label="최근 경보"></ol></div>
   </div>

@@ -17,6 +17,26 @@ $("#incDays").onchange = loadInc; $("#incReplay").onchange = loadInc;
 $("#btnIncRefresh").onclick = () => busy($("#btnIncRefresh"), loadInc);
 $("#incSearch").oninput = ev => { S.incQ = ev.target.value.trim(); renderIncList(); };
 $$("#incSev button").forEach(b => b.onclick = () => { S.incSev = b.dataset.sev; renderIncList(); });
+/** 판단 확신 — 규칙·로컬 AI 판단 관계를 쉬운 말로 (ux #113: 핵심 뜻은 줄이지 않는다) */
+function gateExplain(mode, label) {
+  if ((label || "").startsWith("오경보")) return "오경보로 보입니다 — 근거 탭에서 수치를 확인하십시오.";
+  if (mode === "agree") return "규칙과 로컬 AI 가 같은 원인을 골랐습니다.";
+  if (mode === "disagree") return "규칙과 로컬 AI 의 원인이 다릅니다 — 근거 탭에서 두 의견을 비교하십시오.";
+  if (mode === "llm_only") return "규칙이 원인을 정하지 못해 로컬 AI 의견만 있습니다 — 근거를 직접 확인하십시오.";
+  return "규칙 진단만 했습니다 (로컬 AI 교차 확인 없음).";
+}
+/** 사건 요약 네 칸 — 무슨 일 · 왜 · 지금 할 일 · 판단 확신 */
+function incSummary(d, title) {
+  const v = d.verdict || {}, acts = v.actions || [];
+  const [causeShort, causeLong] = (v.cause_name || "-").split(" — ");
+  const first = acts.length ? ((d.action_text || {})[acts[0]] || acts[0]) : "권고 조치 없음 — 근거를 보고 판단하십시오";
+  const roles = (v.notify || []).map(r => (d.role_text || {})[r] || r).join(", ");
+  const cell = (cls, icon, k, b, sub, tip = "") => `<div class="isum-i ${cls}"><span class="k">${ic(icon, "sm")}${k}${tip}</span><b>${esc(b)}</b>${sub ? `<span class="d">${esc(sub)}</span>` : ""}</div>`;
+  return `<div class="isum">${cell("", "siren", "무슨 일", title, `${d.opened || ""}${d.closed ? " – " + d.closed : ""} · ${d.family_title || d.family || ""}`, term("incident"))}
+    ${cell("", "search", "왜 (원인)", causeShort, causeLong || "", term("rule_diag"))}
+    ${cell("now", "wrench", "지금 할 일", first, acts.length > 1 ? `권고 조치 ${acts.length}개 중 1번${roles ? " · 담당 " + roles : ""}` : (roles ? "담당 " + roles : ""))}
+    ${cell("", gateCls(v.mode, v.label) === "agree" ? "check-circle" : "alert", "판단 확신", v.label || "-", gateExplain(v.mode, v.label), term("gate"))}</div>`;
+}
 async function openInc(id, rp) {
   const mark = () => $$("#incRows .li-item").forEach(b => { if (b.dataset.id === id) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current"); });
   mark(); $("#incDetail").className = "card dcard";
@@ -33,7 +53,7 @@ async function openInc(id, rp) {
   $("#incDetail").innerHTML = `<div class="dhead"><h2>${esc(title)}</h2><div class="dact"><button class="btn sm primary" type="button" id="btnIncClaude">${ic("sparkles")}Claude 로 분석</button>${d.day_dir ? `<button class="btn sm" type="button" id="btnIncLog" title="${esc(d.day_dir)}">${ic("file-search")}원본 로그로 확인</button>` : ""}</div></div>
     <div class="dmeta">${sevTag(v.severity)}<span>${esc(d.site || "")}</span><span class="num">${esc(d.opened)} – ${esc(d.closed || "")}</span><span>${esc(d.family_title || d.family)}</span><span class="mono">${esc(d.id)}</span>${rp ? '<span class="tag">재현</span>' : ""}</div>
     <div class="tabs" role="tablist" aria-label="사건 내용">${[["sum", "판단"], ["ev", "근거"], ["al", `경보 <span class="tag">${d.alerts.length}</span>`], ["mail", "메일"], ["qa", "질문"]].map(([k, l], i) => `<button type="button" role="tab" id="tab-${k}" aria-controls="pn-${k}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-tab="${k}">${l}</button>`).join("")}</div>
-    <div role="tabpanel" id="pn-sum" aria-labelledby="tab-sum"><div class="verdict ${gc}"><div class="vrow"><span class="gate ${gc}">${ic(gc === "agree" ? "check-circle" : gc === "warn" ? "alert" : "info", "sm")}${esc(v.label || "")}</span><b>${esc(v.cause_name || "")}</b>${v.llm_cause_name && v.llm_cause !== v.cause ? `<span class="meta">/ LLM: ${esc(v.llm_cause_name)}</span>` : ""}</div><p>${esc(v.message || "")}</p></div>
+    <div role="tabpanel" id="pn-sum" aria-labelledby="tab-sum">${incSummary(d, title)}<div class="verdict ${gc}"><div class="vrow"><span class="gate ${gc}">${ic(gc === "agree" ? "check-circle" : gc === "warn" ? "alert" : "info", "sm")}${esc(v.label || "")}</span><b>${esc(v.cause_name || "")}</b>${v.llm_cause_name && v.llm_cause !== v.cause ? `<span class="meta">/ LLM: ${esc(v.llm_cause_name)}</span>` : ""}</div><p>${esc(v.message || "")}</p></div>
       <div class="grid g2 dgrid"><section><h3>${ic("wrench")}권고 조치</h3><ol class="acts">${acts || "<li>-</li>"}</ol><div class="sub" style="margin-top:8px">${ic("user", "sm")} 담당: ${esc(roles || "-")}</div></section>
         <section><h3>${ic("list")}핵심 사실</h3><ul class="facts">${(ev.key_facts || []).slice(0, 8).map(f => `<li>${esc(f)}</li>`).join("") || "<li>-</li>"}</ul></section></div></div>
     <div role="tabpanel" id="pn-ev" aria-labelledby="tab-ev" hidden><div class="grid g2 dgrid"><section><h3>${ic("check")}룰 진단 근거</h3><ul class="facts small">${(rule.facts || []).map(f => `<li>${esc(f)}</li>`).join("") || "<li>-</li>"}</ul></section>
