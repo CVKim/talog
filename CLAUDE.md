@@ -10,7 +10,8 @@ Python 3.10 이상, 런타임 의존성은 PyYAML 하나. 현장 PC 는 오프�
 
 | 문서 | 내용 |
 |---|---|
-| [README.md](README.md) | 개요, 실행 명령 |
+| [README.md](README.md) | 개요, 실행 명령, 폴더 구조 (영어 — 여러 개발자용) |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 개발 규칙·점검·자주 하는 변경 순서(도구·API·화면·스킬·규칙·배포) (영어) |
 | [USAGE.md](USAGE.md) | 사용자 설명서 — 콘솔 화면, 설정, 판단 결과·리포트 읽는 법, Claude 연동 |
 | [docs/DEV_PC_MANUAL.md](docs/DEV_PC_MANUAL.md) | 개발자 PC 매뉴얼 — 현장 로그 복사본과 Claude 구독으로 원인 찾기 |
 | [docs/INTERNALS.md](docs/INTERNALS.md) | 모듈 구조, 처리 여유 모델, MCP 서버·원본 로그 도구, 콘솔 내부 |
@@ -19,6 +20,7 @@ Python 3.10 이상, 런타임 의존성은 PyYAML 하나. 현장 PC 는 오프�
 
 ## 명령
 
+- 점검 한 번에: `python tools/check.py` (pyflakes · 스킬 사본 · 오프라인 페이지 · 테스트, `--fast` 는 테스트 빼고) — 커밋 전에 통과.
 - 테스트: `python -m pytest -q` — 전부 통과가 기준. 콘솔 Claude 기능은 가짜 Claude CLI 로 시험한다(`tests/test_console_claude.py`).
 - 콘솔: `python -m talog --config <talog.yaml> [--port 8778]` · 진단 리포트: `python -m talog analyze <로그 폴더>`
 - Claude 연동 서버 점검: `python -m talog mcp --self-test`
@@ -26,7 +28,8 @@ Python 3.10 이상, 런타임 의존성은 PyYAML 하나. 현장 PC 는 오프�
 
 ## 지킬 것
 
-- 사용자와 문서는 한국어. 커밋 제목은 `feat|fix: v<버전> - <영문 요약>`.
+- 사용자와 문서는 한국어(README.md·CONTRIBUTING.md 만 영어 — 사용자 요청 2026-10-14). 커밋 제목은
+  `feat|fix|refactor|docs: v<버전> - <영문 요약>`.
 - **고객 현장 데이터(로그·이미지·레시피)와 그 캡처는 저장소·외부 서비스에 올리지 않는다.** 분석 산출물·그림·보고서는
   `Result/`(git 제외)에 둔다.
 - **Claude 연동은 구독 로그인만 쓴다.** API 키·과금 경로를 새로 만들지 않는다. 콘솔 '바로 묻기'는 `Console.claude_env` 로

@@ -12,6 +12,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pyflakes>=3.0",
     "pyinstaller>=6.0",
 ]
 
@@ -22,8 +23,11 @@ talog = "talog.cli:main"
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["talog", "talog.rules"]
+# 하위 패키지(console·mcp·mcp.tools …)를 손으로 적지 않는다 — 새 패키지가 휠에서 빠지지 않게 자동으로 찾는다.
+# rules·web 처럼 __init__.py 없는 데이터 폴더도 namespaces 로 함께 잡힌다.
+[tool.setuptools.packages.find]
+include = ["talog", "talog.*"]
+namespaces = true
 
 [tool.setuptools.package-data]
 "talog" = ["web/*.html", "web/css/*.css", "web/js/*.js", "web/views/*.html", "web/partials/*.html",

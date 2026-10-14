@@ -74,17 +74,24 @@ talog/
   llm.py           Ollama 클라이언트 (cpu/gpu/auto 장치 선택, keep_alive, think)
   mailer.py        SMTP 발송 (즉시/묶음 정책, 역할 라우팅, 후속 메일 스레드, outbox)
   secret.py        SMTP 비밀번호 DPAPI 암호화
-  console.py       플랫폼 콘솔 서버 (console.html: 운영 현황·사건·분석·Claude·설정) — 127.0.0.1,
-                   토큰·Host 확인, 리포트 서빙(/r/<태그>/ + 뷰어 API), 사건·리포트 질의,
-                   Claude Code 실행(바로 묻기). 진단 리포트·경보 재현은 `talog _job` 하위
-                   프로세스(낮은 우선순위)로 돌려 콘솔 응답이 늦어지지 않게 한다
-  mcp_server.py    Claude 연동 MCP 서버 (stdio JSON-RPC 2.0, 의존성 없음) — 도구 18·프롬프트 4·자원 2,
-                   마스킹(되찾기 대응표), 읽기 전용 SQL, 원본 로그 읽기, 재현 작업, 사례 KB,
-                   --self-test / --init-workspace
+  console/         플랫폼 콘솔 서버 (127.0.0.1, 토큰·Host 확인) — v2.2 에서 파일 하나를 패키지로 나눔
+    app.py         Console = 믹스인(ops·incidents·analysis·claude·checks) + 공유 상태(__init__)
+    http.py        GET_ROUTES / POST_ROUTES 표 → Console 메서드, 리포트 서빙(/r/<태그>/ + 뷰어 API)
+    page.py        talog/web 소스 → 페이지 HTML 하나 (소스가 바뀌면 다시 합침)
+    claude.py      Claude Code 실행(바로 묻기·스킬 카드·연결 시험), 구독 전용 환경, 답 수치 대조
+    jobs.py        진단 리포트·경보 재현을 `talog _job` 하위 프로세스(낮은 우선순위)로
+  web/             콘솔 화면 소스 — console.html 껍데기 · views/ 화면 · partials/ 아이콘·대화상자 ·
+                   css/NN-*.css · js/NN-*.js (번호 = 합치는 순서)
+  mcp/             Claude 연동 MCP 서버 (stdio JSON-RPC 2.0, 의존성 없음) — 도구 18·프롬프트 5·자원
+                   (런북·용어·최근 사건·리포트), 옛 판 initialize + 2026-07-28 무상태 요청, 자동완성
+    registry.py    @tool 데코레이터 — 도구 하나 = 설명 + 함수 하나 (tools/ 의 영역 파일)
+    tools/         incidents · reports(읽기 전용 SQL) · rawlogs(원본 로그) · replay · knowledge(런북·사례 KB)
+    server.py      출처 고르기·마스킹(되찾기 대응표)·재현 작업·JSON-RPC·자원·자동완성
+    kit.py         에이전트 폴더(--init-workspace) · selftest.py 설치 점검(--self-test)
   logread.py       원본 talos 로그 읽기 — 줄머리 시각으로 이분 탐색(수 GB 파일도 즉시), 창 읽기·찾기·
                    검사 id 추적, 읽기 예산(300줄·384MB·20초, 160MB 넘는 파일은 시각 범위 필수)
-  claude_kit/      에이전트 폴더 원본 (CLAUDE.md·README·talog-rca 스킬·보고서 템플릿).
-                   저장소의 .claude/skills/talog-rca 와 같게 유지 (테스트로 확인)
+  claude_kit/      에이전트 폴더 원본 (CLAUDE.md·README·작업별 스킬 5개 talog-rca·logs·daily·site·rules,
+                   공통 참고·보고서 템플릿). 저장소의 .claude/skills/talog-* 와 같게 유지 (테스트·tools/check.py)
   assets/          AIVEX 워드마크·아이콘(svg·ico·png) — tools/brand_assets.py 가
                    docs/brand/aivex_logo.ai 에서 만든다 (콘솔 머리·파비콘·exe·리포트)
 ```
@@ -225,18 +232,23 @@ python -m talog ask <out 폴더|.sqlite> [--backend auto|ollama|claude]
 - 시스템 프롬프트에 스키마 가이드(`talog/guide.py`)와 해당 일자의 자동 진단
   소견이 주입된다.
 
-## Claude 연동 (v2.1 — mcp_server.py · console.py)
+## Claude 연동 (v2.1~2.2 — mcp/ · console/claude.py)
 
 **MCP 서버** `talog mcp --config <talog.yaml> [--config …] [--work-dir] [--kb] [--no-mask]`
 
-- stdio JSON-RPC 2.0 을 직접 구현했다(SDK 없음, PyInstaller 그대로). initialize(프로토콜 버전 협상)·tools/list·
-  tools/call·prompts/list·prompts/get·resources/list·resources/read·ping·logging/setLevel·completion/complete.
-  stdout 에는 프로토콜 줄만 쓰고 나머지 print 는 stderr 로 돌린다.
+- stdio JSON-RPC 2.0 을 직접 구현했다(SDK 없음, PyInstaller 그대로). 두 시대를 함께 받는다(v2.2):
+  옛 판(2025-11-25·06-18·03-26·2024-11-05)은 initialize 핸드셰이크(모르는 판이면 2025-11-25 로 답함), 최신 판
+  (2026-07-28)은 요청마다 `params._meta["io.modelcontextprotocol/protocolVersion"]` — 결과에 `resultType`·
+  `_meta` serverInfo, 목록·읽기에는 캐시 힌트 `ttlMs`·`cacheScope`, 모르는 판은 -32022(지원 판 목록). `server/discover`.
+  tools/list·call·prompts/list·get·resources/list·templates/list·read·completion/complete(사건 id·날짜·출처·일자 폴더·
+  증상·리포트 태그)·ping·logging/setLevel. stdout 에는 프로토콜 줄만 쓰고 나머지 print 는 stderr 로 돌린다.
 - 데이터 출처(Source) = talog.yaml 하나 = 현장 하나: 사건(alert_dir)·시간별 KPI·capacity_state·리포트(.md + .sqlite).
 - 도구 18: overview · list_incidents · get_incident · capacity_trend · list_reports · get_report · query_report ·
   log_days · log_files · read_log · search_logs · trace_inspection · start_replay · job_status · rediagnose ·
   runbook · search_cases · save_case. 쓰기는 start_replay(작업 폴더)·save_case(사례 KB)뿐이고 나머지는
-  readOnlyHint. 프롬프트 4: incident_rca · daily_review · site_health · log_investigation(day·symptom).
+  readOnlyHint. 프롬프트 5: incident_rca · daily_review · site_health · log_investigation(day·symptom) · rules_compare.
+  자원: talog://runbook · talog://guide · 최근 사건 20건 `talog://incident/<id>` · 리포트 `talog://report/<tag>`(+ 템플릿)
+  — Claude Code 에서 `@talog:` 로 대화에 붙인다. 도구 하나 = `tools/` 의 `@tool` 함수 하나(registry.py).
 - 원본 로그 (`logread.py`): 일자 폴더 = 설정의 로그 루트 아래(`YYYY_MM\DD`·바로 아래·루트 자체 중
   InspStarter·comm·alg 가 있는 폴더) + 콘솔에서 고른 폴더(`<작업 폴더>/log_roots.json` {selected, roots},
   `day='선택'` 으로 부름). `..`·절대 경로 패턴 거부, 루트 밖 폴더 거부. 시각 찾기는 줄머리
@@ -257,9 +269,9 @@ python -m talog ask <out 폴더|.sqlite> [--backend auto|ollama|claude]
 
 **콘솔 바로 묻기** (`Console.claude_ask` → `_ask_work`)
 
-- 명령: `claude -p <질문> --mcp-config <폴더>/.mcp.json --strict-mcp-config --allowedTools <ASK_TOOLS>
-  --permission-mode dontAsk --max-turns 60 --output-format stream-json --verbose --include-partial-messages
-  -n "talog · <질문 앞부분>" [--model sonnet|opus|haiku] [--effort low|medium|high|xhigh|max] [--resume <세션>]`,
+- 명령: `claude -p <질문> --mcp-config <폴더>/.mcp.json --strict-mcp-config --tools Read,Glob,Edit,Write,Skill
+  --allowedTools <ASK_TOOLS> --permission-mode dontAsk --max-turns 60 --output-format stream-json --verbose --include-partial-messages
+  -n "talog · <질문 앞부분>" [--model sonnet|opus|haiku] [--fallback-model sonnet(opus 일 때)] [--effort …] [--resume <세션>]`,
   작업 폴더 = 에이전트 폴더. 원본 로그 폴더를 골라 두면 질문 앞에 "day='선택' 으로 읽는다"는 한 줄을 붙인다
   (화면에는 질문만).
 - 대화: `ask_thread = {session, turns}`. init 이벤트의 session_id 를 기억해 다음 질문을 `--resume` 으로 잇고,
@@ -276,9 +288,17 @@ python -m talog ask <out 폴더|.sqlite> [--backend auto|ollama|claude]
   턴에 담고, 끝나면 reports 아래 새로 생기거나 바뀐 .html·.md 를 링크로 낸다.
   stderr 는 임시 파일로 받는다(파이프가 차서 멈추지 않게). 20분을 넘기거나 멈추기를 누르면 `taskkill /T` 로
   자식(MCP 서버)까지 끝낸다. 로그인 오류는 로그인 안내로 바꿔 보인다.
-- 엔드포인트: GET `/api/claude`(연결 정보·빠른 작업·모델·effort·도구(바로 묻기 허용 여부)·로그 폴더·CLI 판·
+- **스킬 카드(v2.2)**: `SKILL_CARDS` 다섯 장(rca·logs·daily·site·rules) — 입력 칸(사건·일자 폴더·시각·증상·날짜·
+  재현 확인)을 받아 `/talog-<스킬> <인자>` 로 새 대화를 연다(`_skill_request`: 인자 줄바꿈·앞 '/' 제거, 형식 검사,
+  고른 폴더는 '선택'으로만). `--tools` 로 셸·웹을 싣지 않아 시스템 프롬프트도 준다(Haiku 실측 2.1.143: 캐시 생성
+  24,215 토큰). 재현은 rules 카드에서 확인했을 때만 그 질문의 허용 목록에 `mcp__talog__start_replay` 를 더한다
+  (로그 루트 밖 폴더 거부). 에이전트 폴더의 스킬이 talog 판과 다르면 `_ask_ws` 가 연결·스킬을 다시 깐다.
+- **답 수치 대조(v2.2)**: 그 대화의 도구 결과 원문(최대 1.5M자)과 질문·스킬 본문을 근거로 `ground_check` 가
+  답의 수치·시각을 `agent.fact_check` 로 대조한다(경로·코드·사건 id·목록 번호 제외) → 턴의 `fact`
+  {ok, checked, unsupported} → 화면 배지 '수치 근거 N개 확인' / '도구 결과에 없는 값 k개'.
+- 엔드포인트: GET `/api/claude`(연결 정보·스킬 카드(skills)·가벼운 질문(quick)·모델·effort·도구(바로 묻기 허용 여부)·로그 폴더·CLI 판·
   로그인 흔적·대화 상태) · GET `/api/claude/ask`(대화 턴·이어 묻기 가능·사용량·고른 로그 폴더) · POST
-  `/api/claude/ask` {q, model, effort, new} · POST `/api/claude/ask/cancel` · POST `/api/claude/thread/new` ·
+  `/api/claude/ask` {q, model, effort, new, skill, args, allow_replay} · POST `/api/claude/ask/cancel` · POST `/api/claude/thread/new` ·
   POST `/api/claude/log` {path}(빈 값 = 해제, talos 일자 폴더나 그 상위만) · POST `/api/claude/prompt` {name, args}
   (MCP 프롬프트 문장 그대로) · GET `/api/claude/file`(reports 안 .html·.md 만) · POST `/api/claude/test` ·
   `/api/claude/workspace` · `/api/claude/open`.
@@ -288,7 +308,7 @@ python -m talog ask <out 폴더|.sqlite> [--backend auto|ollama|claude]
   그룹을 지나므로 그룹 합이 아니라 그룹 중 최대), 그룹 수, 거부, 최저 일시 지연 내성 %(그룹 중 최소), 마지막 기록
   시간의 그룹별 값(last). 오늘 줄은 기록이 없어도 낸다. 운영 현황의 상태 기록·추세·KPI·그룹별 여유가 쓴다.
 
-## 콘솔 디자인 시스템 (v2.1, console.html)
+## 콘솔 디자인 시스템 (v2.1~, talog/web)
 
 기준 문서: `design-system/talog/MASTER.md` (UI/UX Pro Max 의 디자인 시스템 저장 형식 — 근거 행·토큰·부품·금지 점검표).
 
