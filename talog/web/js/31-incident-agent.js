@@ -66,6 +66,7 @@ async function setIncState(state, extra = {}) { const c = S.inc; if (!c) return 
 function stateClick(k) { if (k === "resolved" || k === "false_alarm") resDlg(k); else setIncState(k); }
 function resDlg(kind) { const d = S.inc && S.inc.d; if (!d) return; const v = d.verdict || {}, acts = v.actions || [], res = kind === "resolved";
   $("#resT").textContent = res ? "해결 기록" : "오경보로 표시";
+  $("#resDlg").classList.toggle("fa", !res); $("#resDlg .dlg-h use").setAttribute("href", res ? "#i-check-circle" : "#i-x-circle");
   $("#resD").textContent = res ? "실제 원인과 한 조치를 남깁니다. 비슷한 사건이 다시 나면 talog 에이전트가 이 기록을 함께 보여 줍니다."
     : "경보가 실제 문제가 아니었다고 표시합니다. 규칙마다 오경보 수를 세어 설정 화면에서 조건 조정을 권합니다.";
   ["#resCauseBox", "#resActBox", "#resCaseBox"].forEach(s => $(s).classList.toggle("hidden", !res));

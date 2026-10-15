@@ -55,7 +55,9 @@
 .simcases .sub,.notes .sub{font-size:12.5px;line-height:1.55;color:var(--sub);margin-top:3px}
 .simcases .meta,.notes .meta{display:inline-flex;align-items:center;gap:4px;margin-top:3px}
 
-/* 해결 기록 대화상자 */
+/* 해결 기록 대화상자 — 아이콘은 하는 일의 색 (해결 = 정상 초록, 오경보 = 회색) */
+#resDlg .dlg-h .ic{color:var(--ok)}
+#resDlg.fa .dlg-h .ic{color:var(--sub)}
 .resf{margin-top:16px;display:grid;gap:12px}
 .resf textarea{min-height:56px;resize:vertical}
 
