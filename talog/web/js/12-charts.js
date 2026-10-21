@@ -1,11 +1,4 @@
 /* ── 작은 차트 (SVG) ────────────────────────────────────────── */
-function spark(vals, {warnBelow = null} = {}) {
-  const pts = vals.map((v, i) => [i, v]).filter(p => p[1] != null); if (pts.length < 2) return "";
-  const ys = pts.map(p => p[1]); const mn = Math.min(...ys), mx = Math.max(...ys); const W = 200, H = 30, n = vals.length - 1 || 1;
-  const X = i => (i / n) * W, Y = v => H - 3 - ((v - mn) / ((mx - mn) || 1)) * (H - 6);
-  const d = pts.map((p, k) => `${k ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" "); const last = pts[pts.length - 1];
-  const bad = warnBelow != null && last[1] < warnBelow;
-  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" stroke="${bad ? "var(--crit)" : "var(--ink-2)"}" stroke-width="1.6" vector-effect="non-scaling-stroke"/><circle cx="${X(last[0])}" cy="${Y(last[1])}" r="2.6" fill="${bad ? "var(--crit)" : "var(--brand)"}"/></svg>`; }
 function tolChart(vals, label, W = 640) {
   const H = 220, L = 40, R = 12, T = 12, B = 26; const lo = -20, hi = 100;
   const X = h => L + (h / 23) * (W - L - R), Y = v => T + (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * (H - T - B);

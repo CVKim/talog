@@ -6,8 +6,8 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "
 const ic = (n, c = "") => `<svg class="ic ${c}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const SEVK = {crit: "심각", warn: "주의", info: "정보"};
 const STK = {ok: "정상", warn: "주의", crit: "심각", "": "대기"};
-const VIEWS = {ops: ["운영 현황", "수집 → 탐지 → 판단 → 알림의 지금 상태"], inc: ["사건", "경보를 묶어 근거·판단·조치를 모은 기록"],
-  ana: ["분석", "로그 폴더 진단 리포트 · 경보 재현 · 리포트에 질문"], ai: ["Claude", "구독 Claude 가 talog 데이터와 원본 로그를 직접 읽고 답합니다"], set: ["설정", "talog.yaml — 수집 · 탐지 · 판단 · 알림"]};
+const VIEWS = {ops: ["운영 현황", "지금 상태 · 할 일 · 오늘 기록"], inc: ["사건", "경보를 묶어 원인과 할 일을 붙인 기록 — 보고 나면 마무리합니다"],
+  ana: ["분석", "로그 폴더로 리포트를 만들거나 지난날을 다시 돌려 봅니다"], ai: ["Claude", "구독 Claude 가 talog 데이터와 원본 로그를 직접 읽고 답합니다"], set: ["설정", "로그 폴더 · 경보 규칙 · 판단 · 알림"]};
 const S = {set: null, orig: "", meta: null, st: null, folder: null, secret: "", clearSecret: false, view: "ops", inc: null, rep: null, tests: [], incSev: "", incQ: "", openK: {}};
 const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 /** 브라우저 탭 제목 — 마무리 안 된 오늘 심각 사건이 있으면 앞에 (건수) — 다른 창을 보고 있어도 알 수 있게 */
@@ -44,7 +44,6 @@ function fmtSize(n) { if (n >= 1048576) return (n / 1048576).toFixed(1) + " MB";
 function gateCls(mode, label) { return mode === "agree" ? "agree" : (mode === "disagree" || mode === "llm_only" || (label || "").startsWith("오경보")) ? "warn" : ""; }
 function gateTag(g, label) { const lab = label || (g === "agree" ? "판단 일치" : g === "disagree" ? "불일치" : g === "llm_only" ? "LLM 만" : (g === "rule_only" || g === "rule") ? "룰" : (g || "-"));
   return `<span class="tag ${g === "agree" ? "on" : (g === "disagree" || g === "llm_only") ? "w" : ""}">${esc(lab)}</span>`; }
-const mailTag = m => `<span class="tag ${m === "발송" ? "on" : m === "실패" ? "c" : ""}">${esc(m || "-")}</span>`;
 const emptyRow = (cols, title, hint = "", icon = "inbox") => `<tr class="emptyrow"><td colspan="${cols}"><div class="empty">${ic(icon, "xl")}<b>${esc(title)}</b>${hint ? `<span>${hint}</span>` : ""}</div></td></tr>`;
 const emptyBox = (title, hint = "", icon = "inbox") => `<div class="empty">${ic(icon, "xl")}<b>${esc(title)}</b>${hint ? `<span>${hint}</span>` : ""}</div>`;
 const skRows = (n, cols = 1) => Array.from({length: n}, (_, i) => `<tr class="skrow"><td colspan="${cols}"><span class="sk" style="width:${88 - (i % 3) * 14}%"></span><span class="sk sm" style="width:${46 - (i % 2) * 12}%"></span></td></tr>`).join("");

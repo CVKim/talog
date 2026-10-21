@@ -2,7 +2,8 @@
 <section class="view" id="v-set" aria-labelledby="pageTitle">
   <nav class="subnav" aria-label="설정 단계"><a href="#set/s-collect" data-sec="s-collect"><span class="n">1</span>수집</a><a href="#set/s-detect" data-sec="s-detect"><span class="n">2</span>탐지</a><a href="#set/s-judge" data-sec="s-judge"><span class="n">3</span>판단</a><a href="#set/s-notify" data-sec="s-notify"><span class="n">4</span>알림</a></nav>
   <p class="meta" style="margin:0 0 16px">설정 파일 <span class="mono" id="cfgPath"></span> <span id="legacyTag"></span></p>
-  <div class="card acc-card" id="s-mode" aria-labelledby="accT"><div class="acc-h"><span class="acc-ic" id="accIc" aria-hidden="true"></span><div class="acc-tx"><span class="meta">모드 — 왼쪽 위에서도 바꿉니다</span><h2 id="accT">현장 모드</h2><p id="accD"></p></div></div><div class="mode-opts" id="modeOpts" role="radiogroup" aria-label="모드 고르기"></div></div>
+  <div class="card acc-card" id="s-mode" aria-labelledby="accT"><div class="acc-h"><span class="acc-ic" id="accIc" aria-hidden="true"></span><div class="acc-tx"><h2 id="accT">모드</h2><p id="accD">왼쪽 위에서도 바꿉니다. 위 모드로 올릴 때만 PIN 을 묻습니다.</p></div></div><div class="mode-opts" id="modeOpts" role="radiogroup" aria-label="모드 고르기"></div></div>
+  <div class="note warn oper-note"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg><span><b>현장 모드에서는 설정을 볼 수만 있습니다.</b> 바꾸려면 왼쪽 위(휴대폰은 위 '모드' 카드)에서 운영자를 누르고 PIN 을 넣으십시오.</span></div>
   <fieldset class="setfs" id="setFs"><legend class="vh">talog.yaml 설정 항목</legend>
 
   <div id="s-collect" class="setsec"><div class="sechead"><span class="n">1</span><h2>수집</h2><span class="meta">무엇을 읽을까</span></div>
@@ -10,6 +11,7 @@
       <div class="field"><label for="f-site">설비 이름 <span class="opt">(메일 제목·기록에 표시)</span></label><input type="text" id="f-site" data-path="site" placeholder="예: PC3, CMFB#1"></div>
       <div class="field"><label for="f-logroot">talos 로그 루트 <span class="opt">(오늘 YYYY_MM\DD 폴더를 따라감)</span></label><input type="text" id="f-logroot" data-path="log_root"></div>
       <div class="field"><label for="f-datadir">저장 폴더 <span class="opt">(경보·사건·리포트)</span></label><input type="text" id="f-datadir" data-path="data_dir"></div></div>
+    <details class="disclosure" id="trkBox" data-k="trk"><summary>읽을 로그 파일 — 보통은 '핵심 로그' 그대로 둡니다</summary>
     <div class="row"><span class="lab">추적 방식<span data-tip="tracking"></span></span><div class="seg" id="trSeg" role="group" aria-label="추적 방식"><button type="button" data-v="core">핵심 로그 (권장)</button><button type="button" data-v="all">폴더 전체</button><button type="button" data-v="list">직접 선택</button></div></div>
     <div class="note" id="trHelp"></div>
     <div id="trListBox" class="field hidden"><label>읽을 파일 <span class="opt">— 파일명 또는 와일드카드 (예: Comm.log, seq_*.log, DLInfer.log, alg\alg_dl_*.log)</span></label><div class="chips" data-path="tracking" data-ph="파일명 입력 후 Enter"></div></div>
@@ -17,12 +19,14 @@
       <div class="row"><label class="vh" for="fileDir">불러올 폴더</label><input type="text" id="fileDir" style="flex:1;min-width:240px" placeholder="비우면 오늘 폴더 (없으면 가장 최근 폴더)"><button class="btn sm" id="btnFiles" type="button"><svg class="ic" aria-hidden="true"><use href="#i-refresh"/></svg>불러오기</button></div>
       <div class="tbl" style="margin-top:10px;max-height:380px"><table><caption class="vh">폴더 파일</caption><thead><tr><th scope="col"><span class="vh">선택</span></th><th scope="col">파일</th><th scope="col">크기</th><th scope="col">분류</th><th scope="col">수정</th><th scope="col">추적</th></tr></thead><tbody id="fileRows"></tbody></table></div>
       <p class="hint" id="fileNote"></p></details>
+    </details>
   </div></div>
 
   <div id="s-detect" class="setsec"><div class="sechead"><span class="n">2</span><h2>탐지<span data-tip="alert"></span></h2><span class="meta">경보 규칙</span></div>
   <div class="card">
     <div class="note"><svg class="ic" aria-hidden="true"><use href="#i-info"/></svg><span>등급이 알림을 정합니다 — <b class="crit">심각</b>: 즉시 메일 · <b class="warn">주의</b>: 묶음 메일(알림에서 켤 때) · 정보: 기록만. 조건의 "1회"는 한 번만 나와도 경보, "N회 / M분"은 M분 안에 N번 나오면 경보입니다.</span></div>
-    <div class="chead" style="margin:18px 0 8px"><h3>기본 규칙</h3><span class="meta">플랫폼 소스와 대조 검증된 감지</span></div>
+    <details class="disclosure rules" id="rulesBox" data-k="rules"><summary id="rulesSum">규칙 표 펼치기</summary>
+    <div class="chead" style="margin:8px 0 8px"><h3>기본 규칙</h3><span class="meta">플랫폼 소스와 대조 검증된 감지</span></div>
     <div class="tbl" style="max-height:none"><table><caption class="vh">기본 규칙</caption><thead><tr><th scope="col" style="width:56px">사용</th><th scope="col">규칙</th><th scope="col" style="width:110px">등급</th><th scope="col">조건</th></tr></thead><tbody id="biRows"></tbody></table></div>
     <div class="chead" style="margin:24px 0 8px"><h3>사용자 규칙</h3><span class="meta">결함명(판정 NG) 또는 로그 문구</span>
       <div class="end"><button class="btn sm" id="btnAddDef" type="button"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>결함명 규칙</button><button class="btn sm" id="btnAddLog" type="button"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>로그 문구 규칙</button>
@@ -32,20 +36,23 @@
     <div class="rulebox"><div class="lab">규칙 시험 <span class="opt">— 로그 한 줄이나 결함명을 넣고 어떤 규칙에 걸리는지 확인</span></div>
       <div class="row" style="margin-top:8px"><label class="vh" for="rtFile">파일명</label><input type="text" id="rtFile" placeholder="파일명 (로그 문구, 선택)" style="width:200px"><label class="vh" for="rtText">시험할 문구</label><input type="text" id="rtText" style="flex:1;min-width:240px" placeholder="예: ...V2M_INSPECT_START_ACK,V3.0,TALOS3,NoInspThread,...  또는  BOOT_DAMAGED"><button class="btn" id="btnRt" type="button"><svg class="ic" aria-hidden="true"><use href="#i-flask"/></svg>시험</button></div>
       <div id="rtRes" class="result" aria-live="polite"></div></div>
+    </details>
   </div></div>
 
   <div id="s-judge" class="setsec"><div class="sechead"><span class="n">3</span><h2>판단<span data-tip="gate"></span></h2><span class="meta">룰 진단 + LLM 교차 확인</span></div>
   <div class="card">
     <div class="seg" id="aiSeg" role="group" aria-label="판단 방식"><button type="button" data-v="0">룰 진단만</button><button type="button" data-v="1">룰 + LLM 교차 확인</button></div>
-    <p class="hint">룰이 근거(검사 흐름·GPU 로그·자원)로 원인을 정하고 조치·담당을 고릅니다. LLM(Qwen)은 같은 근거로 독립 판단해 <b>같은 원인일 때만 "판단 일치"</b>, 다르면 두 의견을 붙여 확인을 요청합니다. 심각 등급 메일은 룰 판단으로 먼저 나가고 LLM 의견은 같은 스레드의 후속 메일로 갑니다.</p>
+    <p class="hint">룰이 원인과 할 일을 정하고, 로컬 AI(LLM)는 같은 근거로 따로 판단해 <b>교차 확인</b>만 합니다(같으면 "판단 일치"). 메일은 룰 판단으로 먼저 나가고 AI 의견은 후속 메일로 갑니다.</p>
     <div id="aiBox" style="margin-top:18px">
       <div class="row"><label class="lab" for="f-aiurl">LLM 서버 (Ollama)</label><span data-tip="llm"></span><input type="text" id="f-aiurl" data-path="ai.url" style="width:260px"><button class="btn sm" id="btnModels" type="button"><svg class="ic" aria-hidden="true"><use href="#i-plug"/></svg>연결 확인</button><span id="llmAlive" class="small" aria-live="polite"></span></div>
       <div class="row" style="margin-top:12px"><label class="lab" for="modelSel">모델</label><select id="modelSel" style="min-width:220px"></select><span class="hint" style="margin:0">qwen3.5:9b 가 판단이 더 정확하고 qwen2.5:7b 는 가볍습니다</span></div>
-      <div class="row" style="margin-top:12px"><span class="lab">장치</span><div class="seg" id="devSeg" role="group" aria-label="LLM 장치"><button type="button" data-v="cpu">CPU</button><button type="button" data-v="gpu">GPU</button><button type="button" data-v="auto">자동</button></div><span id="devHelp" class="small muted"></span></div>
+      <details class="disclosure" id="llmDev" data-k="llmdev"><summary>장치 · 속도 시험 (보통은 CPU 그대로)</summary>
+      <div class="row"><span class="lab">장치</span><div class="seg" id="devSeg" role="group" aria-label="LLM 장치"><button type="button" data-v="cpu">CPU</button><button type="button" data-v="gpu">GPU</button><button type="button" data-v="auto">자동</button></div><span id="devHelp" class="small muted"></span></div>
       <h3 class="subhead">GPU 지금 상태</h3><div id="gpuFree" class="small"></div>
       <h3 class="subhead">속도 시험 <span class="meta">(짧은 한 문장 생성 — CPU 는 첫 로드에 수십 초)</span></h3>
       <div class="row"><button class="btn sm" type="button" data-llmtest="cpu"><svg class="ic" aria-hidden="true"><use href="#i-cpu"/></svg>CPU 로 시험</button><button class="btn sm" type="button" data-llmtest="gpu"><svg class="ic" aria-hidden="true"><use href="#i-gauge"/></svg>GPU 로 시험</button><span id="llmTestBusy" class="small muted" aria-live="polite"></span></div>
       <div class="tbl" style="margin-top:8px"><table><caption class="vh">LLM 속도 시험 결과</caption><tbody id="llmTestRows"></tbody></table></div>
+      </details>
     </div>
   </div></div>
 
@@ -67,6 +74,6 @@
       <label class="lab" for="f-webhook">웹훅 (Teams·Slack·사내 서버)</label><input type="text" id="f-webhook" data-path="notify.webhook" style="flex:1;min-width:240px" placeholder="비우면 끔"></div>
   </div></div>
 
-  <div class="card hidden" id="advCard"><div class="chead"><h2>고급 값</h2><span class="meta">talog.yaml 의 advanced (엔진 세부값) — 파일에서 직접 고칩니다</span></div><pre class="log" id="advBox"></pre></div>
+  <details class="card hidden" id="advCard"><summary>고급 값 — talog.yaml 의 advanced(엔진 세부값). 파일에서 직접 고칩니다</summary><pre class="log" id="advBox"></pre></details>
   </fieldset>
 </section>

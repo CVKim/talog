@@ -1,6 +1,6 @@
 [project]
 name = "talog"
-version = "2.3.0"
+version = "2.4.0"
 description = "AI 비전 로그 운영 플랫폼 — 실시간 감시 · 룰+LLM 사건 판단 · 메일 알림 · 진단 리포트 · 자연어 질의"
 readme = "README.md"
 requires-python = ">=3.10"

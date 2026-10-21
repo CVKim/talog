@@ -1,10 +1,10 @@
 /* ── 반응형 (1440 · 1200 · 1024 · 768 · 375) ── */
-@media (max-width:1279px){.flow,.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.stage::after{display:none}}
+@media (max-width:1279px){.more .grid.g2{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:1199px){.split,.ai-layout{grid-template-columns:minmax(0,1fr)}.sticky,.ai-side{position:static;max-height:none;overflow:visible}.inc-list{max-height:none}.prov{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-main{min-height:0}}
 @media (max-width:1023px){
   :root{--side-w:84px}
   .side{padding:16px 8px;gap:12px}
-  .side-brand b,.side-brand .bsep,.side-brand .ver,.side-site,.side-meta,.side-cmd span,.side-cmd kbd,.side-nav .navlbl{display:none}
+  .side-brand b,.side-brand .bsep,.side-brand .ver,.side-site,.side-cmd span,.side-cmd kbd,.side-nav .navlbl{display:none}
   .side-brand{justify-content:center;padding:4px 0}.side-brand .wordmark{height:11px}
   .side-nav a{flex-direction:column;justify-content:center;gap:5px;min-height:60px;padding:8px 4px;font-size:11.5px;text-align:center;line-height:1.2}
   .side-nav a[aria-current="page"]::before{left:-8px}
@@ -33,9 +33,9 @@
   main{padding:14px 14px calc(100px + env(safe-area-inset-bottom))}
   .subnav{margin:-14px -14px 16px;padding:8px 14px;overflow-x:auto;flex-wrap:nowrap}
   .prov{grid-template-columns:minmax(0,1fr)}
-  .flow{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stage{padding:10px 12px}.st-h{flex-wrap:wrap;row-gap:4px}.st-big{font-size:14.5px}
-  .kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.kpi{padding:12px}.kpi .kv{font-size:22px}.kpi .ks{font-size:12px}
-  .card{padding:16px}.hero{padding:16px 16px 16px 20px}.hero h2{font-size:18px}
+  .card{padding:16px}.now{padding:0}.hero{padding:16px 16px 14px 20px;grid-template-columns:auto minmax(0,1fr)}.hero h2{font-size:18px}.hero .hi{width:40px;height:40px}
+  .hero .hmeta{grid-column:1/-1;flex-direction:row;gap:12px;align-items:center}.now .brief{padding:12px 16px 12px 20px}
+  .today .chead .end{margin-left:0;width:100%}.more .grid.g2{gap:20px}
   .strip-row,.axis{grid-template-columns:44px minmax(0,1fr);gap:8px}.strip-lab .tag{display:none}.cells{gap:2px}.cell{height:22px;border-radius:3px}
   .checks li{grid-template-columns:20px minmax(0,1fr)}.checks li>span,.checks li>em{grid-column:2}
   .savebar{left:50%;bottom:calc(76px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);flex-wrap:wrap;justify-content:flex-end}

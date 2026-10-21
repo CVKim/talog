@@ -2,6 +2,8 @@
 /* 모드를 알기 전(첫 응답 전)에도 Claude 가 잠깐 보였다 사라지지 않게 — 개발자 모드일 때만 보인다 */
 html:not([data-mode="developer"]) .dev-only{display:none!important}
 html:not([data-mode="field"]) .oper-note{display:none}
+/* 운영자 모드 이상에서만 쓰는 것(시험 경보·실행 로그 탭 등) — 현장 모드에서는 아예 보이지 않게 */
+html[data-mode="field"] .oper-only{display:none!important}
 
 /* 왼쪽 위 모드 전환 — 어두운 사이드바 위 세 칸 묶음 (지금 모드 = 현재 메뉴와 같은 바탕) */
 .mode-sw{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px;margin:0 2px;padding:3px;border:1px solid var(--side-line);border-radius:10px;background:rgba(255,255,255,.03)}

@@ -1,35 +1,55 @@
-<!-- 운영 현황 ============================================================ -->
+<!-- 운영 현황 — 위에서 아래로 세 덩어리: 지금(상태·할 일·브리핑) → 오늘(사건·경보) → 자세히(그래프·기록·장비, 탭)
+     처음 보는 사람이 '괜찮은가 · 무엇을 하나 · 무슨 일이 있었나' 만 보면 되게 하고, 그래프와 표는 '자세히' 탭에 둔다. -->
 <section class="view active" id="v-ops" aria-labelledby="pageTitle">
-  <div class="hero" id="opsHero"><div class="hi"><svg class="ic" aria-hidden="true"><use href="#i-loader"/></svg></div><div class="ht"><span class="sk lg"></span><span class="sk" style="width:40%"></span></div></div>
-  <div class="card brief" id="opsBrief" aria-labelledby="briefT"><div class="brief-h"><span class="brief-av" aria-hidden="true"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg></span><div class="brief-tt"><h2 id="briefT">에이전트 브리핑<span data-tip="brief"></span></h2><span class="meta" id="briefWhen"></span></div><button class="btn sm ghost" id="btnBriefFold" type="button" aria-expanded="true" aria-controls="briefList">접기</button></div><ul class="brief-l" id="briefList"><li><span class="sk" style="width:70%"></span></li><li><span class="sk" style="width:55%"></span></li></ul></div>
-  <div class="kpis" id="opsKpis"><div class="kpi"><span class="sk sm" style="width:50%"></span><span class="sk lg"></span></div><div class="kpi"><span class="sk sm" style="width:50%"></span><span class="sk lg"></span></div><div class="kpi"><span class="sk sm" style="width:50%"></span><span class="sk lg"></span></div><div class="kpi"><span class="sk sm" style="width:50%"></span><span class="sk lg"></span></div></div>
-  <div class="flow" id="flow" aria-label="처리 단계"></div>
-  <div class="card"><div class="chead"><h2>최근 상태 기록<span data-tip="alert"></span></h2><span class="meta">날짜 × 24시간 · 칸마다 그 시간의 가장 심한 경보</span>
-      <div class="end legend" aria-hidden="true"><span><i style="background:var(--crit)"></i>심각</span><span><i style="background:var(--warn)"></i>주의</span><span><i style="background:var(--info-soft);box-shadow:inset 0 0 0 1px var(--info-line)"></i>정보</span><span><i style="background:var(--ok-soft);box-shadow:inset 0 0 0 1px var(--ok-line)"></i>검사 있음·경보 없음</span><span><i style="background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line)"></i>기록 없음</span></div></div>
-    <div class="strip" id="opsStrip"><span class="sk"></span><span class="sk"></span></div>
-    <p class="sum" id="stripSum" aria-live="polite"><span class="sk" style="width:60%"></span></p>
-    <details class="disclosure"><summary>표로 보기</summary><div class="tbl" style="max-height:300px"><table><caption class="vh">날짜별 경보·검사 합계</caption><thead><tr><th scope="col">날짜</th><th scope="col">심각</th><th scope="col">주의</th><th scope="col">검사</th><th scope="col">거부</th><th scope="col">최저 내성</th></tr></thead><tbody id="opsStripTbl"></tbody></table></div></details></div>
-  <div class="grid g2">
-    <div class="card"><div class="chead"><h2>처리 여유 추세<span data-tip="tolerance"></span></h2><span class="meta" id="tolNote"></span></div><div id="opsTol"></div>
-      <p class="sum" id="tolSum" aria-live="polite"></p>
-      <p class="howto"><b>읽는 법</b> — 점 하나 = 그 시간에 가장 빠듯했던 그룹의 버틸 여유(잠깐 느려져도 거부 없이 버틸 여유). 노란 띠(40% 아래)는 주의, 빨간 띠(20% 아래)는 잠깐의 지연으로도 검사 시작 거부(NoInspThread)가 날 수 있는 구간입니다.</p></div>
-    <div class="card"><div class="chead"><h2>그룹별 처리 여유<span data-tip="limit"></span></h2><span class="meta" id="capSrc">지금 · 점유 p99 / 한계</span><div class="end"><span class="meta" id="capNote"></span></div></div>
-      <div class="bullets" id="capBullets"></div>
-      <div class="scale" aria-label="막대 구간"><span><i style="background:var(--ok-soft)"></i>여유 (한계의 60% 아래)</span><span><i style="background:var(--warn-soft)"></i>빠듯 (60~80%)</span><span><i style="background:var(--crit-soft)"></i>위험 (80% 넘음)</span><span><i style="background:var(--ink-2);box-shadow:none"></i>막대 = 느린 검사(p99)의 점유 시간 · 오른쪽 끝 = 한계</span></div>
-      <p class="sum" id="capSum" aria-live="polite"></p>
-      <details class="disclosure"><summary>표로 보기</summary><div class="tbl" style="max-height:340px"><table><caption class="vh">그룹별 처리 여유</caption><thead><tr><th scope="col">그룹</th><th scope="col">상태</th><th scope="col">유휴 (지금/기준)</th><th scope="col">점유 p50</th><th scope="col">p99 / 한계</th><th scope="col">내성</th><th scope="col">투입 간격</th></tr></thead><tbody id="capRows"></tbody></table></div></details></div>
+  <div class="card now">
+    <div class="hero" id="opsHero"><div class="hi"><svg class="ic" aria-hidden="true"><use href="#i-loader"/></svg></div><div class="ht"><span class="sk lg"></span><span class="sk" style="width:40%"></span></div></div>
+    <div class="brief" id="opsBrief" aria-labelledby="briefT"><div class="brief-h"><svg class="ic brand" aria-hidden="true"><use href="#i-sparkles"/></svg><h3 id="briefT">에이전트 브리핑<span data-tip="brief"></span></h3><span class="meta" id="briefWhen"></span><button class="btn sm ghost" id="btnBriefFold" type="button" aria-expanded="true" aria-controls="briefList">접기</button></div><ul class="brief-l" id="briefList"><li><span class="sk" style="width:70%"></span></li><li><span class="sk" style="width:55%"></span></li></ul></div>
   </div>
-  <div class="split">
-    <div class="card"><div class="chead"><h2>오늘 사건<span data-tip="incident"></span></h2><span class="meta" id="opsIncMeta"></span><div class="end"><a class="btn sm ghost" href="#inc">전체 보기<svg class="ic sm" aria-hidden="true"><use href="#i-chevron-right"/></svg></a></div></div>
-      <div class="tbl" style="max-height:420px"><table><caption class="vh">오늘 사건</caption><tbody id="opsInc"></tbody></table></div></div>
-    <div class="card"><div class="chead"><h2>경보 타임라인</h2><span class="meta" id="opsAlertMeta"></span></div><ol class="tl" id="opsAlerts" aria-label="최근 경보"></ol></div>
+
+  <div class="card today" aria-labelledby="todayT">
+    <div class="chead"><h2 id="todayT">오늘</h2>
+      <div class="seg sm" id="todaySeg" role="tablist" aria-label="오늘 기록"><button type="button" role="tab" id="tt-inc" aria-controls="todayInc" aria-selected="true">사건 <b id="todayIncN">0</b></button><button type="button" role="tab" id="tt-al" aria-controls="todayAl" aria-selected="false" tabindex="-1">경보 <b id="todayAlN">0</b></button></div>
+      <div class="end"><a class="btn sm ghost" href="#inc">지난 사건까지 보기<svg class="ic sm" aria-hidden="true"><use href="#i-chevron-right"/></svg></a></div></div>
+    <div role="tabpanel" id="todayInc" aria-labelledby="tt-inc"><div class="tbl plain"><table><caption class="vh">오늘 사건</caption><tbody id="opsInc"></tbody></table></div></div>
+    <div role="tabpanel" id="todayAl" aria-labelledby="tt-al" hidden><ol class="tl" id="opsAlerts" aria-label="오늘 경보"></ol></div>
   </div>
-  <div class="grid g2">
-    <div class="card"><div class="chead"><h2>GPU</h2></div><div id="gpuBox"><span class="sk"></span><span class="sk" style="width:70%"></span></div></div>
-    <div class="card"><div class="chead"><h2>시험 경보</h2></div>
+
+  <div class="card more" id="opsMore" aria-labelledby="moreT">
+    <div class="chead"><h2 id="moreT">자세히</h2><span class="meta">그래프 · 기록 · 장비 — 고른 탭은 다음에도 그대로입니다</span></div>
+    <div class="tabs" role="tablist" id="moreTabs" aria-label="자세히 보기">
+      <button type="button" role="tab" id="mt-cap" aria-controls="mp-cap" data-more="cap">처리 여유</button>
+      <button type="button" role="tab" id="mt-strip" aria-controls="mp-strip" data-more="strip">상태 기록</button>
+      <button type="button" role="tab" id="mt-gpu" aria-controls="mp-gpu" data-more="gpu">장비</button>
+      <button type="button" role="tab" id="mt-test" aria-controls="mp-test" data-more="test" class="oper-only">시험 · 실행 로그</button>
+    </div>
+    <div role="tabpanel" id="mp-cap" aria-labelledby="mt-cap">
+      <div class="grid g2">
+        <div class="pane"><div class="chead"><h3>처리 여유 추세<span data-tip="tolerance"></span></h3><span class="meta" id="tolNote"></span></div><div id="opsTol"></div>
+          <p class="sum" id="tolSum" aria-live="polite"></p>
+          <p class="howto"><b>읽는 법</b> — 점 하나 = 그 시간에 가장 빠듯했던 그룹의 버틸 여유(잠깐 느려져도 거부 없이 버틸 여유). 노란 띠(40% 아래)는 주의, 빨간 띠(20% 아래)는 잠깐의 지연으로도 검사 시작 거부(NoInspThread)가 날 수 있는 구간입니다.</p></div>
+        <div class="pane"><div class="chead"><h3>그룹별 처리 여유<span data-tip="limit"></span></h3><span class="meta" id="capSrc">지금 · 점유 p99 / 한계</span><div class="end"><span class="meta" id="capNote"></span></div></div>
+          <div class="bullets" id="capBullets"></div>
+          <div class="scale" aria-label="막대 구간"><span><i style="background:var(--ok-soft)"></i>여유 (한계의 60% 아래)</span><span><i style="background:var(--warn-soft)"></i>빠듯 (60~80%)</span><span><i style="background:var(--crit-soft)"></i>위험 (80% 넘음)</span><span><i style="background:var(--ink-2);box-shadow:none"></i>막대 = 느린 검사(p99)의 점유 시간 · 오른쪽 끝 = 한계</span></div>
+          <p class="sum" id="capSum" aria-live="polite"></p>
+          <details class="disclosure"><summary>표로 보기</summary><div class="tbl" style="max-height:340px"><table><caption class="vh">그룹별 처리 여유</caption><thead><tr><th scope="col">그룹</th><th scope="col">상태</th><th scope="col">유휴 (지금/기준)</th><th scope="col">점유 p50</th><th scope="col">p99 / 한계</th><th scope="col">내성</th><th scope="col">투입 간격</th></tr></thead><tbody id="capRows"></tbody></table></div></details></div>
+      </div>
+    </div>
+    <div role="tabpanel" id="mp-strip" aria-labelledby="mt-strip" hidden>
+      <div class="chead"><h3>최근 상태 기록<span data-tip="alert"></span></h3><span class="meta">날짜 × 24시간 · 칸마다 그 시간의 가장 심한 경보</span>
+        <div class="end legend" aria-hidden="true"><span><i style="background:var(--crit)"></i>심각</span><span><i style="background:var(--warn)"></i>주의</span><span><i style="background:var(--info-soft);box-shadow:inset 0 0 0 1px var(--info-line)"></i>정보</span><span><i style="background:var(--ok-soft);box-shadow:inset 0 0 0 1px var(--ok-line)"></i>검사 있음·경보 없음</span><span><i style="background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line)"></i>기록 없음</span></div></div>
+      <div class="strip" id="opsStrip"><span class="sk"></span><span class="sk"></span></div>
+      <p class="sum" id="stripSum" aria-live="polite"><span class="sk" style="width:60%"></span></p>
+      <details class="disclosure"><summary>표로 보기</summary><div class="tbl" style="max-height:300px"><table><caption class="vh">날짜별 경보·검사 합계</caption><thead><tr><th scope="col">날짜</th><th scope="col">심각</th><th scope="col">주의</th><th scope="col">검사</th><th scope="col">거부</th><th scope="col">최저 내성</th></tr></thead><tbody id="opsStripTbl"></tbody></table></div></details>
+    </div>
+    <div role="tabpanel" id="mp-gpu" aria-labelledby="mt-gpu" hidden>
+      <div class="chead"><h3>GPU</h3><span class="meta">이 PC 의 그래픽 카드 — 메모리 · 사용률 · 온도</span></div><div id="gpuBox"><span class="sk"></span><span class="sk" style="width:70%"></span></div>
+    </div>
+    <div role="tabpanel" id="mp-test" aria-labelledby="mt-test" hidden>
+      <div class="chead"><h3>시험 경보</h3><span class="meta">운영자 모드</span></div>
       <div class="row"><label class="vh" for="injKind">시험 경보 종류</label><select id="injKind"><option value="noinsp">심각 — NoInspThread</option><option value="defect">심각 — 치명 결함</option><option value="warn">주의 — 로그 문구</option></select><button class="btn" id="btnInject" type="button"><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>넣기</button></div>
-      <p class="hint">실제 경보와 같은 경로(사건 분석 → 메일)로 처리됩니다. 메일이 켜져 있으면 실제로 발송됩니다.</p></div>
+      <p class="hint">실제 경보와 같은 경로(사건 분석 → 메일)로 처리됩니다. 메일이 켜져 있으면 실제로 발송됩니다.</p>
+      <details class="disclosure" id="logDetails"><summary>실행 로그</summary><pre class="log" id="logBox"></pre></details>
+    </div>
   </div>
-  <details class="card" id="logDetails"><summary>실행 로그</summary><pre class="log" id="logBox"></pre></details>
 </section>
 

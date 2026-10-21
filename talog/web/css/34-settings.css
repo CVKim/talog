@@ -6,6 +6,11 @@
 .subnav a .n{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:var(--sunken);font-size:11px;color:var(--sub)}
 .subnav a.on .n{background:var(--primary);color:var(--on-primary)}
 .setsec{scroll-margin-top:calc(var(--top-h) + 64px);margin-bottom:28px}
+/* 접어 둔 고급 칸 — 요약 줄도 한 줄로 상태를 말한다 */
+details.rules>summary{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);color:var(--ink-2);font-size:13.5px}
+details.rules>summary .meta{margin-left:auto;font-weight:600}
+details.rules[open]>summary .meta{display:none}
+details.rules>summary b{font-weight:700}
 .prov{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .prov label{border:1px solid var(--line-2);border-radius:var(--r-lg);padding:12px 14px;cursor:pointer;font-weight:600;display:flex;gap:10px;align-items:center;transition:border-color var(--t1),background var(--t1)}
 .prov label:hover{border-color:var(--line-strong)}

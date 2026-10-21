@@ -1,18 +1,17 @@
 /* ── 에이전트 (v2.3) — 브리핑 · 처리 과정 · 사건 마무리 · 과거 사례 · 규칙 피드백 ── */
 
-/* 운영 현황 '에이전트 브리핑' — AI 표시는 주황(브랜드 하나), 줄은 '지금 할 일'과 같은 모양 */
-.brief{padding-top:14px;padding-bottom:14px}
-.brief-h{display:flex;align-items:center;gap:12px}
-.brief-av{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none;background:var(--brand-soft);color:var(--brand-ink)}
-.brief-av .ic{width:18px;height:18px}
-.brief-tt{flex:1;min-width:0}
-.brief-tt h2{font-size:15px;display:flex;align-items:center;gap:2px}
-.brief-tt .meta{display:block;margin-top:1px}
-.brief-l{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:6px}
-.brief-l li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 10px;border-radius:var(--r);background:var(--surface-2);border:1px solid var(--line)}
-.brief-l li>.ic{justify-self:center;color:var(--sub)}
+/* 운영 현황 '에이전트 브리핑' — 상태 카드 아래 칸. 줄은 상자 없이 아이콘 + 한 문장 (할 일 줄보다 가볍게) */
+.now .brief{border-top:1px solid var(--line);background:var(--surface-2);padding:12px 22px 14px 26px}
+.brief-h{display:flex;align-items:center;gap:8px}
+.brief-h>.ic{width:16px;height:16px}
+.brief-h h3{font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:2px}
+.brief-h .meta{font-size:12px}
+.brief-h .btn{margin-left:auto}
+.brief-l{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:2px}
+.brief-l li{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:8px;align-items:center;padding:4px 0}
+.brief-l li>.ic{justify-self:center;color:var(--sub);width:16px;height:16px}
 .brief-l li.crit>.ic{color:var(--crit)}.brief-l li.warn>.ic{color:var(--warn)}.brief-l li.ok>.ic{color:var(--ok)}
-.brief-l .bt{font-size:13.5px;line-height:1.55;color:var(--ink-2)}
+.brief-l .bt{font-size:13px;line-height:1.55;color:var(--ink-2)}
 .brief-l .bt b{color:var(--ink)}
 .brief.folded .brief-l{display:none}
 
@@ -39,13 +38,10 @@
 .trace b{display:block;font-size:13.5px;color:var(--ink);padding-top:4px}
 .trace li>div>span{display:block;font-size:12.5px;line-height:1.55;color:var(--sub);margin-top:2px}
 .trace li.tr-skip b{color:var(--sub)}
-.trace-line{display:flex;align-items:center;gap:8px;width:100%;margin-top:14px;padding:10px 12px;border:1px dashed var(--line-strong);border-radius:var(--r-lg);background:transparent;color:var(--ink-2);font:inherit;font-size:13px;text-align:left;cursor:pointer}
-.trace-line:hover{background:var(--hover)}
-.trace-line:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-.trace-line .go{margin-left:auto;display:inline-flex;align-items:center;gap:2px;color:var(--brand-ink);font-weight:600;white-space:nowrap}
 
 /* 비슷한 과거 사례 · 사람의 기록 */
 .simcases,.notes{margin-top:16px}
+details.simcases>summary{color:var(--ink-2);font-size:13.5px}details.simcases>summary b{font-weight:700}
 .simcases h3,.notes h3{display:flex;align-items:center;gap:6px;font-size:13.5px;margin-bottom:8px}
 .simcases h3 .meta{margin-left:4px;font-weight:400}
 .simcases ul,.notes ol{list-style:none;margin:0;padding:0;display:grid;gap:8px}
@@ -66,4 +62,4 @@
 .rfb .ic{width:13px;height:13px;margin-top:2px;flex:none}
 .rfb.warn{color:var(--warn-ink)}
 
-@media (max-width:899px){.brief-l li{grid-template-columns:22px minmax(0,1fr)}.brief-l li .btn{grid-column:2;justify-self:start}}
+@media (max-width:899px){.brief-l li{grid-template-columns:20px minmax(0,1fr)}.brief-l li .btn{grid-column:2;justify-self:start}}

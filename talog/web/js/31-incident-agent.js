@@ -45,13 +45,11 @@ function traceSteps(d) {
 function incTrace(d) { const st = traceSteps(d);
   return `<p class="hint" style="margin:0 0 12px">talog 에이전트가 이 사건을 처리한 순서입니다. 모두 사건 기록에 남은 값입니다.</p>
     <ol class="trace">${st.map(([c, i, t, x], k) => `<li class="${c}"><span class="tn">${ic(i, "sm")}</span><div><b>${k + 1}. ${esc(t)}<span class="vh"> — ${c === "ok" ? "완료" : c === "warn" ? "확인 필요" : c === "crit" ? "실패" : c === "tr-skip" ? "건너뜀" : ""}</span></b><span>${esc(x)}</span></div></li>`).join("")}</ol>`; }
-/** 판단 탭 맨 아래 — 처리 과정 한 줄 요약(탭으로 이동) */
-function traceLine(d) { const st = traceSteps(d), warn = st.filter(s => s[0] === "warn" || s[0] === "crit").length;
-  return `<button class="trace-line" type="button" data-gotab="trace">${ic("route", "sm")}<span>에이전트가 이 사건을 <b>${st.length}단계</b>로 처리했습니다${warn ? ` — 확인할 단계 ${warn}개` : ""}</span><span class="go">처리 과정 보기${ic("chevron-right", "sm")}</span></button>`; }
 
+/** 비슷한 과거 사례 — 한 줄 요약으로 접어 두고(가장 비슷한 사례 이름·점수), 펼치면 원인·조치 */
 function incSimilar(d) { const sim = d.similar || []; if (!sim.length) return "";
-  return `<section class="simcases"><h3>${ic("book")}비슷한 과거 사례<span data-tip="casekb"></span><span class="meta">사례 KB · 이 설비의 해결 기록 포함</span></h3><ul>${sim.map(s => `<li><div class="sc-h"><b>${esc(s.title)}</b><span class="tag">${Math.round((s.score || 0) * 100)}%</span></div>
-    <div class="sub">원인: ${esc(s.cause || "-")}</div><div class="sub">조치: ${esc(s.action || "-")}</div>${s.site || s.date ? `<div class="meta">${esc([s.site, s.date].filter(Boolean).join(" · "))}</div>` : ""}</li>`).join("")}</ul></section>`; }
+  return `<details class="simcases disclosure" data-k="sim" ${openAttr("sim", false)}><summary>${ic("book", "sm")}<span>비슷한 과거 사례 <b>${sim.length}건</b> — 가장 비슷한 것: ${esc(sim[0].title)} (${Math.round((sim[0].score || 0) * 100)}%)</span></summary><p class="meta" style="margin:0 0 8px">사례 KB · 이 설비의 해결 기록 포함 — 판단에는 쓰지 않고 참고로만 보입니다</p><ul>${sim.map(s => `<li><div class="sc-h"><b>${esc(s.title)}</b><span class="tag">${Math.round((s.score || 0) * 100)}%</span></div>
+    <div class="sub">원인: ${esc(s.cause || "-")}</div><div class="sub">조치: ${esc(s.action || "-")}</div>${s.site || s.date ? `<div class="meta">${esc([s.site, s.date].filter(Boolean).join(" · "))}</div>` : ""}</li>`).join("")}</ul></details>`; }
 function incNotes(d) { const ns = d.notes || []; if (!ns.length) return "";
   return `<section class="notes"><h3>${ic("user")}사람의 기록</h3><ol class="nl">${ns.slice().reverse().slice(0, 5).map(n => `<li><div class="sc-h">${stateTag(n.state)}<span class="meta">${esc(n.time)}${n.mode && typeof MODE_INFO !== "undefined" && MODE_INFO[n.mode] ? ` · ${esc(MODE_INFO[n.mode].label)}` : ""}</span></div>
     ${n.cause ? `<div class="sub">원인: ${esc(n.cause)}</div>` : ""}${n.action ? `<div class="sub">조치: ${esc(n.action)}</div>` : ""}${n.note ? `<div class="sub">메모: ${esc(n.note)}</div>` : ""}${n.case ? `<div class="meta">${ic("book", "sm")}사례 KB 에 저장 — 다음 비슷한 사건에 함께 보입니다</div>` : ""}</li>`).join("")}</ol></section>`; }

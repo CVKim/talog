@@ -42,7 +42,8 @@ async function loadReports() { if (!S.reports) $("#repRows").innerHTML = skRows(
     : emptyRow(1, "아직 만든 리포트가 없습니다", '위에서 폴더를 넣고 "진단 리포트 만들기"를 누르십시오.', "file-text");
   $$("#repRows [data-ask]").forEach(b => b.onclick = () => selectReport(b.dataset.ask));
   $$("#repRows [data-claude-rep]").forEach(b => b.onclick = () => askClaude(`talog 리포트 ${b.dataset.claudeRep} 의 자동 진단 소견을 리포트 DB 로 교차 확인하고, 원인과 할 일을 정리해 줘 (talog-rca 절차, 보고서는 reports 폴더에 HTML)`, {fresh: true})); }
-function selectReport(tag) { S.rep = tag; S.repQa = []; $("#askTag").textContent = tag; $("#askTag").classList.remove("hidden"); $("#askList").innerHTML = ""; $$("#repRows tr").forEach(tr => tr.classList.toggle("sel", tr.dataset.tag === tag)); $("#askQ").focus(); }
+/* 리포트에 질문 — 목록에서 '질문'을 눌러 대상을 고른 뒤에만 옆에 연다(처음 화면에는 리포트 목록만) */
+function selectReport(tag) { S.rep = tag; S.repQa = []; $("#askCard").classList.remove("hidden"); $("#repWrap").classList.remove("one"); $("#askTag").textContent = tag; $("#askTag").classList.remove("hidden"); $("#askList").innerHTML = ""; $$("#repRows tr").forEach(tr => tr.classList.toggle("sel", tr.dataset.tag === tag)); $("#askQ").focus(); }
 async function askReport() { const q = $("#askQ").value.trim(); if (!q) { $("#askQ").focus(); return; } if (!S.rep) { toast("리포트 목록에서 '질문'을 눌러 대상을 고르십시오", "err"); return; }
   $("#askBusy").textContent = "LLM 이 DB 를 조회하는 중… (CPU 는 몇 분 걸릴 수 있음)";
   const r = await busy($("#btnAsk"), () => api("/api/ask/report", {tag: S.rep, q})); $("#askBusy").textContent = "";

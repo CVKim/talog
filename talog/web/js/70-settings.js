@@ -84,8 +84,15 @@ function renderBuiltin() {
     return `<tr><td><label class="switch"><input type="checkbox" data-bi="${b.name}" data-k="enabled" aria-label="${esc(b.label)} 사용" ${v.enabled !== false ? "checked" : ""}></label></td><td><b>${esc(b.label)}</b><div class="mono sub">${esc(b.name)}</div>${ruleFeedback(b.name)}</td>
       <td><select data-bi="${b.name}" data-k="severity" aria-label="${esc(b.label)} 등급">${["crit", "warn", "info"].map(s => `<option value="${s}" ${v.severity === s ? "selected" : ""}>${SEVK[s]}</option>`).join("")}</select></td><td class="small">${condOf(b, v)}</td></tr>`; }).join("");
   $$("#biRows [data-bi]").forEach(el => el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", () => {
-    const k = el.dataset.k; biSet(el.dataset.bi, k, el.type === "checkbox" ? el.checked : el.tagName === "SELECT" ? el.value : Number(el.value || 0)); })); }
-function renderCustom() { const C = S.set.rules.custom = S.set.rules.custom || [];
+    const k = el.dataset.k; biSet(el.dataset.bi, k, el.type === "checkbox" ? el.checked : el.tagName === "SELECT" ? el.value : Number(el.value || 0)); rulesSummary(); }));
+  rulesSummary(); }
+/** 접힌 규칙 표의 한 줄 요약 — 켠 규칙 수 · 사용자 규칙 · 최근 7일 경보·오경보 (펼치지 않아도 상태를 안다) */
+function rulesSummary() { if (!S.meta || !S.set) return;
+  const on = S.meta.builtin.filter(b => biVal(b).enabled !== false).length, cu = (S.set.rules.custom || []).length;
+  const live = Object.values((S.rstat && S.rstat.live) || {}), al = live.reduce((a, x) => a + x.alerts, 0), fa = live.reduce((a, x) => a + x.false, 0);
+  const many = Object.values((S.rstat && S.rstat.live) || {}).some(x => x.false >= 2 && x.false / Math.max(1, x.alerts) >= 0.5);
+  $("#rulesSum").innerHTML = `<span>경보 규칙 — 기본 ${S.meta.builtin.length}개 중 <b>${on}개 켜짐</b> · 사용자 규칙 ${cu}개${S.rstat ? ` · 최근 ${S.rstat.days}일 경보 ${al}건${fa ? ` (오경보 ${fa}건)` : ""}` : ""}${many ? ` <span class="tag w">조정 권고 있음</span>` : ""}</span><span class="meta">표 펼치기</span>`; }
+function renderCustom() { const C = S.set.rules.custom = S.set.rules.custom || []; setTimeout(rulesSummary);
   $("#cuRows").innerHTML = C.length ? C.map((r, i) => { const def = r.type === "defect"; const mv = Array.isArray(r.match) ? r.match.join(", ") : (r.match || "");
     return `<tr data-i="${i}"><td><label class="switch"><input type="checkbox" data-k="enabled" aria-label="규칙 사용" ${r.enabled !== false ? "checked" : ""}></label></td>
     <td><input type="text" data-k="name" aria-label="규칙 이름" value="${esc(r.name || "")}" style="width:130px"></td>

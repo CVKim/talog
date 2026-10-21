@@ -31,7 +31,7 @@ function renderAccess() { const m = curMode();
   accKey = m;
   $$("#modeSw [data-mode]").forEach(b => { const k = b.dataset.mode, on = k === m; b.setAttribute("aria-checked", on); b.tabIndex = on ? 0 : -1;
     b.title = on ? `지금 ${MODE_INFO[k].label}` : `${MODE_INFO[k].label}로 바꾸기${MODE_RANK[k] > MODE_RANK[m] ? " (PIN)" : ""}`; });
-  $("#accT").textContent = MODE_INFO[m].label; $("#accD").textContent = MODE_INFO[m].d;
+  $("#accT").textContent = `모드 — 지금 ${MODE_INFO[m].label}`;
   $("#accIc").className = "acc-ic " + m; $("#accIc").innerHTML = ic(MODE_INFO[m].icon, "lg");
   $("#modeOpts").innerHTML = Object.entries(MODE_INFO).map(([k, x]) => `<button type="button" class="mode-opt" role="radio" data-mode="${k}" aria-checked="${k === m}">
     <b>${ic(x.icon)}${esc(x.label)}${k === m ? '<span class="tag on">지금</span>' : MODE_RANK[k] > MODE_RANK[m] ? '<span class="tag">PIN</span>' : ""}</b><span>${esc(x.d)}</span></button>`).join("");

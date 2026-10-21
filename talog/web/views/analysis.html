@@ -3,11 +3,10 @@
   <div class="card">
     <div class="chead"><h2>로그 폴더 분석</h2><span class="meta">진단 리포트 · 경보 재현<span class="dev-only"> · Claude 원본 로그 조사</span></span></div>
     <ol class="steps-h" id="anaSteps" aria-label="분석 단계"><li data-step="1" class="on"><span class="n">1</span>폴더 고르기</li><li class="sep" aria-hidden="true">›</li><li data-step="2"><span class="n">2</span>할 일 고르기</li><li class="sep" aria-hidden="true">›</li><li data-step="3"><span class="n">3</span>결과 보기</li></ol>
-    <div class="formgrid">
-      <div class="field"><label for="anaDir">일자 폴더 또는 설비 폴더</label><input type="text" id="anaDir" list="dayList" placeholder="예: D:\AIV_LOG\Talos\2026_09\28"><datalist id="dayList"></datalist></div>
-      <div class="field"><label for="anaRecipe">레시피 폴더 <span class="opt">(선택)</span></label><input type="text" id="anaRecipe" placeholder="ALG.ini 가 있는 폴더 — 알고리즘 번호를 결함명·모델로 번역"></div>
-    </div>
+    <div class="field"><label for="anaDir">일자 폴더 또는 설비 폴더</label><input type="text" id="anaDir" list="dayList" placeholder="예: D:\AIV_LOG\Talos\2026_09\28"><datalist id="dayList"></datalist></div>
     <div class="daychips" id="dayChips" aria-label="최근 일자 폴더"></div>
+    <details class="disclosure" data-k="recipe" style="margin-top:6px"><summary>레시피 폴더 더하기 (선택) — 리포트에서 알고리즘 번호를 결함 이름·모델로 바꿔 보여 줍니다</summary>
+      <div class="field"><label for="anaRecipe" class="vh">레시피 폴더</label><input type="text" id="anaRecipe" placeholder="ALG.ini 가 있는 폴더"></div></details>
     <div class="ana-opts" role="group" aria-label="할 일">
       <button class="ana-opt primary" id="btnReport" type="button"><b><svg class="ic" aria-hidden="true"><use href="#i-file-text"/></svg>진단 리포트 만들기</b><span>검사 한 건씩 판정·미완료 원인·타임라인을 HTML 보고서로 정리합니다.</span><span class="t">보통 1~5분 · 이 PC 안에서만</span></button>
       <button class="ana-opt" id="btnReplay" type="button"><b><svg class="ic" aria-hidden="true"><use href="#i-history"/></svg>경보 재현</b><span>지금 규칙으로 그날 로그를 처음부터 다시 돌려 경보·사건이 언제 났을지 봅니다.</span><span class="t">하루치 수 분~수십 분 · 메일 보내지 않음<span class="oper-note"> · 운영자 모드</span></span></button>
@@ -15,9 +14,9 @@
     </div>
     <div id="jobBox" class="job hidden" aria-live="polite"><div class="job-h" id="jobState"></div><pre class="log" id="jobLog" style="max-height:260px"></pre></div>
   </div>
-  <div class="split">
+  <div class="split one" id="repWrap">
     <div class="card"><div class="chead"><h2>리포트</h2><span class="meta" id="repCount"></span></div><div class="tbl" style="max-height:620px"><table><caption class="vh">진단 리포트</caption><tbody id="repRows"></tbody></table></div></div>
-    <div class="card"><div class="chead"><h2>리포트에 질문</h2><span class="tag b hidden" id="askTag"></span><span class="meta">로컬 LLM</span></div>
+    <div class="card hidden" id="askCard"><div class="chead"><h2>리포트에 질문</h2><span class="tag b hidden" id="askTag"></span><span class="meta">로컬 LLM</span></div>
       <p class="hint" style="margin:0 0 10px">로컬 LLM 이 리포트 DB 를 SQL 로 직접 조회해 답합니다. 예: "미완료 검사 원인은?", "가장 오래 걸린 검사 5개", "12시 이후 NG 결함 분포".</p>
       <label class="vh" for="askQ">리포트에 할 질문</label><textarea id="askQ" placeholder="리포트 목록에서 '질문'을 누른 뒤 입력 — Ctrl+Enter 로 보내기"></textarea>
       <div class="row" style="margin-top:10px"><button class="btn primary" id="btnAsk" type="button"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg>질문</button><span id="askBusy" class="meta" aria-live="polite"></span></div>

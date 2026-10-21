@@ -1,18 +1,19 @@
-/* ── 운영 현황 ─────────────────────────────────────────── */
+/* ── 운영 현황 ─────────────────────────────────────────────────────────────
+   위에서 아래로 세 덩어리 — 지금(상태 한 줄 · 할 일 · 에이전트 브리핑) → 오늘(사건 · 경보) → 자세히(탭: 처리 여유 ·
+   상태 기록 · 장비 · 시험). 같은 사실을 여러 곳에 되풀이하지 않는다: 상태와 할 일은 맨 위 카드 한 곳에서만 말한다. */
 async function loadStatus() {
   let st; try { st = await api("/api/status"); } catch (e) { $("#runText").textContent = "연결 끊김"; $("#runPill").className = "live off"; return; }
   S.st = st; applyAccess(st.access);
   $("#ver").textContent = "v" + st.version; $("#siteName").textContent = st.site || "설비 이름 미지정"; $("#siteData").textContent = st.data_dir || "";
   $("#runText").textContent = st.running ? "감시 중" : "정지"; $("#runPill").className = "live " + (st.running ? "on" : "");
-  const rb = $("#btnRun"); if (rb.getAttribute("aria-busy") !== "true") { rb.className = "btn " + (st.running ? "" : "primary");
-    rb.innerHTML = `${ic(st.running ? "square" : "play")}<span class="lbl">${st.running ? "감시 정지" : "감시 시작"}</span>`; rb.setAttribute("aria-label", st.running ? "감시 정지" : "감시 시작"); }
-  renderHero(st); renderBrief(st); renderKpis(st); renderFlow(st); renderOpsLists(st); renderCapacity(); renderGpu(st); setTitle();
+  syncRunBtn();
+  renderHero(st); renderBrief(st); renderOpsLists(st); renderCapacity(); renderGpu(st); setTitle();
   const n = st.incidents.filter(r => r.severity === "crit").length; $("#incCnt").textContent = n; $("#incCnt").classList.toggle("hidden", !n); $("#incCnt").setAttribute("aria-label", `오늘 심각 사건 ${n}건`);
   if (st.detect.pattern_errors && st.detect.pattern_errors.length && !S.patWarned) { S.patWarned = true; toast("규칙 설정 오류: " + st.detect.pattern_errors.join(" / "), "err"); }
   if (S.view === "set") renderGpuFree();
   if (st.job && st.job.state === "running" && S.view === "ana") pollJob();
 }
-/* ── 처리 여유 공용 — 실시간 기록만 쓴다(재현 기록으로 '지금 할 일'을 만들지 않는다) ── */
+/* ── 처리 여유 공용 — 실시간 기록만 쓴다(재현 기록으로 '할 일'을 만들지 않는다) ── */
 const pctNum = v => (+v).toFixed(1).replace(/\.0$/, "");
 const fmtPct = v => `${pctNum(v)}%`;
 /** 버틸 여유 % → [상태 클래스, 낱말] (색만으로 알리지 않는다 — ux #37) */
@@ -23,94 +24,86 @@ function liveCapacity(st) {
     .map(r => ({...r, pct: 100 * r.tolerance_s / r.limit_s}));
 }
 
-/** '지금 할 일' — 상태에서 사람이 할 일을 급한 순서로 (ux #80: 오류·상태에는 다음 단계를) */
+/** 감시 정지는 운영자 모드 일이라 현장 모드에서는 버튼을 숨긴다(멈춰 있을 때의 '감시 시작'은 누구나) */
+function syncRunBtn() { const st = S.st, rb = $("#btnRun"); if (!st || rb.getAttribute("aria-busy") === "true") return;
+  rb.hidden = st.running && !atLeast("operator"); rb.className = "btn " + (st.running ? "" : "primary");
+  rb.innerHTML = `${ic(st.running ? "square" : "play")}<span class="lbl">${st.running ? "감시 정지" : "감시 시작"}</span>`; rb.setAttribute("aria-label", st.running ? "감시 정지" : "감시 시작"); }
+
+/** '할 일' — 맨 위 제목이 말하지 않은 것만, 급한 순서로 최대 3개 (ux #80: 오류·상태에는 다음 단계를).
+    심각 사건·경보·감시 정지는 제목과 그 옆 버튼이 말한다. 현장 모드는 고칠 수 없는 안내(메일 꺼짐)를 빼고,
+    설정으로 가는 버튼은 '설정 보기'로 말한다. */
 function nextActions(st) {
-  const out = [];
-  const crit = st.incidents.filter(r => r.severity === "crit" && OPEN(r));      // 사람이 마무리한 사건은 빼고
-  if (!st.running) out.push({cls: "warn", icon: "play", text: "<b>감시가 멈춰 있습니다.</b> 멈춘 동안에는 경보·사건·메일이 나오지 않습니다.", btn: ["감시 시작", "start"]});
-  if (crit.length) out.push({cls: "crit", icon: "siren", text: `<b>심각 사건 ${crit.length}건</b> — 원인과 권고 조치를 확인하십시오. 가장 최근: ${esc(crit[0].time)} ${esc(crit[0].title)}`, btn: ["사건 열기", "inc:" + crit[0].id]});
+  const out = [], oper = atLeast("operator"), setBtn = (lab, sec) => [oper ? lab : "설정 보기", "sec:" + sec];
   const low = liveCapacity(st).filter(r => r.pct < 20).sort((a, b) => a.pct - b.pct);
   if (low.length) out.push({cls: low[0].pct < 0 ? "crit" : "warn", icon: "gauge",
     text: `<b>그룹 ${esc(String(low[0].group))}${low.length > 1 ? ` 외 ${low.length - 1}개` : ""}의 버틸 여유 ${fmtPct(low[0].pct)}</b> — 잠깐의 지연으로도 검사 시작 거부가 날 수 있습니다. 다음 정지 때 재시작을 계획하십시오.`,
     btn: ["처리 여유 보기", "cap"]});
-  if (st.running && !st.collect.exists) out.push({cls: "warn", icon: "folder-open", text: "<b>오늘 로그 폴더가 없습니다.</b> 설비가 쉬는 날이 아니라면 수집 설정의 로그 루트를 확인하십시오.", btn: ["수집 설정", "sec:s-collect"]});
-  if (st.notify.failed) out.push({cls: "crit", icon: "mail", text: `<b>메일 발송 실패 ${st.notify.failed}건</b> — 알림 설정의 '연결 확인'으로 계정을 점검하십시오.`, btn: ["알림 설정", "sec:s-notify"]});
-  if (st.judge.llm && st.judge.alive === false) out.push({cls: "warn", icon: "cpu", text: "<b>로컬 AI(LLM)가 응답하지 않습니다.</b> 판단은 규칙 진단만으로 합니다.", btn: ["판단 설정", "sec:s-judge"]});
-  if (st.notify.provider === "off") out.push({cls: "info", icon: "mail", text: "<b>알림 메일이 꺼져 있습니다.</b> 심각 사건이 나도 담당자에게 메일이 가지 않습니다.", btn: ["알림 설정", "sec:s-notify"]});
-  return out.slice(0, 4);
+  if (st.notify.failed) out.push({cls: "crit", icon: "mail", text: `<b>메일 발송 실패 ${st.notify.failed}건</b> — 알림 설정의 '연결 확인'으로 계정을 점검하십시오.`, btn: setBtn("알림 설정", "s-notify")});
+  if (st.running && !st.collect.exists) out.push({cls: "warn", icon: "folder-open", text: "<b>오늘 로그 폴더가 없습니다.</b> 설비가 쉬는 날이 아니라면 로그 폴더 설정을 확인하십시오.", btn: setBtn("수집 설정", "s-collect")});
+  if (st.judge.llm && st.judge.alive === false) out.push({cls: "warn", icon: "cpu", text: "<b>로컬 AI(LLM)가 응답하지 않습니다.</b> 판단은 규칙 진단만으로 합니다.", btn: setBtn("판단 설정", "s-judge")});
+  if (oper && st.notify.provider === "off") out.push({cls: "info", icon: "mail", text: "<b>알림 메일이 꺼져 있습니다.</b> 심각 사건이 나도 담당자에게 메일이 가지 않습니다.", btn: setBtn("알림 설정", "s-notify")});
+  return out.slice(0, 3);
 }
+/** 사건으로 묶이지 않은 심각 경보만 있을 때(예: GPU 과열) — 사건 수 0 과 '심각' 이 엇갈려 보이지 않게 따로 말한다 */
+const critAlertsOnly = st => st.detect.crit > 0 && !st.incidents.some(r => r.severity === "crit");
 function runNext(act) {
   if (act === "start") $("#btnRun").click();
-  else if (act === "cap") { const c = $("#capBullets").closest(".card"); c.scrollIntoView({behavior: reduceMotion() ? "auto" : "smooth", block: "start"}); }
+  else if (act === "cap") { moreTab("cap"); $("#opsMore").scrollIntoView({behavior: reduceMotion() ? "auto" : "smooth", block: "start"}); }
+  else if (act === "alerts") { todayTab("al"); $("#todayAl").closest(".card").scrollIntoView({behavior: reduceMotion() ? "auto" : "smooth", block: "start"}); }
+  else if (act === "open") { go("inc", {focus: false}); if (!$("#incOpen").checked) { $("#incOpen").checked = true; S.incOpen = true; if (S.incRows) renderIncList(); } }
   else if (act.startsWith("sec:")) goSec(act.slice(4));
   else if (act.startsWith("inc:")) { go("inc", {focus: false}); openInc(act.slice(4), false); }
 }
+/** 맨 위 상태 — 한 줄 제목 + 한 줄 설명 + (있으면) 할 일. 상태는 여기서만 말한다 */
 function renderHero(st) {
-  const D = st.detect, crit = st.incidents.filter(r => r.severity === "crit" && OPEN(r)), warnN = D.warn;
+  const D = st.detect, crit = st.incidents.filter(r => r.severity === "crit" && OPEN(r));
   const critDone = st.incidents.filter(r => r.severity === "crit").length - crit.length;   // 해결·오경보로 마무리한 심각 사건
   const up = st.uptime_s ? (st.uptime_s >= 3600 ? (st.uptime_s / 3600).toFixed(1) + "시간" : Math.round(st.uptime_s / 60) + "분") : "-";
-  let cls, icon, title, sub;
-  if (!st.running) { cls = "idle"; icon = "square"; title = "감시가 멈춰 있습니다"; sub = "멈춘 동안에는 새 경보·사건·메일이 나오지 않습니다."; }
-  else if (crit.length || (D.crit && !critDone)) { cls = "crit"; icon = "alert"; title = `심각 ${crit.length || D.crit}건 — 확인이 필요합니다`; sub = crit[0] ? `${crit[0].time} ${crit[0].title} · ${crit[0].cause || ""}` : (D.last ? D.last.title : ""); }
-  else if (!st.collect.exists) { cls = "warn"; icon = "folder-open"; title = "오늘 로그 폴더가 아직 없습니다"; sub = "로그 루트 아래에 오늘 날짜 폴더가 생기면 자동으로 읽기 시작합니다."; }
-  else if (warnN) { cls = "warn"; icon = "alert"; title = `주의 ${warnN}건`; sub = D.last ? `마지막: ${D.last.title}` : ""; }
-  else { cls = "ok"; icon = "check-circle"; title = "정상 감시 중"; sub = critDone ? `오늘 심각 사건 ${critDone}건은 모두 마무리됐습니다.` : "오늘 경보·사건이 없습니다."; }
+  let cls, icon, title, sub, btn = null;
+  if (!st.running) { cls = "idle"; icon = "square"; title = "감시가 멈춰 있습니다"; sub = "멈춘 동안에는 새 경보·사건·메일이 나오지 않습니다. 오른쪽 위 '감시 시작'으로 다시 켭니다."; }
+  else if (crit.length) { cls = "crit"; icon = "alert"; title = `확인할 심각 사건 ${crit.length}건`; sub = `${crit[0].time} ${crit[0].title}${crit[0].cause ? " — " + crit[0].cause : ""}`; btn = [crit.length > 1 ? "가장 최근 사건 열기" : "사건 열기", "inc:" + crit[0].id, "siren"]; }
+  else if (critAlertsOnly(st)) { cls = "crit"; icon = "alert"; title = `심각 경보 ${D.crit}건`; sub = D.last ? D.last.title : ""; btn = ["경보 보기", "alerts", "alert"]; }
+  else if (!st.collect.exists) { cls = "warn"; icon = "folder-open"; title = "오늘 로그를 기다리는 중입니다"; sub = "로그 폴더에 오늘 날짜 폴더가 생기면 자동으로 읽기 시작합니다."; }
+  else if (D.warn) { cls = "warn"; icon = "alert"; title = `주의 경보 ${D.warn}건`; sub = D.last ? `마지막: ${D.last.title}` : ""; btn = ["경보 보기", "alerts", "alert"]; }
+  else { cls = "ok"; icon = "check-circle"; title = "정상 — 지켜보는 중입니다"; sub = critDone ? `오늘 심각 사건 ${critDone}건은 모두 마무리됐습니다.` : "오늘 경보·사건이 없습니다."; }
   const acts = nextActions(st);
-  const list = acts.length
-    ? acts.map((a, i) => `<li class="${a.cls}">${ic(a.icon)}<span class="nt">${a.text}</span><button class="btn sm${i === 0 && a.cls === "crit" ? " primary" : ""}" type="button" data-next="${esc(a.btn[1])}">${esc(a.btn[0])}${ic("chevron-right", "sm")}</button></li>`).join("")
-    : `<li class="ok none">${ic("check-circle")}<span class="nt">지금 할 일이 없습니다 — 정상 감시 중입니다. 경보가 나면 여기에 할 일이 순서대로 나옵니다.</span></li>`;
+  const list = acts.map((a, i) => `<li class="${a.cls}">${ic(a.icon)}<span class="nt">${a.text}</span><button class="btn sm${i === 0 && a.cls === "crit" ? " primary" : ""}" type="button" data-next="${esc(a.btn[1])}">${esc(a.btn[0])}${ic("chevron-right", "sm")}</button></li>`).join("");
   $("#opsHero").className = "hero " + cls;
-  $("#opsHero").innerHTML = `<div class="hi">${ic(icon)}</div><div class="ht"><h2>${esc(title)}</h2><p>${esc(sub)}</p><div class="hmeta"><span>가동 ${esc(up)}</span><span>마지막 읽음 ${esc(st.collect.last_read || "-")}</span><span>규칙 ${st.detect.rules}개</span><span>${hhmmss()} 기준</span></div></div>
-    <div class="next"><h3>${ic("list-checks", "sm")}지금 할 일</h3><ol>${list}</ol></div>`;
+  $("#opsHero").innerHTML = `<div class="hi">${ic(icon)}</div><div class="ht"><h2>${esc(title)}</h2><p>${esc(sub)}</p>${btn ? `<button class="btn${cls === "crit" || cls === "idle" ? " primary" : ""} hbtn" type="button" data-next="${esc(btn[1])}">${ic(btn[2])}${esc(btn[0])}</button>` : ""}</div>
+    <div class="hmeta"><span>마지막 읽음 ${esc(st.collect.last_read || "-")}</span><span>가동 ${esc(up)}</span></div>
+    ${acts.length ? `<div class="next"><h3>${ic("list-checks", "sm")}할 일</h3><ol>${list}</ol></div>` : ""}`;
   $$("#opsHero [data-next]").forEach(b => b.onclick = () => runNext(b.dataset.next)); }
 const rowLab = r => `${mmdd(r.day)}${r.replay ? " 재현" : S.tl && r.day === S.tl.today ? " 오늘" : ""}`;
 const lastRowWith = key => ((S.tl && S.tl.days) || []).find(r => r[key].some(x => x != null));
+
+/* 탭 묶음 — 누르기·화살표로 고른다. sel(키) 를 돌려준다 */
+function tabset(list, attr, onSel) {
+  const tabs = () => $$("[role=tab]", list);
+  const sel = k => tabs().forEach(b => { const on = b.dataset[attr] === k; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1;
+    $("#" + b.getAttribute("aria-controls")).hidden = !on; if (on) onSel(k); });
+  tabs().forEach(b => { b.onclick = () => sel(b.dataset[attr]); b.onkeydown = e => { const k = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0; if (!k) return;
+    e.preventDefault(); const vis = tabs().filter(t => t.offsetParent !== null), i = vis.indexOf(b), n = vis[(i + k + vis.length) % vis.length]; sel(n.dataset[attr]); n.focus(); }; });
+  return sel; }
+/* 오늘 — 사건 · 경보. 사람이 고르기 전에는 사건이 없고 경보만 있으면 경보를 먼저 보인다 */
+$("#tt-inc").dataset.t = "inc"; $("#tt-al").dataset.t = "al";
+const todayTab = tabset($("#todaySeg"), "t", k => { S.todayTab = k; });
+/* 자세히 — 처리 여유 · 상태 기록 · 장비 · 시험(운영자). 고른 탭은 이 브라우저에 남는다 */
+const MORE_KEY = "talog.more";
+const moreTab = tabset($("#moreTabs"), "more", k => { try { localStorage.setItem(MORE_KEY, k); } catch (e) { /* 사생활 보호 모드 */ }
+  if ((k === "cap" || k === "strip") && S.tl) renderStrip(S.tl); });
+function initMore() { let k = "cap"; try { k = localStorage.getItem(MORE_KEY) || "cap"; } catch (e) { k = "cap"; }
+  if (!$(`#moreTabs [data-more="${k}"]`) || (k === "test" && !atLeast("operator"))) k = "cap"; moreTab(k); }
 const lastIdx = arr => { for (let h = arr.length - 1; h >= 0; h--) if (arr[h] != null) return h; return -1; };
-function renderKpis(st) {
-  const inc = st.incidents, crit = inc.filter(r => r.severity === "crit").length, warn = inc.filter(r => r.severity === "warn").length;
-  const RN = lastRowWith("n"), hN = RN ? lastIdx(RN.n) : -1, prev = hN > 0 && RN.n[hN - 1] != null ? RN.n[hN - 1] : null;
-  const live = liveCapacity(st), minCap = live.length ? live.reduce((a, b) => b.pct < a.pct ? b : a) : null;
-  let tolV = null, tolWhere = "그룹별 기준선을 잡는 중", tolSp = "", tolLive = false;
-  if (minCap) { tolV = minCap.pct; tolLive = true; tolWhere = `지금 · 그룹 ${esc(String(minCap.group))}`; }
-  else { const RT = lastRowWith("tol_pct"); if (RT) { const h = lastIdx(RT.tol_pct); tolV = RT.tol_pct[h]; tolWhere = `${rowLab(RT)} ${h}시 기록`; tolSp = spark(RT.tol_pct, {warnBelow: 20}); } }
-  // 지금 값이 아니면(지난 기록·재현) '지금'이라고 말하지 않는다
-  const tolX = tolV == null ? "기동 뒤 약 70분이 지나면 그룹마다 평소 상태를 잡고 계산합니다."
-    : !tolLive ? `지난 기록입니다 — 그때는 ${tolV < 0 ? "검사 시작 거부가 날 수 있는 상태였습니다" : tolV < 20 ? "잠깐의 지연으로도 거부가 날 수 있었습니다" : tolV < 40 ? "여유가 줄어 있었습니다" : "여유가 있었습니다"}.`
-    : tolV < 0 ? "지금도 검사 시작 거부가 날 수 있는 상태입니다." : tolV < 20 ? "잠깐의 지연으로도 거부가 날 수 있습니다."
-    : tolV < 40 ? "여유가 줄었습니다 — 추세를 지켜보십시오." : "잠깐 느려져도 거부 없이 버틸 수 있습니다.";
-  const J = st.judge;
-  const tiles = [
-    {icon: "siren", label: "오늘 사건", tip: "incident", value: `${inc.length}<small>건</small>`,
-      st: crit ? ["crit", "확인 필요"] : warn ? ["warn", "주의"] : ["ok", "없음"],
-      line: `<span class="sev crit">심각 ${crit}</span><span class="sev warn">주의 ${warn}</span>`,
-      x: crit ? "심각 사건부터 원인과 권고 조치를 확인하십시오." : "경보를 묶어 원인·조치를 붙인 기록입니다."},
-    {icon: "activity", label: "시간당 검사", value: hN >= 0 ? `${RN.n[hN].toLocaleString()}<small>건</small>` : "—", st: null,
-      line: hN >= 0 ? `${rowLab(RN)} ${hN}시${prev != null ? ` · 앞 시간 ${prev.toLocaleString()}건` : ""}` : "검사 기록 없음",
-      x: "한 시간에 들어온 검사 수입니다. 그룹이 여럿이어도 한 번만 셉니다.", sp: RN ? spark(RN.n) : ""},
-    {icon: "gauge", label: "버틸 여유 (가장 낮은 그룹)", tip: "tolerance", value: tolV != null ? `${pctNum(tolV)}<small>%</small>` : "—",
-      st: tolV == null ? null : tolWord(tolV), line: tolWhere, x: tolX, sp: tolSp},
-    {icon: "check-circle", label: "규칙·AI 판단 일치", tip: "gate", value: J.llm ? `${J.agree}<small>/ ${J.incidents}</small>` : "규칙만",
-      st: !J.llm || !J.incidents ? null : J.agree < J.incidents ? ["warn", "다른 판단 있음"] : ["ok", "모두 일치"],
-      line: J.llm ? `규칙 + ${esc(J.model)} · 오늘` : "로컬 AI 교차 확인 꺼짐",
-      x: J.llm ? "규칙 진단과 로컬 AI 가 같은 원인을 고른 사건 수입니다." : "판단은 규칙 진단만 합니다 — 설정 → 판단에서 켭니다."}];
-  $("#opsKpis").innerHTML = tiles.map(t => `<div class="kpi"><span class="kl">${ic(t.icon, "sm")}${esc(t.label)}${t.tip ? term(t.tip) : ""}</span><span class="kv">${t.value}</span><span class="ks">${t.st ? `<span class="kst ${t.st[0]}">${esc(t.st[1])}</span>` : ""}${t.line}</span><span class="kx">${esc(t.x)}</span>${t.sp || ""}</div>`).join(""); }
-function renderFlow(st) {
-  const C = st.collect, D = st.detect, J = st.judge, N = st.notify;
-  const stages = [
-    ["s-collect", 1, "수집", !st.running ? "" : C.exists ? "ok" : "warn", C.exists ? `${C.files}개 파일` : "오늘 폴더 없음", `${esc(C.tracking)} · 마지막 ${esc(C.last_read || "-")}`],
-    ["s-detect", 2, "탐지", D.crit ? "crit" : D.warn ? "warn" : st.running ? "ok" : "", `심각 ${D.crit} · 주의 ${D.warn}`, `규칙 ${D.rules}개`],
-    ["s-judge", 3, "판단", J.llm && J.alive === false ? "warn" : st.running ? "ok" : "", `사건 ${J.incidents}`, J.llm ? `룰 + ${esc(J.model)}${J.alive === false ? " · 서버 없음" : ""}` : "룰 진단만"],
-    ["s-notify", 4, "알림", N.provider === "off" ? "warn" : N.failed ? "crit" : "ok", N.provider === "off" ? "메일 꺼짐" : `발송 ${N.sent}`, N.provider === "off" ? (N.toast ? "화면 토스트만" : "알림 없음") : `${esc(N.label)} · ${N.to}명`]];
-  $("#flow").innerHTML = stages.map(([sec, n, name, s2, big, l]) => `<button type="button" class="stage" data-sec="${sec}" title="설정 → ${name}"><span class="st-h"><span class="st-n">${n}</span><span class="st-t">${name}</span><span class="badge ${s2}">${STK[s2]}</span></span><span class="st-big">${big}</span><span class="st-l">${l}</span></button>`).join("");
-  $$("#flow .stage").forEach(s => s.onclick = () => goSec(s.dataset.sec)); }
+/** 오늘 — 사건(상태 칩 · 원인 한 줄)과 경보. 사건 줄을 누르면 사건 화면으로 */
 function renderOpsLists(st) {
-  $("#opsIncMeta").textContent = st.incidents.length ? `${st.incidents.length}건` : "";
-  $("#opsInc").innerHTML = st.incidents.length ? st.incidents.map(r => `<tr class="click" tabindex="0" data-id="${esc(r.id)}"><td><div class="li">${sevTag(r.severity)}<b>${esc(r.title)}</b><span class="when">${esc(r.time)}</span><div class="li-sub">${esc(r.cause || "")}</div><div class="li-meta">${gateTag(r.gate, r.mode)}<span>메일</span>${mailTag(r.mail)}</div></div></td></tr>`).join("")
-    : emptyRow(1, "오늘 사건 없음", st.running ? "감시 중입니다 — 경보가 사건으로 묶이면 여기에 나옵니다. 지난 기록은 '사건'에서 봅니다." : "감시가 정지되어 있습니다.", "check-circle");
+  const inc = st.incidents, al = st.alerts;
+  $("#todayIncN").textContent = inc.length; $("#todayAlN").textContent = al.length;
+  if (!S.todayTab) todayTab(!inc.length && al.length ? "al" : "inc");
+  $("#opsInc").innerHTML = inc.length ? inc.map(r => `<tr class="click" tabindex="0" data-id="${esc(r.id)}"><td><div class="li">${sevTag(r.severity)}<b>${esc(r.title)}</b><span class="when">${esc(r.time)}</span><div class="li-sub">${stateTag(r.state)}<span>${esc(r.cause || "")}</span></div></div></td></tr>`).join("")
+    : emptyRow(1, "오늘 사건 없음", st.running ? "경보가 사건으로 묶이면 여기에 나옵니다. 지난 기록은 '지난 사건까지 보기' 에서 봅니다." : "감시가 정지되어 있습니다.", "check-circle");
   $$("#opsInc tr.click").forEach(tr => tr.onclick = () => { go("inc", {focus: false}); openInc(tr.dataset.id, false); });
-  $("#opsAlertMeta").textContent = st.alerts.length ? `최근 ${st.alerts.length}건` : "";
-  $("#opsAlerts").innerHTML = st.alerts.length ? st.alerts.slice(0, 14).map(a => `<li class="${esc(a.severity)}"><span class="tt">${esc((a.time || "").slice(6) || a.time)}</span><span class="dot"></span><div><div class="row" style="gap:6px">${sevTag(a.severity)}<b>${esc(a.title)}</b></div><div class="sub">${esc(a.evidence)}</div></div></li>`).join("")
-    : `<li style="display:block">${emptyBox(st.running ? "경보 없음" : "감시 정지", st.running ? "정상 감시 중입니다." : "위 막대의 '감시 시작'으로 다시 켭니다.", st.running ? "check-circle" : "square")}</li>`; }
+  $("#opsAlerts").innerHTML = al.length ? al.slice(0, 14).map(a => `<li class="${esc(a.severity)}"><span class="tt">${esc((a.time || "").slice(6) || a.time)}</span><span class="dot"></span><div><div class="row" style="gap:6px">${sevTag(a.severity)}<b>${esc(a.title)}</b></div><div class="sub">${esc(a.evidence)}</div></div></li>`).join("")
+    : `<li style="display:block">${emptyBox(st.running ? "오늘 경보 없음" : "감시 정지", st.running ? "정상 감시 중입니다." : "위 막대의 '감시 시작'으로 다시 켭니다.", st.running ? "check-circle" : "square")}</li>`; }
 function renderGpu(st) { const gf = st.gpu_free || [];
   $("#gpuBox").innerHTML = gf.length ? gf.map(g => { const used = g.total - g.free, pct = 100 * used / g.total; const t = (st.gpu.find(x => x.gpu === g.gpu) || {}).temp;
     return `<div class="gpu-row"><b>GPU${g.gpu}</b><div class="bar" role="img" aria-label="VRAM ${pct.toFixed(0)}% 사용"><i class="${pct > 85 ? "hi" : ""}" style="width:${pct.toFixed(0)}%"></i></div><span class="mono">${(used / 1024).toFixed(1)}/${(g.total / 1024).toFixed(0)} GB · ${g.util}%${t != null ? " · " + t + "°C" : ""}</span></div>`; }).join("")
@@ -168,7 +161,7 @@ function capSummary(rows) {
     html: parts.length ? `${xs.length}개 그룹 중 ${parts.join(" · ")}. 막대가 오른쪽 끝(한계)에 닿으면 그 그룹에 검사 시작 거부가 납니다.`
       : `${xs.length}개 그룹 모두 여유가 있습니다 — 느린 검사도 한계의 60% 안에서 끝납니다.`};
 }
-async function loadTimeline() { try { S.tl = await api("/api/timeline?days=7"); } catch (e) { return; } renderStrip(S.tl); if (S.st) renderKpis(S.st); loadBrief(); }
+async function loadTimeline() { try { S.tl = await api("/api/timeline?days=7"); } catch (e) { return; } renderStrip(S.tl); loadBrief(); }
 function renderStrip(T) {
   const rows = T.days || [];
   $("#opsStrip").innerHTML = rows.map(r => {

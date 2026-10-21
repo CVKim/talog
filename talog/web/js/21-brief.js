@@ -1,7 +1,8 @@
-/* ── 에이전트 브리핑 (운영 현황 맨 위) ─────────────────────────────────
+/* ── 에이전트 브리핑 (운영 현황 '지금' 카드 아랫칸) ─────────────────────────────────
    talog 에이전트가 '지난번 확인 뒤 무슨 일이 있었나 · 오늘 한 일 · 처리 여유 전망 · 마무리 안 된 사건'을 문장으로 정리한다.
    글은 모두 상태·기록 데이터로 만든다 — LLM 을 쓰지 않으므로 지어낸 숫자가 없다. 지난번 확인 시각은 이 브라우저에 남긴다
-   (localStorage, 실패해도 동작). 버튼은 '지금 할 일'과 같은 이동(runNext)을 쓴다. */
+   (localStorage, 실패해도 동작). 버튼은 맨 위 카드와 같은 이동(runNext)을 쓰되, 맨 위 제목·'오늘' 목록이 이미 여는 사건에는
+   버튼을 다시 달지 않는다 — 같은 사건으로 가는 버튼이 한 화면에 여러 개 있으면 무엇을 눌러야 할지 헷갈린다. */
 const SEEN_KEY = "talog.seen", FOLD_KEY = "talog.brief";
 let seenPrev = null, seenSaved = 0, briefHtml = "";
 try { seenPrev = +localStorage.getItem(SEEN_KEY) || null; } catch (e) { seenPrev = null; }
@@ -22,7 +23,7 @@ function briefItems(st) {
   if (seenPrev) {
     const fresh = rows.filter(r => { const d = incDate(r); return d && d.getTime() > seenPrev; }), c = fresh.filter(r => r.severity === "crit");
     out.push(fresh.length
-      ? {icon: "siren", cls: c.length ? "crit" : "warn", text: `지난번 확인(${fmtSeen(seenPrev)}) 뒤 새 사건 <b>${fresh.length}건</b>${c.length ? ` — 심각 ${c.length}건, 가장 최근 ${esc(c[0].time)} ${esc(c[0].title)}` : ""}.`, btn: ["사건 보기", "inc:" + (c[0] || fresh[0]).id]}
+      ? {icon: "siren", cls: c.length ? "crit" : "warn", text: `지난번 확인(${fmtSeen(seenPrev)}) 뒤 새 사건 <b>${fresh.length}건</b>${c.length ? ` — 그중 심각 ${c.length}건` : ""}.`}
       : {icon: "check-circle", cls: "ok", text: `지난번 확인(${fmtSeen(seenPrev)}) 뒤 새 사건은 없습니다.`});
   } else out.push({icon: "sparkles", cls: "", text: "처음 여셨습니다 — 이 설비의 오늘 기록을 정리했습니다. 다음부터는 마지막으로 본 뒤 생긴 일을 먼저 알려 드립니다."});
   // 2) 오늘 한 일
@@ -43,7 +44,7 @@ function briefItems(st) {
   // 4) 마무리 안 된 사건 — 사람의 해결 기록이 다음 판단의 근거가 된다
   const open = rows.filter(OPEN);
   if (open.length) out.push({icon: "list-checks", cls: open.some(r => r.severity === "crit") ? "warn" : "",
-    text: `마무리 안 된 사건 <b>${open.length}건</b> — 원인과 한 조치를 '해결 기록'으로 남기면 다음에 비슷한 사건이 날 때 talog 가 함께 보여 드립니다.`, btn: ["사건 보기", "inc:" + open[0].id]});
+    text: `최근 7일 마무리 안 된 사건 <b>${open.length}건</b> — 원인과 한 조치를 '해결 기록'으로 남기면 다음에 비슷한 사건이 날 때 talog 가 함께 보여 드립니다.`, btn: ["마무리하러 가기", "open"]});
   else if (rows.length) out.push({icon: "check-circle", cls: "ok", text: "최근 7일 사건은 모두 마무리됐습니다."});
   return out; }
 function renderBrief(st) {

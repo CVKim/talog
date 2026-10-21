@@ -1,6 +1,7 @@
 /* ── 분석 ── */
 .job{margin-top:16px;border:1px solid var(--line);border-radius:var(--r-lg);padding:12px;background:var(--surface-2)}
 .job-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:13px}
+.split.one{grid-template-columns:minmax(0,1fr)}
 .rowact{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .rep-t{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
 .daychips{display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 12px}

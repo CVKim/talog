@@ -71,13 +71,18 @@ table.keys td{font-size:13px;color:var(--sub);padding:8px 0}
 .kpi .kx{font-size:12px;color:var(--mute);line-height:1.5}
 
 /* 사건 요약 — 무슨 일 · 왜 · 지금 할 일 · 판단 확신 */
-.isum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 14px}
-.isum-i{border:1px solid var(--line);border-radius:var(--r-lg);padding:11px 13px;background:var(--surface);min-width:0}
-.isum-i .k{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--mute);margin-bottom:3px}
-.isum-i b{display:block;font-size:14px;line-height:1.45}
-.isum-i .d{display:block;margin-top:3px;font-size:12.5px;color:var(--sub);line-height:1.55}
-.isum-i.now{border-color:var(--brand-line);background:var(--brand-soft)}
-.isum-i.now .k{color:var(--brand-ink)}
+/* 사건 요약 — 세 줄(무슨 일 · 원인 · 할 일). 왼쪽 이름표, 오른쪽 내용. 할 일 줄만 주황 바탕 */
+.isum{margin:0 0 14px;border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden}
+.isum-r{display:grid;grid-template-columns:96px minmax(0,1fr);gap:4px 14px;padding:12px 14px;border-top:1px solid var(--line);background:var(--surface)}
+.isum-r:first-child{border-top:0}
+.isum-r dt{display:flex;align-items:flex-start;gap:6px;font-size:12.5px;font-weight:700;color:var(--mute);padding-top:2px}
+.isum-r dt .ic{margin-top:2px}
+.isum-r dd{margin:0;min-width:0}
+.isum-r b{display:block;font-size:14.5px;line-height:1.45}
+.isum-r .d{display:block;margin-top:3px;font-size:12.5px;color:var(--sub);line-height:1.55}
+.isum-r .gv{display:inline-flex;align-items:center;gap:2px;margin-top:6px}
+.isum-r ol.acts{margin:0;padding-left:20px;font-size:14px}.isum-r ol.acts li{margin:2px 0}
+.isum-r.todo{background:var(--brand-soft)}.isum-r.todo dt{color:var(--brand-ink)}
 
 /* 분석 단계 — ① 폴더 ② 할 일 ③ 결과 (ux #81) */
 .steps-h{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px;padding:0;list-style:none}
@@ -104,7 +109,7 @@ dialog.tour h2{font-size:16px;margin-bottom:4px}
 dialog.tour p{margin:0;color:var(--sub);line-height:1.6;font-size:13.5px}
 .tour-act{display:flex;gap:8px;align-items:center;margin-top:14px}
 .tour-hl{outline:3px solid var(--brand)!important;outline-offset:4px;border-radius:var(--r-lg)}
-@media (max-width:1023px){.isum{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:599px){.isum-r{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:899px){.ana-opts{grid-template-columns:minmax(0,1fr)}.next li{grid-template-columns:22px minmax(0,1fr)}.next li .btn{grid-column:2;justify-self:start}}
 /* 스킬 카드 — 남기는 것·걸리는 시간 (기대치를 미리 알린다) */
 .act .skl-t{display:flex;align-items:center;gap:5px;margin-top:5px;font-size:12px;color:var(--ink-2)}

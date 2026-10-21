@@ -12,7 +12,8 @@ function go(v, opt = {}) { const same = S.view === v; if (!same || opt.force) sh
   if (opt.push !== false) { const h = "#" + v + (opt.sub ? "/" + opt.sub : ""); if (location.hash !== h) history[same ? "replaceState" : "pushState"](null, "", h); }
   if (!same && !opt.keepScroll) window.scrollTo(0, 0);
   if (opt.focus && !same) $("#pageTitle").focus({preventScroll: true}); }
-function scrollSec(id) { setTimeout(() => { const el = $("#" + id); if (el) el.scrollIntoView({behavior: reduceMotion() ? "auto" : "smooth", block: "start"}); }, 40); }
+function scrollSec(id) { if (id === "s-detect" && $("#rulesBox")) $("#rulesBox").open = true;       // 규칙 피드백·탐지로 오면 접힌 표를 편다
+  setTimeout(() => { const el = $("#" + id); if (el) el.scrollIntoView({behavior: reduceMotion() ? "auto" : "smooth", block: "start"}); }, 40); }
 function goSec(id) { go("set", {sub: id, keepScroll: true}); scrollSec(id); }
 function applyHash() { const [v0, a, b] = decodeURIComponent(location.hash.slice(1)).split("/"); const v = VIEWS[v0] && (v0 !== "ai" || isDev()) ? v0 : "ops";
   if (v !== S.view) show(v);
