@@ -5,7 +5,7 @@ talos vision software. It reads the logs in real time, detects abnormal behaviou
 cause, and alerts the right people. The same console builds diagnostic reports for any log folder. On a
 developer PC it also lets Claude investigate incidents and raw logs through your existing Claude subscription.
 
-![version](https://img.shields.io/badge/version-2.3.0-orange)
+![version](https://img.shields.io/badge/version-2.4.0-orange)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 
@@ -19,6 +19,10 @@ developer PC it also lets Claude investigate incidents and raw logs through your
 
 ## Why it works this way
 
+- **One glance, not a dashboard (v2.4).** The Operations screen answers three questions in order — *is it OK*
+  (one status line with one button), *what should I do* (at most three to-dos), *what happened today* (incidents
+  and alerts). Charts and history sit in tabs under "Details"; an incident opens as three lines (what happened ·
+  cause · what to do); advanced settings are folded. Nothing says the same thing twice on one screen.
 - **An agent you can watch and teach (v2.3).** The Operations screen opens with an agent briefing (what happened
   since you last looked, today's work, the tightest capacity group); every incident shows the agent's step-by-step
   trace; people close incidents as resolved or false alarm, and resolutions become cases the agent attaches to the
