@@ -5,7 +5,7 @@ talos vision software. It reads the logs in real time, detects abnormal behaviou
 cause, and alerts the right people. The same console builds diagnostic reports for any log folder. On a
 developer PC it also lets Claude investigate incidents and raw logs through your existing Claude subscription.
 
-![version](https://img.shields.io/badge/version-2.4.0-orange)
+![version](https://img.shields.io/badge/version-2.5.0-orange)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 
@@ -19,6 +19,15 @@ developer PC it also lets Claude investigate incidents and raw logs through your
 
 ## Why it works this way
 
+- **One click for the common jobs, plus an early health score (v2.5).** An incident closes with one click
+  ("resolve as diagnosed" records talog's cause and first action and saves the case; "false alarm" likewise) with
+  an undo toast that also removes the saved case. If today's log folder is missing, talog finds talos log folders
+  on the PC's fixed drives and offers "start with this folder". An **equipment health** score (worst item wins,
+  stdlib only) sits next to the status line: an upward CUSUM on each group's hourly p99 hold time against its
+  baseline (with +10 % / +15 % gates), today's headroom against the largest past spike, a p-chart on the NG
+  rate plus PSI on the defect mix, GPU temperature and memory slope, and unclosed incidents — each with a reason
+  and a to-do. Alert rules are unchanged and no time-to-limit forecast is shown. A **daily sheet** (one click,
+  printable, offline) summarises health, counts, incidents and the hourly table for shift hand-over.
 - **One glance, not a dashboard (v2.4).** The Operations screen answers three questions in order — *is it OK*
   (one status line with one button), *what should I do* (at most three to-dos), *what happened today* (incidents
   and alerts). Charts and history sit in tabs under "Details"; an incident opens as three lines (what happened ·
@@ -99,6 +108,7 @@ talog/
   watch/              live monitoring: live.py (tail.py → rules.py RuleEngine → alerts.py Notifier → agent),
                       replay.py (replay, capacity_review), gpu.py, status.py, selfcheck.py, cli.py
   capacity.py         capacity headroom model: per-group baseline, hourly KPIs, persisted state
+  health.py           equipment health: CUSUM drift, headroom vs past spikes, NG p-chart + defect PSI, devices
   agent/              incident analysis: incident.py runs evidence.py → diagnoser.py (rules) →
                       analyst.py (LLM second opinion) → gate.py (agreement); factcheck.py checks numbers
   rules/              events.yaml (log event rules) · runbook.yaml (causes, actions, owners)
@@ -111,7 +121,8 @@ talog/
   mailer.py, graphmail.py, secret.py
                       SMTP / Microsoft 365 Graph / Gmail; secrets stored only as Windows DPAPI ciphertext
   console/            local web console (127.0.0.1)
-    app.py            Console = mixins: ops · incidents · analysis · claude · checks · modes · feedback
+    app.py            Console = mixins: ops · incidents · analysis · claude · checks · modes · feedback ·
+                      setup (find log folders) · health (equipment health) · daily (printable day sheet)
     http.py           declarative GET/POST route tables; oper(…) and dev(…) mark the mode each route needs
     page.py           assembles talog/web into one offline HTML page
   web/                console sources: console.html shell · views/ · partials/ · css/NN-*.css · js/NN-*.js
@@ -141,7 +152,9 @@ Real logs from 5 sites (tyre, ball joint and bushing lines), 90k+ inspections: z
 manual audit, 37 rules cross-checked against the talos platform source, a pre-alarm 33 minutes before the
 first missed inspection in an incident replay, and rule-level root causes matching the confirmed causes of the
 PC3 0727, Tenneco 0730 and c1xx 0729 incidents. The capacity model (v2.1) warned 15.9 hours before the
-Pungsan line-2 `NoInspThread` stop of 2026-10-12 and escalated to critical 21 seconds before it.
+Pungsan line-2 `NoInspThread` stop of 2026-10-12 and escalated to critical 21 seconds before it. Replayed hour by
+hour, the equipment health score (v2.5) turned to *warn* at 13:00 on 10-11 and to *check* at 14:00 — about
+15 hours before the stop.
 
 ## Documentation
 

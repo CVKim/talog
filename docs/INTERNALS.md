@@ -74,6 +74,7 @@ talog/
     replay.py      리플레이 · capacity_review(사후 리포트용 같은 판정)
     config.py · gpu.py · wiring.py(처리 여유 상태·에이전트 연결) · selfcheck.py(설치 점검) · cli.py
   capacity.py      처리 여유 모델 — 그룹별 유휴 스레드·점유·투입 간격·풀·기준선·KPI·상태 저장
+  health.py        설비 건강(v2.5) — 시간별 KPI·기준선·판정·GPU 로 항목별 점수·이유·할 일 (아래 '설비 건강')
   tracker.py       추적 대상 선택(default/select/auto) + 로그 문구 규칙 엔진
   agent/           사건 분석 — v2.2 에서 패키지로 나눔
     incident.py    IncidentAgent: 묶음 → evidence.py 근거 → diagnoser.py 룰 진단 → analyst.py LLM 2차 의견
@@ -84,10 +85,12 @@ talog/
   mailer.py        SMTP 발송 (즉시/묶음 정책, 역할 라우팅, 후속 메일 스레드, outbox)
   secret.py        SMTP 비밀번호 DPAPI 암호화
   console/         플랫폼 콘솔 서버 (127.0.0.1, 토큰·Host 확인) — v2.2 에서 파일 하나를 패키지로 나눔
-    app.py         Console = 믹스인(ops·incidents·analysis·claude·checks·modes) + 공유 상태(__init__)
+    app.py         Console = 믹스인(ops·incidents·analysis·claude·checks·modes·feedback·setup·health·daily) + 공유 상태(__init__)
     http.py        GET_ROUTES / POST_ROUTES 표 → Console 메서드, 경로마다 oper(…)·dev(…), 리포트 서빙
     modes.py       모드 바꾸기(위로 올릴 때 PIN, talog.yaml 에 남김), 화면 저장이 모드를 못 바꾸게
     feedback.py    사건 마무리(확인·해결·오경보)·해결 기록 → 설비 사례 KB·규칙 피드백 통계 (아래 '사건 마무리·학습')
+    setup.py       처음 설정 한 번에(v2.5) — 이 PC 의 고정 드라이브에서 talos 로그 폴더 찾기 · 그 폴더로 시작
+    health.py      설비 건강에 넣을 기록 모으기(지금/지난 기록 기준, 30초 보관) · daily.py 하루 정리 한 장
     page.py        talog/web 소스 → 페이지 HTML 하나 (소스가 바뀌면 다시 합침)
     claude.py      Claude Code 실행(바로 묻기·스킬 카드·연결 시험), 구독 전용 환경, 답 수치 대조
     jobs.py        진단 리포트·경보 재현을 `talog _job` 하위 프로세스(낮은 우선순위)로
@@ -190,6 +193,33 @@ IncidentAgent: 묶음(심각=즉시 10초 / 그 밖=batch_seconds·메일 간격
   끼면 RuleEngine.pending 이 비워지기 때문이다(PC3 0727 09:28 → 09:28:46 kill).
 - 리플레이는 같은 경로를 이벤트 시각으로 동기 실행하고, 묶음 마감 시각이 지나면 그 시각의
   상태로 마감한다(다음 이벤트가 한참 뒤여도 '미래' 로그가 근거에 섞이지 않음).
+
+## 설비 건강 · 하루 정리 · 한 번에 (v2.5)
+
+```
+RuleEngine ─INSPECT_END─▶ _count_quality (inner 마다 한 번, 존 하나라도 NG 면 NG, 결함명 한 번)
+           ─hourly_rows─▶ kpi_YYYYMMDD[_replay].jsonl  = 그룹·process 줄 + {"group": "quality", n, ng, defects(상위 12)}
+HealthMixin.health() ─▶ 실시간 KPI(3시간 안) 없으면 가장 최근 재현 KPI ─▶ _health_calc(rows, basis, current)
+   drift(그룹마다 p99 vs capacity_state 기준선) · spike(여유 vs 지난 '최대 − 가운데') · quality(p-관리도 + PSI)
+   · device(GPU 온도·메모리 기울기, 지금 기준만) · open_incidents(지금 기준만) ─▶ health.summarize
+GET /api/health ─▶ {score, state, label, top, more, todo[≤3], items, basis(live|replay|none), last_hour, at, groups}
+GET /api/daily?day=YYYYMMDD&replay=0|1 ─▶ 인쇄용 HTML 한 장 (그날 끝까지의 KPI 로 _health_calc, current = 오늘 실시간일 때만)
+GET /api/setup/detect ─▶ {candidates: [{root, latest, today, files}], current} (몇 초 예산, 1분 보관)
+POST /api/setup/root {root} ─oper─▶ log_root 만 바꿔 저장 · 감시 다시 시작
+POST /api/incident/state {state ≠ resolved} ─▶ 앞 해결 기록이 사례로 저장됐으면 CaseKB.remove (되돌리기·다시 열기·오경보)
+```
+
+- 점수: 항목마다 좋음 85~100 · 주의 50~79 · 점검 20~49, 설비 점수 = 가장 낮은 항목. 같은 점수는 `rank`(한계를 넘은
+  그룹 1000 − 여유 > 심각 사건 500 > 판정 200 + z > 처리 시간 증가 %)로. `more` = 같은 종류의 주의·점검 수.
+- 누적합: 한 칸 = 기준선 p99 의 5%(최소 0.02초), k = 1, 4 주의 · 8 점검, 증가 폭 +10% · +15% 게이트(작은 고정 차이로
+  쌓이는 것을 막음). 기준선이 없으면 처음 3시간의 가운데 값. 튐 판단은 12시간 이상(검사 50건 이상 시간만).
+- 판정: 최근 2시간 vs 그 앞, p = NG/검사, z = (p − p0)/√(p0(1 − p0)/n), 3σ 주의 · 6σ 점검(1%p · 2%p 이상일 때만).
+  PSI 는 결함 상위 8개 + 기타, 빈 칸 0.5/n. 이유 줄은 늘어난 결함 중 PSI 몫이 가장 큰 것.
+- 남은 시간(언제 한계에 닿나)은 계산하지 않는다(2.2.0 근거). 경보 규칙·사건 판단은 이 결과를 쓰지 않는다.
+- 화면: `js/22-health.js`(맨 위 점수 `.hbadge`, 건강 탭, 하루 정리 링크), `js/20-ops.js`(건강 할 일 · 제목, 폴더 찾기),
+  `js/31-incident-agent.js`(해결 — 이대로 · 되돌리기 알림 `toast(msg, kind, {label, fn})`).
+- 시험: `tests/conftest.py` 가 기본 기록 폴더(`settings.DEFAULTS["data_dir"]`·`_DEFAULT_CFG["alert_dir"]`)를 시험마다 임시
+  폴더로 바꾼다 — 설정 파일 없이 만든 Console 이 실제 `D:\AIV_LOG\TalogWatch` 에 쓰지 않게.
 
 ## 처리 여유 모델 (v2.1, capacity.py)
 
@@ -370,8 +400,8 @@ python -m talog ask <out 폴더|.sqlite> [--backend auto|ollama|claude]
   대비 = bullet, 이상 표시 선, 시간 × 날짜 = 히트맵). 파일 하나·외부 리소스 없음(현장 PC 오프라인).
 - 셸: 어두운 사이드바(AIVEX 워드마크·모드 전환·설비·메뉴·빠른 이동, 테마와 무관하게 잉크색) + 위 막대(화면
   제목·설명·감시 상태·감시 시작/정지·테마). Ctrl+K 빠른 이동(`<dialog>` + listbox, 화살표·Enter).
-- 운영 현황(v2.4): 세 덩어리 — **지금**(상태 히어로: 색 막대 + 아이콘 + 제목 한 줄 + 버튼 하나, 할 일 최대 3개, 에이전트
-  브리핑) → **오늘**(사건 · 경보 탭) → **자세히**(탭: 처리 여유 = 추세 SVG 선(20%/40% 띠, 최저점 이름표, 컨테이너 너비로
+- 운영 현황(v2.4~2.5): 세 덩어리 — **지금**(상태 히어로: 색 막대 + 아이콘 + 제목 한 줄 + 버튼 하나, 오른쪽 설비 건강 점수,
+  할 일 최대 3개, 에이전트 브리핑) → **오늘**(사건 · 경보 탭) → **자세히**(탭: 건강(항목 목록 · 하루 정리 링크) · 처리 여유 = 추세 SVG 선(20%/40% 띠, 최저점 이름표, 컨테이너 너비로
   다시 그려 글자 크기 유지) + 그룹별 bullet(점유 p99 / 한계, 60·80% 구간) · 상태 기록(날짜 × 24칸, 셀 색 = 그 시간 최고
   등급, title·aria 요약·표 보기) · 장비(GPU) · 시험·실행 로그(운영자 이상)). 2.3 의 숫자 카드 4개·단계 카드 4개는
   히어로·브리핑과 같은 사실을 되풀이해 뺐다(`tests/test_simple_ui.py`).

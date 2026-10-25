@@ -49,6 +49,8 @@ Python changes need a console restart. Page changes under `talog/web/` show up o
 | Live monitoring and rules | `talog/watch/`, `talog/capacity.py`, `talog/rules/events.yaml` | `watch/rules.py` (`RuleEngine`), `watch/live.py` (`LiveWatch`) |
 | Incident judgement | `talog/agent/`, `talog/rules/runbook.yaml` | `agent/diagnoser.py` (`RuleDiagnoser`), `agent/factcheck.py` (`fact_check`) |
 | Incident closing and learning | `talog/console/feedback.py`, `talog/casekb.py`, `web/js/31-incident-agent.js` | `set_incident_state`, `search_all` |
+| Equipment health and day sheet | `talog/health.py`, `talog/console/health.py`, `console/daily.py`, `web/js/22-health.js` | `health.summarize`, `HealthMixin._health_calc` |
+| First-run log folder | `talog/console/setup.py`, `web/js/20-ops.js` | `find_log_roots`, `useFoundRoot` |
 | Offline reports | `talog/events.py` → `assemble.py` → `diagnose.py` → `report/` | `cli.scan_day`, `report/document.py` (`render`) |
 | Console backend | `talog/console/` | `app.py` (state), `http.py` (routes) |
 | Console frontend | `talog/web/` | `console.html` (shell), `js/00-core.js` (helpers) |
@@ -87,7 +89,7 @@ The `watch`, `agent` and `report` packages re-export every name of the former si
 ### Add a console API endpoint
 
 1. Add the method to the mixin that owns the data (`talog/console/ops.py`, `incidents.py`, `analysis.py`,
-   `claude.py`, `checks.py`, `modes.py` or `feedback.py`). Shared state lives in `Console.__init__` (`app.py`) only.
+   `claude.py`, `checks.py`, `modes.py`, `feedback.py`, `setup.py`, `health.py` or `daily.py`). Shared state lives in `Console.__init__` (`app.py`) only.
 2. Add one line to `GET_ROUTES` or `POST_ROUTES` in `talog/console/http.py`. Return a dict for a 200 JSON
    response, or `(status, body[, content_type])`. Raise `FileNotFoundError` for a 404.
 3. Decide which mode may call it and say so in the table:
@@ -146,4 +148,8 @@ The `watch`, `agent` and `report` packages re-export every name of the former si
   Claude Code's `stream-json` events. Tests never call the real Claude.
 - `tests/test_access.py` covers the three modes, the PIN and the route guards over HTTP (with a test PIN).
 - `tests/test_mcp.py` speaks JSON-RPC to the MCP server directly (both protocol eras).
-- Tests write only to pytest's `tmp_path`.
+- Tests write only to pytest's `tmp_path`. `tests/conftest.py` points the default data folder
+  (`settings.DEFAULTS["data_dir"]`, the engine's `alert_dir`) at a fresh temporary folder for every test, so a
+  `Console` built without a settings file cannot write to the real `D:\AIV_LOG\TalogWatch`.
+- `tests/test_health.py` covers the health engine on hand-made series (CUSUM start time, small-offset gate, spike
+  comparison, p-chart and PSI, tie order), the hourly quality rows of `RuleEngine` and the day sheet.
