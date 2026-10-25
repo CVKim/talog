@@ -15,14 +15,16 @@
   </div>
 
   <div class="card more" id="opsMore" aria-labelledby="moreT">
-    <div class="chead"><h2 id="moreT">자세히</h2><span class="meta">그래프 · 기록 · 장비 — 고른 탭은 다음에도 그대로입니다</span></div>
+    <div class="chead"><h2 id="moreT">자세히</h2><span class="meta">설비 건강 · 그래프 · 기록 · 장비 — 고른 탭은 다음에도 그대로입니다</span></div>
     <div class="tabs" role="tablist" id="moreTabs" aria-label="자세히 보기">
+      <button type="button" role="tab" id="mt-health" aria-controls="mp-health" data-more="health">건강</button>
       <button type="button" role="tab" id="mt-cap" aria-controls="mp-cap" data-more="cap">처리 여유</button>
       <button type="button" role="tab" id="mt-strip" aria-controls="mp-strip" data-more="strip">상태 기록</button>
       <button type="button" role="tab" id="mt-gpu" aria-controls="mp-gpu" data-more="gpu">장비</button>
       <button type="button" role="tab" id="mt-test" aria-controls="mp-test" data-more="test" class="oper-only">시험 · 실행 로그</button>
     </div>
-    <div role="tabpanel" id="mp-cap" aria-labelledby="mt-cap">
+    <div role="tabpanel" id="mp-health" aria-labelledby="mt-health"><div id="healthBox"><span class="sk"></span><span class="sk" style="width:60%"></span></div></div>
+    <div role="tabpanel" id="mp-cap" aria-labelledby="mt-cap" hidden>
       <div class="grid g2">
         <div class="pane"><div class="chead"><h3>처리 여유 추세<span data-tip="tolerance"></span></h3><span class="meta" id="tolNote"></span></div><div id="opsTol"></div>
           <p class="sum" id="tolSum" aria-live="polite"></p>

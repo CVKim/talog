@@ -33,5 +33,5 @@ def test_incident_summary_and_folded_settings():
 
 def test_tour_shows_once_more_after_redesign():
     page = build_page()
-    assert 'TOUR_VER = "2.4"' in page and "done !== TOUR_VER" in page
+    assert 'TOUR_VER = "2.5"' in page and "done !== TOUR_VER" in page
     assert 'hl: "#opsKpis"' not in page and 'hl: "#opsMore"' in page

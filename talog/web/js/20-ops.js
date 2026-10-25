@@ -6,7 +6,7 @@ async function loadStatus() {
   S.st = st; applyAccess(st.access);
   $("#ver").textContent = "v" + st.version; $("#siteName").textContent = st.site || "설비 이름 미지정"; $("#siteData").textContent = st.data_dir || "";
   $("#runText").textContent = st.running ? "감시 중" : "정지"; $("#runPill").className = "live " + (st.running ? "on" : "");
-  syncRunBtn();
+  syncRunBtn(); maybeFindRoot(st); loadHealth();
   renderHero(st); renderBrief(st); renderOpsLists(st); renderCapacity(); renderGpu(st); setTitle();
   const n = st.incidents.filter(r => r.severity === "crit").length; $("#incCnt").textContent = n; $("#incCnt").classList.toggle("hidden", !n); $("#incCnt").setAttribute("aria-label", `오늘 심각 사건 ${n}건`);
   if (st.detect.pattern_errors && st.detect.pattern_errors.length && !S.patWarned) { S.patWarned = true; toast("규칙 설정 오류: " + st.detect.pattern_errors.join(" / "), "err"); }
@@ -33,23 +33,37 @@ function syncRunBtn() { const st = S.st, rb = $("#btnRun"); if (!st || rb.getAtt
     심각 사건·경보·감시 정지는 제목과 그 옆 버튼이 말한다. 현장 모드는 고칠 수 없는 안내(메일 꺼짐)를 빼고,
     설정으로 가는 버튼은 '설정 보기'로 말한다. */
 function nextActions(st) {
-  const out = [], oper = atLeast("operator"), setBtn = (lab, sec) => [oper ? lab : "설정 보기", "sec:" + sec];
-  const low = liveCapacity(st).filter(r => r.pct < 20).sort((a, b) => a.pct - b.pct);
+  const out = [], oper = atLeast("operator"), setBtn = (lab, sec) => [oper ? lab : "설정 보기", "sec:" + sec], h = liveHealth();
+  if (h) (h.todo || []).forEach(t => out.push({cls: t.state === "risk" ? "crit" : "warn", icon: "gauge", text: `<b>${esc(t.text)}</b> <span class="meta">— ${esc(t.title)}</span>`, btn: null}));
+  const low = h ? [] : liveCapacity(st).filter(r => r.pct < 20).sort((a, b) => a.pct - b.pct);
   if (low.length) out.push({cls: low[0].pct < 0 ? "crit" : "warn", icon: "gauge",
     text: `<b>그룹 ${esc(String(low[0].group))}${low.length > 1 ? ` 외 ${low.length - 1}개` : ""}의 버틸 여유 ${fmtPct(low[0].pct)}</b> — 잠깐의 지연으로도 검사 시작 거부가 날 수 있습니다. 다음 정지 때 재시작을 계획하십시오.`,
     btn: ["처리 여유 보기", "cap"]});
   if (st.notify.failed) out.push({cls: "crit", icon: "mail", text: `<b>메일 발송 실패 ${st.notify.failed}건</b> — 알림 설정의 '연결 확인'으로 계정을 점검하십시오.`, btn: setBtn("알림 설정", "s-notify")});
-  if (st.running && !st.collect.exists) out.push({cls: "warn", icon: "folder-open", text: "<b>오늘 로그 폴더가 없습니다.</b> 설비가 쉬는 날이 아니라면 로그 폴더 설정을 확인하십시오.", btn: setBtn("수집 설정", "s-collect")});
+  const found = st.running && !st.collect.exists && S.setupFind && (S.setupFind.candidates || [])[0];
+  if (found) out.push({cls: "warn", icon: "folder-open", text: `<b>오늘 로그 폴더가 없습니다 — 이 PC 에서 talos 로그를 찾았습니다.</b> <span class="mono">${esc(found.root)}</span> (${found.today ? "오늘 폴더 있음" : "최근 " + esc(found.latest)})`, btn: ["이 폴더로 시작", "root"]});
+  else if (st.running && !st.collect.exists) out.push({cls: "warn", icon: "folder-open", text: "<b>오늘 로그 폴더가 없습니다.</b> 설비가 쉬는 날이 아니라면 로그 폴더 설정을 확인하십시오.", btn: setBtn("수집 설정", "s-collect")});
   if (st.judge.llm && st.judge.alive === false) out.push({cls: "warn", icon: "cpu", text: "<b>로컬 AI(LLM)가 응답하지 않습니다.</b> 판단은 규칙 진단만으로 합니다.", btn: setBtn("판단 설정", "s-judge")});
   if (oper && st.notify.provider === "off") out.push({cls: "info", icon: "mail", text: "<b>알림 메일이 꺼져 있습니다.</b> 심각 사건이 나도 담당자에게 메일이 가지 않습니다.", btn: setBtn("알림 설정", "s-notify")});
   return out.slice(0, 3);
 }
+/** 이 PC 에서 찾은 talos 로그 폴더로 감시를 맞춘다 — 운영자 일이라 현장 모드는 PIN 창이 먼저 뜬다 */
+async function useFoundRoot() { const c = S.setupFind && S.setupFind.candidates && S.setupFind.candidates[0]; if (!c) return;
+  if (!(await needMode("operator", "로그 폴더 바꾸기는 운영자 모드에서 합니다"))) return;
+  const r = await api("/api/setup/root", {root: c.root});
+  if (!r || !r.ok) { toast((r && r.error) || "바꾸지 못했습니다", "err"); return; }
+  S.setupFind = null; toast(`로그 폴더를 ${c.root} 로 맞추고 감시를 다시 시작했습니다`, "ok");
+  const s = await api("/api/settings"); setSettings(s.settings); loadStatus(); }
+/** 오늘 폴더가 없을 때 한 번만 이 PC 를 둘러본다(몇 초, 결과는 서버가 1분 둔다) */
+function maybeFindRoot(st) { if (st.collect.exists || S.setupAsked) return; S.setupAsked = true;
+  api("/api/setup/detect").then(r => { S.setupFind = r; if (S.st) renderHero(S.st); }).catch(() => {}); }
 /** 사건으로 묶이지 않은 심각 경보만 있을 때(예: GPU 과열) — 사건 수 0 과 '심각' 이 엇갈려 보이지 않게 따로 말한다 */
 const critAlertsOnly = st => st.detect.crit > 0 && !st.incidents.some(r => r.severity === "crit");
 function runNext(act) {
   if (act === "start") $("#btnRun").click();
-  else if (act === "cap") { moreTab("cap"); $("#opsMore").scrollIntoView({behavior: reduceMotion() ? "auto" : "smooth", block: "start"}); }
+  else if (act === "cap" || act === "health") { moreTab(act); $("#opsMore").scrollIntoView({behavior: reduceMotion() ? "auto" : "smooth", block: "start"}); }
   else if (act === "alerts") { todayTab("al"); $("#todayAl").closest(".card").scrollIntoView({behavior: reduceMotion() ? "auto" : "smooth", block: "start"}); }
+  else if (act === "root") useFoundRoot();
   else if (act === "open") { go("inc", {focus: false}); if (!$("#incOpen").checked) { $("#incOpen").checked = true; S.incOpen = true; if (S.incRows) renderIncList(); } }
   else if (act.startsWith("sec:")) goSec(act.slice(4));
   else if (act.startsWith("inc:")) { go("inc", {focus: false}); openInc(act.slice(4), false); }
@@ -65,12 +79,15 @@ function renderHero(st) {
   else if (critAlertsOnly(st)) { cls = "crit"; icon = "alert"; title = `심각 경보 ${D.crit}건`; sub = D.last ? D.last.title : ""; btn = ["경보 보기", "alerts", "alert"]; }
   else if (!st.collect.exists) { cls = "warn"; icon = "folder-open"; title = "오늘 로그를 기다리는 중입니다"; sub = "로그 폴더에 오늘 날짜 폴더가 생기면 자동으로 읽기 시작합니다."; }
   else if (D.warn) { cls = "warn"; icon = "alert"; title = `주의 경보 ${D.warn}건`; sub = D.last ? `마지막: ${D.last.title}` : ""; btn = ["경보 보기", "alerts", "alert"]; }
+  else if (liveHealth() && liveHealth().state !== "ok") { const h = liveHealth(); cls = h.state === "risk" ? "crit" : "warn"; icon = "gauge";
+    title = h.state === "risk" ? `점검이 필요합니다 — ${h.top.title}` : `곧 손볼 곳이 있습니다 — ${h.top.title}`;
+    sub = h.top.reason + (h.more ? ` · 같은 흐름 ${h.more}곳 더` : ""); btn = ["건강 보기", "health", "gauge"]; }
   else { cls = "ok"; icon = "check-circle"; title = "정상 — 지켜보는 중입니다"; sub = critDone ? `오늘 심각 사건 ${critDone}건은 모두 마무리됐습니다.` : "오늘 경보·사건이 없습니다."; }
   const acts = nextActions(st);
-  const list = acts.map((a, i) => `<li class="${a.cls}">${ic(a.icon)}<span class="nt">${a.text}</span><button class="btn sm${i === 0 && a.cls === "crit" ? " primary" : ""}" type="button" data-next="${esc(a.btn[1])}">${esc(a.btn[0])}${ic("chevron-right", "sm")}</button></li>`).join("");
+  const list = acts.map((a, i) => `<li class="${a.cls}${a.btn ? "" : " nob"}">${ic(a.icon)}<span class="nt">${a.text}</span>${a.btn ? `<button class="btn sm${i === 0 && a.cls === "crit" ? " primary" : ""}" type="button" data-next="${esc(a.btn[1])}">${esc(a.btn[0])}${ic("chevron-right", "sm")}</button>` : ""}</li>`).join("");
   $("#opsHero").className = "hero " + cls;
   $("#opsHero").innerHTML = `<div class="hi">${ic(icon)}</div><div class="ht"><h2>${esc(title)}</h2><p>${esc(sub)}</p>${btn ? `<button class="btn${cls === "crit" || cls === "idle" ? " primary" : ""} hbtn" type="button" data-next="${esc(btn[1])}">${ic(btn[2])}${esc(btn[0])}</button>` : ""}</div>
-    <div class="hmeta"><span>마지막 읽음 ${esc(st.collect.last_read || "-")}</span><span>가동 ${esc(up)}</span></div>
+    <div class="hside">${healthBadge()}<div class="hmeta"><span>마지막 읽음 ${esc(st.collect.last_read || "-")}</span><span>가동 ${esc(up)}</span></div></div>
     ${acts.length ? `<div class="next"><h3>${ic("list-checks", "sm")}할 일</h3><ol>${list}</ol></div>` : ""}`;
   $$("#opsHero [data-next]").forEach(b => b.onclick = () => runNext(b.dataset.next)); }
 const rowLab = r => `${mmdd(r.day)}${r.replay ? " 재현" : S.tl && r.day === S.tl.today ? " 오늘" : ""}`;
@@ -87,12 +104,12 @@ function tabset(list, attr, onSel) {
 /* 오늘 — 사건 · 경보. 사람이 고르기 전에는 사건이 없고 경보만 있으면 경보를 먼저 보인다 */
 $("#tt-inc").dataset.t = "inc"; $("#tt-al").dataset.t = "al";
 const todayTab = tabset($("#todaySeg"), "t", k => { S.todayTab = k; });
-/* 자세히 — 처리 여유 · 상태 기록 · 장비 · 시험(운영자). 고른 탭은 이 브라우저에 남는다 */
+/* 자세히 — 건강 · 처리 여유 · 상태 기록 · 장비 · 시험(운영자). 고른 탭은 이 브라우저에 남는다 */
 const MORE_KEY = "talog.more";
 const moreTab = tabset($("#moreTabs"), "more", k => { try { localStorage.setItem(MORE_KEY, k); } catch (e) { /* 사생활 보호 모드 */ }
   if ((k === "cap" || k === "strip") && S.tl) renderStrip(S.tl); });
-function initMore() { let k = "cap"; try { k = localStorage.getItem(MORE_KEY) || "cap"; } catch (e) { k = "cap"; }
-  if (!$(`#moreTabs [data-more="${k}"]`) || (k === "test" && !atLeast("operator"))) k = "cap"; moreTab(k); }
+function initMore() { let k = "health"; try { k = localStorage.getItem(MORE_KEY) || "health"; } catch (e) { k = "health"; }
+  if (!$(`#moreTabs [data-more="${k}"]`) || (k === "test" && !atLeast("operator"))) k = "health"; moreTab(k); }
 const lastIdx = arr => { for (let h = arr.length - 1; h >= 0; h--) if (arr[h] != null) return h; return -1; };
 /** 오늘 — 사건(상태 칩 · 원인 한 줄)과 경보. 사건 줄을 누르면 사건 화면으로 */
 function renderOpsLists(st) {

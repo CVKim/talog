@@ -33,6 +33,8 @@ TEXT = [  # (글자, 바탕) — 4.5:1
     # v2.2 모드: 왼쪽 위 전환(꺼짐 side-mute · 마우스 올림 side-ink/side-hover · 지금 #fff/side-active), 모드 카드
     # (고른 칸 ink·sub/brand-soft, 마우스 올림 surface-2), PIN 오류 글
     ("side-ink", "side-hover"), ("sub", "surface-2"), ("crit-ink", "surface"),
+    # v2.5 설비 건강: 건강 탭 머리의 점수 칸(surface-2 위 좋음·주의·점검 글자), 맨 위 점수(surface 위)
+    ("ok-ink", "surface-2"), ("warn-ink", "surface-2"), ("crit-ink", "surface-2"), ("mute", "surface"),
 ]
 NONTEXT = [  # (요소, 바탕) — 3:1
     ("focus", "surface"), ("focus", "bg"), ("brand", "surface"), ("crit", "surface"), ("warn", "surface"),

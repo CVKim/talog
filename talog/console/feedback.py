@@ -61,6 +61,13 @@ class FeedbackMixin:
                "time": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "mode": self.mode}
         if state == "resolved" and save_case:
             rec["case"] = self._save_case(inc, rec)
+        else:
+            # 다시 열기·'해결' 되돌리기·오경보로 바꾸기 — 앞 해결 기록이 사례 KB 에 남아 다음 판단에 붙지 않게 뺀다
+            prev = (self.incident_notes().get((iid, bool(replay))) or [{}])[-1]
+            if prev.get("case"):
+                from ..casekb import CaseKB, site_kb_dir
+                if CaseKB(site_kb_dir(self.data_dir)).remove(str(prev["case"])):
+                    rec["case_removed"] = prev["case"]
         os.makedirs(self.data_dir, exist_ok=True)
         with open(os.path.join(self.data_dir, NOTES), "a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")

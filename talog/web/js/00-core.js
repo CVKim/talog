@@ -25,11 +25,13 @@ async function api(path, body) {
   if (!r.ok && typeof data === "object") { data._status = r.status; if (data.need) refreshAccess(); }   // 다른 창에서 모드를 내렸다
   return data;
 }
-function toast(msg, kind = "") {
+/** 알림 — act = {label, fn} 를 주면 행동 버튼 하나(예: 되돌리기)를 붙이고 조금 더 오래 둔다 */
+function toast(msg, kind = "", act = null) {
   const d = document.createElement("div"); d.className = "toast " + kind; d.setAttribute("role", kind === "err" ? "alert" : "status");
-  d.innerHTML = `${ic(kind === "ok" ? "check-circle" : kind === "err" ? "alert" : "info", "lg")}<div class="msg"></div><button class="x" type="button" aria-label="알림 닫기">${ic("x")}</button>`;
+  d.innerHTML = `${ic(kind === "ok" ? "check-circle" : kind === "err" ? "alert" : "info", "lg")}<div class="msg"></div>${act ? '<button class="btn sm t-act" type="button"></button>' : ""}<button class="x" type="button" aria-label="알림 닫기">${ic("x")}</button>`;
   $(".msg", d).textContent = msg; $(".x", d).onclick = () => d.remove();
-  $("#toast").appendChild(d); setTimeout(() => d.remove(), kind === "err" ? 9000 : 4500); }
+  if (act) { const b = $(".t-act", d); b.textContent = act.label; b.onclick = async () => { d.remove(); await act.fn(); }; }
+  $("#toast").appendChild(d); setTimeout(() => d.remove(), act ? 12000 : kind === "err" ? 9000 : 4500); }
 function confirmBox({title, body = "", ok = "확인", danger = false}) {
   return new Promise(res => { const d = $("#dlg"); $("#dlgT").textContent = title; $("#dlgB").textContent = body;
     const b = $("#dlgOk"); b.textContent = ok; b.className = "btn " + (danger ? "danger-solid" : "primary");

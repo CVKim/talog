@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import statistics
+import datetime as dt
 from collections import Counter, OrderedDict, deque
 
 from ..assemble import _parse_ng_defects
@@ -90,6 +91,10 @@ class RuleEngine:
         self._seq_wait: dict[str, deque] = {}     # 그룹을 모르는 seq 시작 inner -> [(ts, seq 번호)]
         self._seq_objs: dict[int, set] = {}       # seq 번호 -> 이번 세대 CommonSeq 인스턴스(스레드) ID
         self._seq_gen = 0
+        # 시간별 판정 기록 (설비 건강의 '판정 분포' — talog/health.py). 경보에는 쓰지 않는다
+        self._quality: dict[int, list] = {}       # 시(정수) -> [검사 수, NG 수, Counter(결함명)]
+        self._qseen: OrderedDict = OrderedDict()  # inner -> [처음 본 시, NG 였나, set(결함명)]
+        self._q_flushed = -1                      # 기록으로 내보낸 마지막 시
 
     # 근거 기록 대상 (comm 은 검사 라이프사이클·모델 로드·비상정지만)
     _REC_KINDS = frozenset((
@@ -225,6 +230,45 @@ class RuleEngine:
             c.get("cooldown_min", 60) if a["severity"] == "crit" else c.get("warn_cooldown_min", 240))
         self.notify.emit(Alert(ts, a["rule"], a["severity"], a["title"], a["evidence"],
                                key=a["key"], cooldown_min=cd, meta=a.get("meta")))
+
+    def _count_quality(self, e: Event):
+        """검사 한 건(inner)을 처음 본 시에 한 번 세고, 존 하나라도 NG 면 NG 로 센다(다존 설비). 결함명은 inner 마다 한 번."""
+        if not e.inner_id:
+            return
+        res, h = e.status or "?", int(e.ts // 3600)
+        ng = res in ("NG", "REWORK")
+        seen = self._qseen.get(e.inner_id)
+        if seen is None:
+            if h <= self._q_flushed:
+                return                            # 이미 내보낸 시간의 늦은 줄
+            seen = self._qseen[e.inner_id] = [h, False, set()]
+            if len(self._qseen) > 5000:
+                self._qseen.popitem(last=False)
+            self._quality.setdefault(h, [0, 0, Counter()])[0] += 1
+        q = self._quality.get(seen[0])
+        if q is None or not ng:
+            return
+        if not seen[1]:
+            seen[1] = True
+            q[1] += 1
+        for d in _parse_ng_defects(e.extra, e.inner_id, res):
+            if d not in seen[2]:
+                seen[2].add(d)
+                q[2][d] += 1
+
+    def quality_rows(self, now: float) -> list[dict]:
+        """끝난 시간대의 판정 기록 — 시간별 KPI 파일에 group "quality" 줄로 (그룹 줄을 읽는 곳은 정수 그룹만 본다)."""
+        h_now, rows = int(now // 3600), []
+        for h in sorted(x for x in self._quality if x < h_now):
+            n, ng, dc = self._quality.pop(h)
+            rows.append({"hour": dt.datetime.fromtimestamp(h * 3600).strftime("%Y-%m-%d %H:00"), "group": "quality",
+                         "n": n, "ng": ng, "defects": dict(dc.most_common(12))})
+            self._q_flushed = max(self._q_flushed, h)
+        return rows
+
+    def hourly_rows(self, now: float) -> list[dict]:
+        """끝난 시간대의 시간별 KPI — 처리 여유(그룹·process) + 판정(quality)"""
+        return self.cap.hourly_rows(now) + self.quality_rows(now)
 
     def _on_inspect_end(self, e: Event):
         """INSPECT_END 판정으로 치명 결함·동일 결함 빈발·연속 NG·NG 비율을 본다."""
@@ -390,6 +434,7 @@ class RuleEngine:
                     self._done_ts[gg] = e.ts
                     if self._g_ok(gg):
                         self.cap.hold(e.ts, gg, d, "cycle")
+                self._count_quality(e)
                 self._on_inspect_end(e)
             elif "INSPECT_START_ACK" in e.name:
                 self._assign(e.inner_id, g)
@@ -571,7 +616,7 @@ class RuleEngine:
         self._housekeep(now)
         for a in self.cap.evaluate(now):
             self._emit_cap(now, a)
-        rows = self.cap.hourly_rows(now)
+        rows = self.hourly_rows(now)
         if rows and self.kpi_sink is not None:
             self.kpi_sink(rows)
         if self.cap.changed and self.state_sink is not None:

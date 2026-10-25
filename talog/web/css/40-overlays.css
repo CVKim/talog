@@ -3,6 +3,7 @@
 .toast{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;padding:12px 10px 12px 14px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--line);box-shadow:var(--sh-3);font-size:13.5px;color:var(--ink);animation:tIn var(--t2) var(--ease)}
 .toast>.ic{margin-top:1px;color:var(--info)}.toast.ok>.ic{color:var(--ok)}.toast.err>.ic{color:var(--crit)}
 .toast .msg{flex:1;white-space:pre-wrap;min-width:0;line-height:1.5}
+.toast .t-act{flex:none;margin:-4px 0}
 .toast .x{border:0;background:transparent;width:24px;height:24px;border-radius:6px;display:grid;place-items:center;color:var(--mute);padding:0;margin:-2px 0}
 .toast .x:hover{background:var(--hover);color:var(--ink)}
 @keyframes tIn{from{opacity:0;transform:translateY(-6px)}}

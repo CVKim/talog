@@ -4,6 +4,9 @@
   analysis.py   리포트·재현 작업·리포트 화면                  claude.py     Claude 연동(바로 묻기·스킬 카드)
   checks.py     설정 화면의 시험                               modes.py      모드(현장·운영자·개발자) 바꾸기
   feedback.py   사건 마무리(확인·해결·오경보)·해결 기록 → 사례 KB·규칙 피드백 통계
+  setup.py      처음 설정 한 번에 — 이 PC 의 talos 로그 폴더 찾기 · 이 폴더로 시작
+  health.py     설비 건강(talog/health.py)에 넣을 기록 모으기 — 시간별 KPI·기준선·판정·GPU·오늘 사건
+  daily.py      하루 정리 — 한 번 눌러 여는 인쇄용 한 장(건강·숫자·사건·시간별, 교대 인수인계)
   http.py       HTTP 경로 → 이 메서드들 (경로마다 필요한 모드를 oper(…)·dev(…) 로 적는다)
 
 믹스인끼리 주고받는 상태는 모두 여기 __init__ 에 있다 — 새 상태를 더하면 여기에 적는다.
@@ -21,13 +24,17 @@ from .. import access, settings
 from .analysis import AnalysisMixin
 from .checks import ChecksMixin
 from .claude import ClaudeMixin
+from .daily import DailyMixin
 from .feedback import FeedbackMixin
+from .health import HealthMixin
 from .incidents import IncidentsMixin
 from .modes import ModeMixin
 from .ops import OpsMixin
+from .setup import SetupMixin
 
 
-class Console(OpsMixin, IncidentsMixin, AnalysisMixin, ClaudeMixin, ChecksMixin, ModeMixin, FeedbackMixin):
+class Console(OpsMixin, IncidentsMixin, AnalysisMixin, ClaudeMixin, ChecksMixin, ModeMixin, FeedbackMixin, SetupMixin, HealthMixin,
+              DailyMixin):
     """talog.yaml 하나의 콘솔. 감시(LiveWatch)는 작업 스레드, 분석 작업·Claude 는 하위 프로세스로 돈다.
 
     mode 를 주면 talog.yaml 의 mode 대신 쓴다 (`talog --mode developer` — 이번 실행만, 파일에는 쓰지 않는다)."""

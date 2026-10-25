@@ -86,6 +86,9 @@ GET_ROUTES: dict[str, Route] = {
                                                     q.get("which", "initial")), HTML),
     "/api/timeline": lambda con, q: con.timeline(int(q.get("days", 7))),
     "/api/rules/stats": lambda con, q: con.rule_stats(int(q.get("days", 7))),
+    "/api/setup/detect": lambda con, q: con.setup_detect(),
+    "/api/health": lambda con, q: con.health(),
+    "/api/daily": lambda con, q: (200, con.daily_html(q.get("day", ""), q.get("replay") == "1"), HTML),
     # 분석
     "/api/reports": lambda con, q: {"rows": con.reports()},
     "/api/job": _job,
@@ -135,6 +138,7 @@ POST_ROUTES: dict[str, Route] = {
     # 운영·설정
     "/api/settings": oper(_save_settings),
     "/api/control": _control,
+    "/api/setup/root": oper(lambda con, b: con.setup_root(b.get("root", ""))),
     "/api/test/llm": oper(lambda con, b: con.test_llm(b)),
     "/api/test/mail-check": oper(lambda con, b: con.test_mail_check(b)),
     "/api/test/mail": oper(lambda con, b: con.test_mail(b)),

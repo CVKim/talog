@@ -63,7 +63,7 @@ table.keys td{font-size:13px;color:var(--sub);padding:8px 0}
 .next li.crit>.ic{color:var(--crit)}.next li.warn>.ic{color:var(--warn)}.next li.info>.ic{color:var(--info)}.next li.ok>.ic{color:var(--ok)}
 .next li .nt{font-size:13px;line-height:1.5}
 .next li .nt b{font-weight:700}
-.next li.none{grid-template-columns:22px minmax(0,1fr)}
+.next li.none,.next li.nob{grid-template-columns:22px minmax(0,1fr)}
 
 /* KPI 상태 낱말 (색만으로 알리지 않는다 — ux #37) */
 .kpi .kst{display:inline-flex;align-items:center;gap:4px;font-weight:700;font-size:12px;padding:1px 7px;border-radius:999px;background:var(--sunken);color:var(--sub)}

@@ -44,7 +44,7 @@ function briefItems(st) {
   // 4) 마무리 안 된 사건 — 사람의 해결 기록이 다음 판단의 근거가 된다
   const open = rows.filter(OPEN);
   if (open.length) out.push({icon: "list-checks", cls: open.some(r => r.severity === "crit") ? "warn" : "",
-    text: `최근 7일 마무리 안 된 사건 <b>${open.length}건</b> — 원인과 한 조치를 '해결 기록'으로 남기면 다음에 비슷한 사건이 날 때 talog 가 함께 보여 드립니다.`, btn: ["마무리하러 가기", "open"]});
+    text: `최근 7일 마무리 안 된 사건 <b>${open.length}건</b> — '해결 — 이대로' 한 번으로 마무리하면 다음에 비슷한 사건이 날 때 talog 가 그 기록을 함께 보여 드립니다.`, btn: ["마무리하러 가기", "open"]});
   else if (rows.length) out.push({icon: "check-circle", cls: "ok", text: "최근 7일 사건은 모두 마무리됐습니다."});
   return out; }
 function renderBrief(st) {

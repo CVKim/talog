@@ -100,6 +100,31 @@ class CaseKB:
             }, ensure_ascii=False) + "\n")
         self.cases.append(case)      # 파일 기록 성공 후에만 메모리 반영
 
+    def remove(self, case_id: str) -> bool:
+        """사례 하나를 뺀다 — 사건을 다시 열거나 '해결'을 되돌리면 그 해결 기록이 다음 판단에 붙지 않게.
+        나머지 줄은 손대지 않고(읽지 못한 줄도 그대로) 임시 파일에 쓴 뒤 바꿔 끼운다."""
+        if not case_id or not os.path.exists(self.path):
+            return False
+        keep, gone = [], False
+        with open(self.path, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    j = json.loads(line)
+                    if isinstance(j, dict) and str(j.get("id", "")) == case_id:
+                        gone = True
+                        continue
+                except json.JSONDecodeError:
+                    pass
+                keep.append(line if line.endswith("\n") else line + "\n")
+        if not gone:
+            return False
+        tmp = self.path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.writelines(keep)
+        os.replace(tmp, self.path)
+        self.cases = [c for c in self.cases if c.id != case_id]
+        return True
+
     # ── 임베딩 ────────────────────────────────────────────────
     @staticmethod
     def _embed_available() -> bool:

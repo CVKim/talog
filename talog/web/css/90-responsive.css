@@ -34,7 +34,8 @@
   .subnav{margin:-14px -14px 16px;padding:8px 14px;overflow-x:auto;flex-wrap:nowrap}
   .prov{grid-template-columns:minmax(0,1fr)}
   .card{padding:16px}.now{padding:0}.hero{padding:16px 16px 14px 20px;grid-template-columns:auto minmax(0,1fr)}.hero h2{font-size:18px}.hero .hi{width:40px;height:40px}
-  .hero .hmeta{grid-column:1/-1;flex-direction:row;gap:12px;align-items:center}.now .brief{padding:12px 16px 12px 20px}
+  .hero .hside{grid-column:1/-1;flex-direction:row;align-items:center;gap:12px}.hero .hmeta{flex-direction:row;gap:12px;align-items:center}
+  .hbadge{flex-direction:row;gap:8px;min-width:0;padding:6px 10px}.hbadge b{font-size:20px}.hhead{flex-wrap:wrap}.hday{width:100%;justify-content:flex-start}.now .brief{padding:12px 16px 12px 20px}
   .today .chead .end{margin-left:0;width:100%}.more .grid.g2{gap:20px}
   .strip-row,.axis{grid-template-columns:44px minmax(0,1fr);gap:8px}.strip-lab .tag{display:none}.cells{gap:2px}.cell{height:22px;border-radius:3px}
   .checks li{grid-template-columns:20px minmax(0,1fr)}.checks li>span,.checks li>em{grid-column:2}

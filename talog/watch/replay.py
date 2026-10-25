@@ -149,7 +149,7 @@ def run_replay(cfg: dict, day_dir: str) -> int:
             engine.evaluate(e.ts)
             next_eval = e.ts + 20
     engine.evaluate(events[-1].ts)
-    cap_state.write_kpi(engine.cap.hourly_rows(events[-1].ts + 3600))   # 마지막 시간대까지
+    cap_state.write_kpi(engine.hourly_rows(events[-1].ts + 3600))   # 마지막 시간대까지 (처리 여유 + 판정)
     cap_state.save(engine.cap)
     if agent is not None:
         agent.flush(agent.due() or events[-1].ts)

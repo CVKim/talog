@@ -12,7 +12,11 @@ function renderIncList() {
   const groups = []; vis.forEach(r => { const k = r.day + (r.replay ? "r" : ""); let g = groups.find(x => x.k === k); if (!g) groups.push(g = {k, day: r.day, rep: r.replay, items: []}); g.items.push(r); });
   $("#incRows").innerHTML = groups.map(g => `<div class="day-h">${esc(dayLabel(g.day))}${g.rep ? '<span class="tag">재현</span>' : ""}<span class="spacer"></span>${g.items.length}건</div>`
     + g.items.map(x => `<button type="button" class="li-item" data-id="${esc(x.id)}" data-rp="${x.replay ? 1 : 0}" ${S.inc && S.inc.id === x.id ? 'aria-current="true"' : ""}><div class="li">${sevTag(x.severity)}<b>${esc(x.title)}</b><span class="when">${esc(x.time)}</span><div class="li-sub">${stateTag(x.state)}<span>${esc(x.cause || "원인 미상")}</span></div></div></button>`).join("")).join("");
-  $$("#incRows .li-item").forEach(b => b.onclick = () => openInc(b.dataset.id, b.dataset.rp === "1")); }
+  $$("#incRows .li-item").forEach(b => b.onclick = () => openInc(b.dataset.id, b.dataset.rp === "1"));
+  // 넓은 화면에서 사건을 고르지 않고 들어왔으면 가장 급한 것(마무리 안 된 심각 → 마무리 안 된 것 → 맨 위)을 바로 연다
+  if (!S.inc && S.view === "inc" && location.hash === "#inc" && window.innerWidth >= 1200) {
+    const pick = vis.find(r => OPEN(r) && r.severity === "crit") || vis.find(r => OPEN(r)) || vis[0];
+    if (pick) openInc(pick.id, !!pick.replay); } }
 $("#incDays").onchange = loadInc; $("#incReplay").onchange = loadInc;
 $("#incOpen").onchange = ev => { S.incOpen = ev.target.checked; renderIncList(); };
 $("#btnIncRefresh").onclick = () => busy($("#btnIncRefresh"), loadInc);
